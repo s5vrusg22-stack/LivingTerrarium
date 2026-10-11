@@ -46,6 +46,11 @@ jobs:
           export/android/debug_keystore_user = "androiddebugkey"
           export/android/debug_keystore_pass = "android"
           SETTINGS
+          test -x "$JAVA_HOME/bin/java"
+          test -x "$ANDROID_HOME/platform-tools/adb"
+          test -x "$ANDROID_HOME/build-tools/34.0.0/apksigner"
+          test -f "$HOME/debug.keystore"
+          test -f "$HOME/.local/share/godot/export_templates/4.3.stable/android_debug.apk"
       - name: Import project
         shell: bash
         run: |
@@ -56,7 +61,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build
-          godot --headless --path . --export-debug Android build/LivingTerrarium3D-debug.apk
+          godot --headless --verbose --path . --export-debug Android build/LivingTerrarium3D-debug.apk
           test -s build/LivingTerrarium3D-debug.apk
           sha256sum build/LivingTerrarium3D-debug.apk > build/SHA256SUMS.txt
       - name: Upload APK and checksum
