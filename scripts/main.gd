@@ -116,6 +116,7 @@ var preview_strike_clock := 0.0
 var animation_label: Label
 var model_details: Array[Node3D] = []
 var body_texture: Texture2D
+var mantis_surface_albedo: Texture2D
 var eye_texture: Texture2D
 var bark_texture: Texture2D
 var substrate_texture: Texture2D
@@ -195,6 +196,7 @@ var habitat_event_count := 0
 
 func _ready() -> void:
     _load_textures()
+    _build_mantis_surface_texture()
     _build_leaf_detail_textures()
     _create_world()
     terrain_root = Node3D.new()
@@ -575,31 +577,35 @@ func _create_world() -> void:
     env.background_color = Color(0.065, 0.085, 0.08)
     env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
     env.ambient_light_color = Color(0.7, 0.8, 0.72)
-    env.ambient_light_energy = 0.70
+    env.ambient_light_energy = 0.48
     env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-    env.glow_enabled = true
-    env.glow_intensity = 0.20
-    env.glow_bloom = 0.04
-    env.glow_hdr_threshold = 1.12
+    env.glow_enabled = false
     env.adjustment_enabled = true
-    env.adjustment_contrast = 1.04
-    env.adjustment_saturation = 1.07
+    env.adjustment_contrast = 1.10
+    env.adjustment_saturation = 1.02
     env.ssao_enabled = true
-    env.ssao_radius = 0.42
-    env.ssao_intensity = 1.10
-    env.ssao_power = 1.16
-    env.ssao_detail = 0.48
+    env.ssao_radius = 0.34
+    env.ssao_intensity = 0.86
+    env.ssao_power = 1.12
+    env.ssao_detail = 0.40
     world.environment = env
     add_child(world)
     var sun := DirectionalLight3D.new()
     sun.rotation_degrees = Vector3(-55, -25, 0)
-    sun.light_energy = 1.08
-    sun.light_color = Color(1.0, 0.95, 0.84)
+    sun.light_energy = 0.98
+    sun.light_color = Color(1.0, 0.94, 0.82)
     sun.shadow_enabled = true
-    sun.shadow_opacity = 0.76
-    sun.directional_shadow_max_distance = 14.0
-    sun.light_angular_distance = 0.45
+    sun.shadow_opacity = 0.82
+    sun.directional_shadow_max_distance = 12.0
+    sun.light_angular_distance = 0.72
     add_child(sun)
+    var canopy_fill := OmniLight3D.new()
+    canopy_fill.position = Vector3(-1.15, 1.72, 0.85)
+    canopy_fill.light_color = Color(0.70, 0.88, 0.62)
+    canopy_fill.light_energy = 0.22
+    canopy_fill.omni_range = 4.8
+    canopy_fill.shadow_enabled = false
+    add_child(canopy_fill)
     # Scale the habitat around the walkable floor so the animal and its movement
     # stay unchanged while the enclosure gains 50% more room in every direction.
     habitat_root = Node3D.new()
@@ -860,6 +866,9 @@ func _create_mantis() -> void:
         for side_index in range(2):
             var side: float = -1.0 if side_index == 0 else 1.0
             _part(abdomen, Vector3(side * 0.094 * taper, 0.178, z), Vector3(0.008, 0.005, 0.012), mint_shadow)
+    # A continuous high-density shell covers the overlapping plates; the sternites
+    # remain visible below it so the abdomen reads as one body with real segments.
+    _add_mantis_shell(abdomen, "AbdominalCuticle", -0.17, 0.565, 0.098, 0.058, 0.176, mint, "abdomen")
     # Underlapping sternites give the abdomen a segmented underside instead of a single smooth tube.
     for sternite in range(7):
         var sternite_t: float = float(sternite) / 6.0
@@ -879,17 +888,9 @@ func _create_mantis() -> void:
     thorax_pivot.name = "ThoraxArticulation"
     thorax_pivot.position = Vector3(0, 0.24, -0.34)
     animal.add_child(thorax_pivot)
-    # A long, slender pronotum joins the head to the wing roots. Keep the
-    # raised margins restrained so the thorax reads as one continuous shield.
-    _part(thorax_pivot, Vector3(0, 0.010, 0.005), Vector3(0.044, 0.036, 0.39), mint)
-    _part(thorax_pivot, Vector3(0, -0.001, 0.115), Vector3(0.057, 0.038, 0.115), mint_light)
-    _part(thorax_pivot, Vector3(0, 0.027, -0.115), Vector3(0.036, 0.014, 0.095), mint_light)
-    for thorax_rib in range(3):
-        var rib_z := -0.035 + float(thorax_rib) * 0.092
-        _segment(thorax_pivot, Vector3(-0.036, -0.009, rib_z), Vector3(0.036, -0.009, rib_z), 0.0017, mint_shadow)
-    _segment(thorax_pivot, Vector3(0, 0.050, 0.16), Vector3(0, 0.050, -0.245), 0.0042, mint_light)
-    for pronotum_side in [-1.0, 1.0]:
-        _segment(thorax_pivot, Vector3(pronotum_side * 0.038, 0.019, 0.13), Vector3(pronotum_side * 0.034, 0.016, -0.23), 0.0018, mint_shadow)
+    # A single sculpted pronotum replaces the stacked oval pieces. The swept
+    # surface keeps a narrow neck end, broad shoulder, raised keel, and soft edges.
+    _add_mantis_shell(thorax_pivot, "PronotumSurface", -0.245, 0.16, 0.045, 0.027, 0.010, mint_light, "pronotum")
     # Cervical bridge and overlapping cuticle collars keep a separate articulation.
     _part(thorax_pivot, Vector3(0, 0.010, -0.205), Vector3(0.034, 0.027, 0.10), mint)
     neck_pivot = Node3D.new()
@@ -935,15 +936,15 @@ func _create_mantis() -> void:
         _part(head_pivot, Vector3(side * 0.118, 0.02, -0.024), Vector3(0.078, 0.084, 0.078), mint_shadow)
         _part(head_pivot, Vector3(side * 0.118, 0.02, -0.024), Vector3(0.068, 0.074, 0.067), eye_color)
         # Staggered facets wrap around the eye instead of forming a square grid.
-        for facet in range(30):
-            var row: int = int(facet / 6)
-            var column: int = facet % 6
-            var facet_y: float = -0.048 + float(row) * 0.024
-            var facet_z: float = -0.049 + float(column) * 0.0196
+        for facet in range(72):
+            var row: int = int(facet / 9)
+            var column: int = facet % 9
+            var facet_y: float = -0.046 + float(row) * 0.013
+            var facet_z: float = -0.048 + float(column) * 0.012
             var surface_factor: float = sqrt(maxf(0.04, 1.0 - pow(facet_y / 0.074, 2.0) - pow(facet_z / 0.067, 2.0)))
             var facet_x: float = 0.118 + 0.068 * surface_factor + 0.002
             var facet_shade: float = 0.91 + 0.08 * float((row + column) % 3) / 2.0
-            _part(head_pivot, Vector3(side * facet_x, 0.02 + facet_y, -0.024 + facet_z), Vector3(0.0048, 0.0052, 0.0052), Color(0.19, 0.40, 0.18) * facet_shade)
+            _part(head_pivot, Vector3(side * facet_x, 0.02 + facet_y, -0.024 + facet_z), Vector3(0.0042, 0.0044, 0.0044), Color(0.19, 0.40, 0.18) * facet_shade)
         # Small specular points sit on the outer eye surface.
         _part(head_pivot, Vector3(side * 0.176, 0.049, -0.075), Vector3(0.007, 0.010, 0.005), Color(0.67, 0.82, 0.53))
         var feeler := Node3D.new()
@@ -1041,8 +1042,8 @@ func _create_mantis() -> void:
 
 func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     # Smooth leaf-like forewings cover most of the abdomen; pale hindwings stay tucked below.
-    var segments := 32
-    var lane_count := 8
+    var segments := 96
+    var lane_count := 24
     var start_z: float = -0.02 if hindwing else -0.15
     var end_z: float = 0.58 if hindwing else 0.68
     var y: float = 0.238 if hindwing else 0.251
@@ -1126,6 +1127,8 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     var wing_material := _material(Color.WHITE)
     wing_material.vertex_color_use_as_albedo = true
     wing_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    if mantis_surface_albedo != null:
+        wing_material.albedo_texture = mantis_surface_albedo
     if pbr_normal.has("mantis_cuticle"):
         wing_material.normal_enabled = true
         wing_material.normal_texture = pbr_normal["mantis_cuticle"]
@@ -1142,16 +1145,16 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     wing_pivot.add_child(wing_instance)
     var vein_color: Color = Color(0.30, 0.42, 0.19) if hindwing else Color(0.15, 0.31, 0.055)
     _segment(wing_pivot, Vector3(0, 0.015, 0.012), Vector3(side * 0.020, 0.016, total_length - 0.012), 0.0018, vein_color)
-    for vein_index in range(9):
-        var t: float = 0.10 + float(vein_index) * 0.093
+    for vein_index in range(18):
+        var t: float = 0.055 + float(vein_index) * 0.049
         var z: float = total_length * t
         var width: float = _mantis_wing_profile(t, hindwing) * max_width
         var origin := Vector3(side * width * 0.035, 0.014 + 0.010 * sin(PI * t), z * 0.20)
         var tip := Vector3(side * width * 0.91, 0.012 + 0.010 * sin(PI * t), z)
         _segment(wing_pivot, origin, tip, 0.0009 if hindwing else 0.0010, vein_color)
     # Sparse cross-veins leave the forewing surface predominantly smooth.
-    for cross_index in range(7 if hindwing else 5):
-        var t: float = 0.13 + float(cross_index) * (0.12 if hindwing else 0.15)
+    for cross_index in range(20 if hindwing else 16):
+        var t: float = 0.09 + float(cross_index) * (0.043 if hindwing else 0.052)
         var z: float = total_length * t
         var width: float = _mantis_wing_profile(t, hindwing) * max_width
         _segment(wing_pivot, Vector3(side * width * 0.22, 0.014, z - 0.010), Vector3(side * width * 0.82, 0.014, z + 0.016), 0.00065, vein_color)
@@ -1199,16 +1202,31 @@ func _ellipsoid_limb(parent: Node3D, a: Vector3, b: Vector3, radius: float, tint
         return
     var item := MeshInstance3D.new()
     var mesh := SphereMesh.new()
-    mesh.radial_segments = 24
-    mesh.rings = 12
+    mesh.radial_segments = 32
+    mesh.rings = 18
     item.mesh = mesh
     item.position = (a + b) * 0.5
     item.quaternion = Quaternion(Vector3.BACK, delta.normalized())
     item.scale = Vector3(radius, radius, length * 0.64)
-    item.material_override = _material(tint)
+    item.material_override = _mantis_material(tint)
     parent.add_child(item)
 
-# Surface maps add cuticle detail without overriding the selected mint color.
+func _build_mantis_surface_texture() -> void:
+    # Fine, seamless cuticle mottling keeps the vivid green pigment while
+    # breaking up the plastic-flat albedo at close camera distances.
+    var texture_size := 512
+    var image := Image.create(texture_size, texture_size, false, Image.FORMAT_RGBA8)
+    for y in range(texture_size):
+        var v: float = float(y) / float(texture_size)
+        for x in range(texture_size):
+            var u: float = float(x) / float(texture_size)
+            var broad: float = sin(u * TAU * 3.0 + sin(v * TAU * 4.0) * 0.52) * cos(v * TAU * 3.0 + u * TAU * 2.0)
+            var fine: float = sin(u * TAU * 47.0 + sin(v * TAU * 29.0) * 0.25) * sin(v * TAU * 59.0 + u * TAU * 13.0)
+            var grain: float = cos(u * TAU * 113.0 + v * TAU * 79.0) * 0.006
+            var pigment: float = clampf(0.94 + broad * 0.026 + fine * 0.013 + grain, 0.86, 1.0)
+            image.set_pixel(x, y, Color(pigment * 1.04, pigment, pigment * 0.91, 1.0))
+    image.generate_mipmaps()
+    mantis_surface_albedo = ImageTexture.create_from_image(image)
 
 func _apply_pbr(mat: StandardMaterial3D, kind: String) -> void:
     if pbr_normal.has(kind):
@@ -1222,13 +1240,109 @@ func _apply_pbr(mat: StandardMaterial3D, kind: String) -> void:
         mat.metallic = 0.0
         mat.roughness = 0.22
     elif kind == "mantis_cuticle":
-        mat.metallic = 0.01
-        mat.roughness = 0.52
+        if mantis_surface_albedo != null:
+            mat.albedo_texture = mantis_surface_albedo
+        mat.metallic = 0.0
+        mat.roughness = 0.58
+
+func _mantis_shell_profile(t: float, shape: String) -> float:
+    var safe_t := clampf(t, 0.0, 1.0)
+    var shaped_t := pow(safe_t, 0.86) if shape == "abdomen" else safe_t
+    var fullness := pow(maxf(0.0, sin(PI * shaped_t)), 0.56)
+    var taper := lerpf(1.0, 0.70, safe_t) if shape == "abdomen" else 0.94 + 0.06 * cos((safe_t - 0.5) * PI)
+    return maxf(0.012, fullness * taper)
+
+func _add_mantis_shell(parent: Node3D, shell_name: String, start_z: float, end_z: float, radius_x: float, radius_y: float, center_y: float, tint: Color, shape: String) -> void:
+    # 96 longitudinal rings × 40 radial samples create a smooth, connected
+    # cuticle surface with tapered ends, a soft dorsal keel, and vertex shading.
+    var ring_count := 96
+    var side_count := 40
+    var stride := side_count + 1
+    var vertices := PackedVector3Array()
+    var normals := PackedVector3Array()
+    var uvs := PackedVector2Array()
+    var colors := PackedColorArray()
+    var indices := PackedInt32Array()
+    var length: float = end_z - start_z
+    for ring in range(ring_count + 1):
+        var t: float = float(ring) / float(ring_count)
+        var profile := _mantis_shell_profile(t, shape)
+        var before_t := maxf(0.0, t - 0.002)
+        var after_t := minf(1.0, t + 0.002)
+        var profile_slope := (_mantis_shell_profile(after_t, shape) - _mantis_shell_profile(before_t, shape)) / maxf(0.0001, (after_t - before_t) * length)
+        var z := lerpf(start_z, end_z, t)
+        for lane in range(stride):
+            var angle := TAU * float(lane) / float(side_count)
+            var cos_angle := cos(angle)
+            var sin_angle := sin(angle)
+            var keel := 0.0
+            if shape == "pronotum":
+                keel = 0.0045 * sin(PI * t) * pow(maxf(0.0, sin_angle), 14.0)
+            vertices.append(Vector3(radius_x * profile * cos_angle, center_y + radius_y * profile * sin_angle + keel, z))
+            var normal := Vector3(cos_angle / maxf(0.0001, radius_x * profile), sin_angle / maxf(0.0001, radius_y * profile), -profile_slope / maxf(0.001, profile)).normalized()
+            normals.append(normal)
+            uvs.append(Vector2(float(lane) / float(side_count), t))
+            var ventral_shade := clampf(-sin_angle, 0.0, 1.0) * 0.10
+            var edge_shade := pow(absf(cos_angle), 8.0) * 0.045
+            var pigment_wave := 0.985 + 0.015 * sin(t * TAU * 5.0 + c * 1.7)
+            var segment_seam := pow(maxf(0.0, cos((t * 7.0 + 0.5) * PI)), 26.0) * 0.065 if shape == "abdomen" else 0.0
+            var shade := maxf(0.80, pigment_wave - ventral_shade - edge_shade - segment_seam)
+            colors.append(Color(tint.r * shade, tint.g * shade, tint.b * shade, 1.0))
+    for ring in range(ring_count):
+        for lane in range(side_count):
+            var a := ring * stride + lane
+            var b := a + 1
+            var d := (ring + 1) * stride + lane
+            var c := d + 1
+            indices.append(a)
+            indices.append(b)
+            indices.append(c)
+            indices.append(a)
+            indices.append(c)
+            indices.append(d)
+    var start_center := vertices.size()
+    vertices.append(Vector3(0.0, center_y, start_z))
+    normals.append(Vector3.FORWARD)
+    uvs.append(Vector2(0.5, 0.0))
+    colors.append(tint)
+    for lane in range(side_count):
+        indices.append(start_center)
+        indices.append(lane + 1)
+        indices.append(lane)
+    var end_center := vertices.size()
+    var end_ring := ring_count * stride
+    vertices.append(Vector3(0.0, center_y, end_z))
+    normals.append(Vector3.BACK)
+    uvs.append(Vector2(0.5, 1.0))
+    colors.append(tint)
+    for lane in range(side_count):
+        indices.append(end_center)
+        indices.append(end_ring + lane)
+        indices.append(end_ring + lane + 1)
+    var arrays: Array = []
+    arrays.resize(Mesh.ARRAY_MAX)
+    arrays[Mesh.ARRAY_VERTEX] = vertices
+    arrays[Mesh.ARRAY_NORMAL] = normals
+    arrays[Mesh.ARRAY_TEX_UV] = uvs
+    arrays[Mesh.ARRAY_COLOR] = colors
+    arrays[Mesh.ARRAY_INDEX] = indices
+    var shell_mesh := ArrayMesh.new()
+    shell_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+    var shell := MeshInstance3D.new()
+    shell.name = shell_name
+    shell.mesh = shell_mesh
+    var shell_material := _material(Color.WHITE)
+    shell_material.vertex_color_use_as_albedo = true
+    shell_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    shell_material.roughness = 0.58
+    _apply_pbr(shell_material, "mantis_cuticle")
+    shell.material_override = shell_material
+    parent.add_child(shell)
 
 func _part(parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> void:
     var mesh := SphereMesh.new()
-    mesh.radial_segments = 28
-    mesh.rings = 16
+    mesh.radial_segments = 40
+    mesh.rings = 24
     var item := MeshInstance3D.new()
     item.mesh = mesh
     item.position = pos
@@ -1238,9 +1352,8 @@ func _part(parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> void:
         mat.albedo_texture = eye_texture
         mat.albedo_color = Color.WHITE
         _apply_pbr(mat, "mantis_eye")
-    elif body_texture != null and color.g > color.r * 1.15:
-        # Keep the requested mint pigment; use the existing maps only for
-        # surface response so the old olive albedo cannot recolor the model.
+    elif color.g > color.r * 1.15:
+        # Multiply a fine cuticle pattern by the selected green pigment.
         mat.albedo_color = color
         _apply_pbr(mat, "mantis_cuticle")
     item.material_override = mat
@@ -1325,6 +1438,12 @@ func _material(color: Color) -> StandardMaterial3D:
     var mat := StandardMaterial3D.new()
     mat.albedo_color = color
     mat.roughness = 0.68
+    return mat
+
+func _mantis_material(color: Color) -> StandardMaterial3D:
+    var mat := _material(color)
+    if color.g > color.r * 1.15:
+        _apply_pbr(mat, "mantis_cuticle")
     return mat
 
 func _create_ui() -> void:
@@ -1512,8 +1631,8 @@ func _resize_ui() -> void:
 
 # Reusable simple leaf mesh: six triangles with a raised midrib and pointed tip.
 func _build_leaf_detail_textures() -> void:
-    var tex_width := 384
-    var tex_height := 768
+    var tex_width := 512
+    var tex_height := 1024
     var height_values := PackedFloat32Array()
     height_values.resize(tex_width * tex_height)
     var albedo_image := Image.create(tex_width, tex_height, false, Image.FORMAT_RGBA8)
@@ -1591,8 +1710,8 @@ func _leaf_mesh() -> ArrayMesh:
     var normals := PackedVector3Array()
     var tangents := PackedFloat32Array()
     var uv := PackedVector2Array()
-    var station_count := 40
-    var lane_count := 16
+    var station_count := 64
+    var lane_count := 24
     var rows: Array = []
     for station in range(station_count):
         var t: float = float(station) / float(station_count - 1)
@@ -1673,8 +1792,8 @@ func _broadleaf_mesh() -> ArrayMesh:
     var normals := PackedVector3Array()
     var tangents := PackedFloat32Array()
     var uv := PackedVector2Array()
-    var station_count := 40
-    var lane_count := 24
+    var station_count := 64
+    var lane_count := 32
     var rows: Array = []
     for station in range(station_count):
         var t: float = float(station) / float(station_count - 1)
@@ -2686,7 +2805,7 @@ func _make_gait_bone(parent: Node3D, radius: float, tint: Color) -> MeshInstance
     mesh.bottom_radius = radius * 0.85
     mesh.height = 1.0
     bone.mesh = mesh
-    bone.material_override = _material(tint)
+    bone.material_override = _mantis_material(tint)
     parent.add_child(bone)
     return bone
 
