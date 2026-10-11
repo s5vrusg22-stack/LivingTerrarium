@@ -1284,7 +1284,7 @@ func _add_mantis_shell(parent: Node3D, shell_name: String, start_z: float, end_z
             uvs.append(Vector2(float(lane) / float(side_count), t))
             var ventral_shade := clampf(-sin_angle, 0.0, 1.0) * 0.10
             var edge_shade := pow(absf(cos_angle), 8.0) * 0.045
-            var pigment_wave := 0.985 + 0.015 * sin(t * TAU * 5.0 + c * 1.7)
+            var pigment_wave := 0.985 + 0.015 * sin(t * TAU * 5.0 + cos_angle * 1.7)
             var segment_seam := pow(maxf(0.0, cos((t * 7.0 + 0.5) * PI)), 26.0) * 0.065 if shape == "abdomen" else 0.0
             var shade := maxf(0.80, pigment_wave - ventral_shade - edge_shade - segment_seam)
             colors.append(Color(tint.r * shade, tint.g * shade, tint.b * shade, 1.0))
