@@ -9,7 +9,7 @@ assert 'zoom_in.text = "+"' in main and 'zoom_out.text = "−"' in main
 assert "func _set_camera_zoom(" in main and "InputEventScreenDrag" in main
 assert "CAMERA_MIN_DISTANCE" in main and "CAMERA_MAX_DISTANCE" in main
 assert "Vector3(5.2, 0.2, 3.8)" in main, "Keep enough enclosure space around the larger mantis"
-assert "const BASE_MANTIS_SCALE := 0.60" in main
+assert "const BASE_MANTIS_SCALE := 0.68" in main
 assert "animal.scale = Vector3.ONE * (BASE_MANTIS_SCALE * (0.80 + growth * 0.30))" in main
 assert "orbit_distance := 4.45" in main and "CAMERA_MAX_DISTANCE := 16.0" in main
 assert "orbit_distance = 4.45" in main, "Camera reset should match the larger default mantis framing"
@@ -41,6 +41,13 @@ assert "Vector2(-2.22, -1.46)" in main
 assert "var longitudinal_stations := 28" in main and "var lateral_stations := 24" in main
 assert "for vein_index in range(21):" in main
 assert "sun.directional_shadow_max_distance = 7.5" in main
+assert "func _mantis_head_mesh()" in main
+assert 'head_pivot.name = "HeadPivot"' in main and 'thorax_pivot.add_child(head_pivot)' in main
+assert 'abdomen.name = "AbdomenPivot"' in main and 'thorax_pivot.add_child(abdomen)' in main
+assert 'thorax_pivot.add_child(joint)' in main and "gait_lengths.append(Vector2" in main
+assert "func _mantis_pronotum_mesh()" in main and "func _mantis_abdomen_mesh()" in main
+assert "func _organic_limb_mesh(" in main and "FemoralSpines" in main and "TibialSpines" in main
+assert "WingVeins" in main and "func _append_vein_tube(" in main
 assert "env.tonemap_mode = Environment.TONE_MAPPER_FILMIC" in main
 assert "leaf_mesh_cache[variant] = mesh" in main
 assert "TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC" in main
