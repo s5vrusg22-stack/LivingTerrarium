@@ -129,16 +129,29 @@ const FOOT_SWING_DURATION := 0.23
 
 # v2.4: imported skinned GLB is the visible model; the existing procedural
 # hierarchy remains an invisible motion/IK fallback and physics reference.
-const RIGGED_MANTIS_SCENE: PackedScene = preload("res://assets/models/mantis_rigged.glb")
+# The supplied detailed GLB is the visible adult model. Its separate mesh
+# pieces are assembled into runtime articulation pivots below; the procedural
+# model remains available as the fallback and the source of contact targets.
+const RIGGED_MANTIS_SCENE: PackedScene = preload("res://assets/models/mantis_detailed_game_asset.glb")
 var rigged_visual: Node3D
 var rigged_player: AnimationPlayer
 var rigged_clip := ""
-var use_rigged_visual := false
+var use_rigged_visual := true
 var rigged_available := false
 var rigged_clips: Dictionary = {}
 var procedural_meshes: Array[MeshInstance3D] = []
 var rigged_import_warnings: Array[String] = []
-var visual_model_scale := 0.26
+var visual_model_scale := 0.64
+var source_model_root: Node3D
+var source_body_motion: Node3D
+var source_head_pivot: Node3D
+var source_abdomen_pivot: Node3D
+var source_wing_pivots: Array[Node3D] = []
+var source_antenna_pivots: Array[Node3D] = []
+var source_walking_hips: Array[Node3D] = []
+var source_walking_knees: Array[Node3D] = []
+var source_raptorial_shoulders: Array[Node3D] = []
+var source_raptorial_elbows: Array[Node3D] = []
 # v2.5: runtime rig pose adaptation, applied after the GLB animation player.
 var rigged_pose_driver: RiggedPoseDriver
 var rigged_skeleton: Skeleton3D
@@ -210,11 +223,8 @@ func _ready() -> void:
     _refresh()
 
 func _initialize_rigged_visual() -> void:
-    # The runtime's corrected mint Hierodula model is procedural. Keep the
-    # older imported GLB out of the shipped view until it is regenerated.
     if not use_rigged_visual:
         return
-    # Keep procedural geometry available if GLB import or clip discovery fails.
     procedural_meshes.clear()
     _collect_procedural_meshes(animal)
     var imported := RIGGED_MANTIS_SCENE.instantiate()
@@ -224,43 +234,380 @@ func _initialize_rigged_visual() -> void:
     rigged_visual = imported as Node3D
     rigged_visual.name = "RiggedMantisVisual"
     animal.add_child(rigged_visual)
-    # Both models share the animal-local origin and move with the same AI root.
-    rigged_visual.position = Vector3.ZERO
-    rigged_visual.rotation = Vector3.ZERO
+    # The supplied asset uses X forward, Y lateral, Z up. Convert it into the
+    # enclosure's X/Z ground plane and Y-up coordinates without mirroring it.
+    rigged_visual.basis = Basis(Vector3.UP, PI * 0.5) * Basis(Vector3.RIGHT, -PI * 0.5)
+    rigged_visual.position = Vector3(0.0, -0.06, 0.0)
     rigged_visual.scale = Vector3.ONE * visual_model_scale
     rigged_player = _find_rigged_player(rigged_visual)
-    if rigged_player == null:
-        rigged_import_warnings.append("No AnimationPlayer found in imported GLB")
-        rigged_visual.visible = false
+    if not _prepare_source_model(rigged_visual):
+        rigged_import_warnings.append("Detailed GLB scene root missing")
         return
-    for library_name in rigged_player.get_animation_library_list():
-        var library := rigged_player.get_animation_library(library_name)
-        if library == null:
-            continue
-        for clip_name in library.get_animation_list():
-            var full_name := String(clip_name)
-            if not String(library_name).is_empty():
-                full_name = String(library_name) + "/" + full_name
-            rigged_clips[String(clip_name).to_upper()] = full_name
-    rigged_available = not rigged_clips.is_empty()
-    if not rigged_available:
-        rigged_import_warnings.append("Imported model has no animation clips")
+    if rigged_player != null:
+        for library_name in rigged_player.get_animation_library_list():
+            var library := rigged_player.get_animation_library(library_name)
+            if library == null:
+                continue
+            for clip_name in library.get_animation_list():
+                var full_name := String(clip_name)
+                if not String(library_name).is_empty():
+                    full_name = String(library_name) + "/" + full_name
+                rigged_clips[String(clip_name).to_upper()] = full_name
+    # This GLB is static geometry; IDLE/WALK are driven through its named
+    # anatomical pivots below rather than through imported animation clips.
+    rigged_available = true
+    rigged_pose_status = "Detailed GLB with runtime articulation"
+    _soften_source_materials(rigged_visual)
     _apply_visual_mode()
-    if rigged_available:
-        rigged_skeleton = _find_rigged_skeleton(rigged_visual)
-        if rigged_skeleton != null:
-            rigged_pose_driver = RiggedPoseDriver.new()
-            rigged_pose_driver.name = "RiggedPoseDriver"
-            rigged_visual.add_child(rigged_pose_driver)
-            rigged_pose_driver.setup(rigged_skeleton, rigged_player)
-            rigged_pose_status = rigged_pose_driver.validation_message
-            if not rigged_pose_driver.hierarchical_chains:
-                rigged_import_warnings.append("Hierarchical leg IK unavailable; using fallback")
-            rigged_ik_enabled = rigged_pose_driver.valid
-        else:
-            rigged_pose_status = "Skeleton3D missing; clip playback only"
-            rigged_import_warnings.append(rigged_pose_status)
-        _play_rigged_clip("IDLE")
+
+func _prepare_source_model(root: Node3D) -> bool:
+    source_model_root = _find_named_node(root, "world")
+    if source_model_root == null:
+        source_model_root = root
+    source_body_motion = Node3D.new()
+    source_body_motion.name = "BodyMotion"
+    source_model_root.add_child(source_body_motion)
+
+    source_head_pivot = _source_pivot("HeadPivot", Vector3(0.78, 0.0, 0.45))
+    source_abdomen_pivot = _source_pivot("AbdomenPivot", Vector3(-0.32, 0.0, 0.24))
+    source_wing_pivots.clear()
+    source_antenna_pivots.clear()
+    source_raptorial_shoulders.clear()
+    source_raptorial_elbows.clear()
+    for side in [-1.0, 1.0]:
+        source_wing_pivots.append(_source_pivot("WingPivot_%d" % int(side), Vector3(0.18, side * 0.13, 0.48)))
+        source_antenna_pivots.append(_source_pivot("AntennaPivot_%d" % int(side), Vector3(1.20, side * 0.15, 0.66)))
+        var shoulder := _source_pivot("RaptorialShoulder_%d" % int(side), Vector3(0.72, side * 0.14, 0.48))
+        source_raptorial_shoulders.append(shoulder)
+        var elbow := Node3D.new()
+        elbow.name = "RaptorialElbow_%d" % int(side)
+        elbow.position = Vector3(1.00, side * 0.34, 0.86)
+        shoulder.add_child(elbow)
+        source_raptorial_elbows.append(elbow)
+
+    source_walking_hips.clear()
+    source_walking_knees.clear()
+    var leg_indices := [1, 4, 2, 5]
+    var leg_hip_positions := [Vector3(-0.28, -0.16, 0.19), Vector3(-0.28, 0.16, 0.19), Vector3(-0.67, -0.16, 0.12), Vector3(-0.67, 0.16, 0.12)]
+    var leg_knee_positions := [Vector3(-0.55, -0.55, -0.03), Vector3(-0.55, 0.55, -0.03), Vector3(-1.05, -0.53, -0.04), Vector3(-1.05, 0.53, -0.04)]
+    for i in range(leg_indices.size()):
+        var hip := _source_pivot("WalkingHip_%d" % leg_indices[i], leg_hip_positions[i])
+        var knee := Node3D.new()
+        knee.name = "WalkingKnee_%d" % leg_indices[i]
+        knee.position = leg_knee_positions[i]
+        hip.add_child(knee)
+        source_walking_hips.append(hip)
+        source_walking_knees.append(knee)
+
+    var original_parts: Array[MeshInstance3D] = []
+    _collect_source_meshes(source_model_root, original_parts)
+    for part in original_parts:
+        var part_name := String(part.name).to_lower()
+        var center := _source_mesh_center(part)
+        var target: Node3D = source_body_motion
+        var walking_index := _source_indexed_part(part_name, "coxa_joint")
+        if walking_index < 0:
+            walking_index = _source_indexed_part(part_name, "walking_femur")
+        if walking_index < 0:
+            walking_index = _source_indexed_part(part_name, "knee_joint")
+        if walking_index < 0:
+            walking_index = _source_indexed_part(part_name, "walking_tibia")
+        if walking_index < 0:
+            walking_index = _source_indexed_part(part_name, "tarsus")
+        if walking_index < 0:
+            walking_index = _source_indexed_part(part_name, "pretarsal_claw")
+        if walking_index == 0 or walking_index == 3:
+            # The supplied starter model has an extra pair of ordinary legs
+            # ahead of the thorax. Keep the biologically correct two pairs.
+            part.queue_free()
+            continue
+        if part_name == "head_capsule":
+            # Replace the source's oval head shell with a tapered, three-
+            # dimensional mantis cranium; keep its eyes and mouthparts.
+            part.queue_free()
+            continue
+        if walking_index >= 0:
+            var leg_slot := leg_indices.find(walking_index)
+            if leg_slot >= 0:
+                if part_name.begins_with("coxa_joint") or part_name.begins_with("walking_femur"):
+                    target = source_walking_hips[leg_slot]
+                else:
+                    target = source_walking_knees[leg_slot]
+        elif part_name.begins_with("antenna_"):
+            target = source_antenna_pivots[0] if center.y < 0.0 else source_antenna_pivots[1]
+        elif part_name.begins_with("left_forewing") or part_name.begins_with("right_forewing"):
+            target = source_wing_pivots[0] if center.y < 0.0 else source_wing_pivots[1]
+        elif part_name.begins_with("raptorial_") or part_name.begins_with("tibial_spine"):
+            var side_slot := 0 if center.y < 0.0 else 1
+            if part_name.contains("coxa") or part_name.contains("femur"):
+                target = source_raptorial_shoulders[side_slot]
+            else:
+                target = source_raptorial_elbows[side_slot]
+        elif part_name.begins_with("head_") or part_name.begins_with("face_") or part_name.begins_with("compound_eye") or part_name.begins_with("eye_ommatidia") or part_name.begins_with("mandible") or part_name.begins_with("maxillary_palp"):
+            target = source_head_pivot
+        elif part_name.begins_with("abdomen") or part_name.begins_with("tergite") or part_name.begins_with("abdominal_cercus"):
+            target = source_abdomen_pivot
+        _move_source_part(part, target)
+
+    # Put unarticulated thorax detail under the same small body sway, then
+    # consolidate repeated facets, veins, spines and surface granules.
+    for child in source_model_root.get_children():
+        if child != source_body_motion and child is Node3D and not child.is_queued_for_deletion():
+            _move_source_part(child as Node3D, source_body_motion)
+    _merge_source_prefix(source_head_pivot, "eye_ommatidia", "CompoundEyeFacets")
+    for side_index in range(2):
+        var antenna_parts := _source_parts_with_prefix(source_antenna_pivots[side_index], "antenna_")
+        _merge_source_meshes(antenna_parts, source_antenna_pivots[side_index], "AntennaFlagellum")
+        var wing_parts := _source_parts_with_prefix(source_wing_pivots[side_index], "left_forewing_midrib")
+        wing_parts.append_array(_source_parts_with_prefix(source_wing_pivots[side_index], "right_forewing_midrib"))
+        wing_parts.append_array(_source_parts_with_prefix(source_wing_pivots[side_index], "left_forewing_vein"))
+        wing_parts.append_array(_source_parts_with_prefix(source_wing_pivots[side_index], "right_forewing_vein"))
+        _merge_source_meshes(wing_parts, source_wing_pivots[side_index], "ForewingVenation")
+        _create_source_hindwing(source_wing_pivots[side_index], -1.0 if side_index == 0 else 1.0)
+        var spine_parts := _source_parts_with_prefix(source_raptorial_elbows[side_index], "tibial_spine")
+        _merge_source_meshes(spine_parts, source_raptorial_elbows[side_index], "TibialSpines")
+    _merge_source_prefix(source_body_motion, "cuticle_granule", "CuticleTextureDetail")
+    _create_source_triangular_head(source_head_pivot)
+    # The starter shell hangs too far below the feet; compress the segmented
+    # abdomen vertically around its hinge so it sits beneath the overlapping wings.
+    source_abdomen_pivot.scale = Vector3(1.0, 1.0, 0.55)
+    return true
+
+func _source_pivot(pivot_name: String, source_position: Vector3) -> Node3D:
+    var pivot := Node3D.new()
+    pivot.name = pivot_name
+    pivot.position = source_position
+    source_body_motion.add_child(pivot)
+    return pivot
+
+func _find_named_node(root: Node, target_name: String) -> Node3D:
+    if root is Node3D and String(root.name) == target_name:
+        return root as Node3D
+    for child in root.get_children():
+        var found := _find_named_node(child, target_name)
+        if found != null:
+            return found
+    return null
+
+func _collect_source_meshes(root: Node, result: Array[MeshInstance3D]) -> void:
+    for child in root.get_children():
+        if child is MeshInstance3D:
+            result.append(child as MeshInstance3D)
+        _collect_source_meshes(child, result)
+
+func _source_mesh_center(part: MeshInstance3D) -> Vector3:
+    if part.mesh == null:
+        return Vector3.ZERO
+    var source_transform := source_model_root.global_transform.affine_inverse() * part.global_transform
+    return source_transform * part.mesh.get_aabb().get_center()
+
+func _source_indexed_part(part_name: String, base_name: String) -> int:
+    if part_name == base_name:
+        return 0
+    var prefix := base_name + "_"
+    if not part_name.begins_with(prefix):
+        return -1
+    var suffix := part_name.substr(prefix.length())
+    if not suffix.is_valid_int():
+        return -1
+    return suffix.to_int()
+
+func _move_source_part(part: Node3D, target: Node3D) -> void:
+    if part.get_parent() == target:
+        return
+    var preserved := part.global_transform
+    var previous := part.get_parent()
+    if previous != null:
+        previous.remove_child(part)
+    target.add_child(part)
+    part.global_transform = preserved
+
+func _source_parts_with_prefix(root: Node, prefix: String) -> Array[MeshInstance3D]:
+    var found: Array[MeshInstance3D] = []
+    var all_parts: Array[MeshInstance3D] = []
+    _collect_source_meshes(root, all_parts)
+    for part in all_parts:
+        if String(part.name).begins_with(prefix):
+            found.append(part)
+    return found
+
+func _merge_source_prefix(root: Node, prefix: String, merged_name: String) -> void:
+    _merge_source_meshes(_source_parts_with_prefix(root, prefix), root as Node3D, merged_name)
+
+func _create_source_triangular_head(parent: Node3D) -> void:
+    var vertices := PackedVector3Array()
+    var normals := PackedVector3Array()
+    var uvs := PackedVector2Array()
+    var indices := PackedInt32Array()
+    var rings := 32
+    var around := 24
+    for ring in range(rings + 1):
+        var t := float(ring) / float(rings)
+        var fullness := pow(maxf(0.0, sin(PI * t)), 0.72)
+        var x := lerpf(0.02, 0.66, t)
+        var half_width := lerpf(0.20, 0.055, t) + 0.22 * fullness
+        var half_height := lerpf(0.15, 0.06, t) + 0.13 * fullness
+        var center_z := 0.025 + 0.012 * sin(PI * t)
+        for segment in range(around):
+            var angle := TAU * float(segment) / float(around)
+            var cosine := cos(angle)
+            var sine := sin(angle)
+            vertices.append(Vector3(x, half_width * cosine, center_z + half_height * sine))
+            normals.append(Vector3(0.10, cosine / maxf(half_width, 0.001), sine / maxf(half_height, 0.001)).normalized())
+            uvs.append(Vector2(t, float(segment) / float(around)))
+    for ring in range(rings):
+        for segment in range(around):
+            var next_segment := (segment + 1) % around
+            var a := ring * around + segment
+            var b := ring * around + next_segment
+            var c := (ring + 1) * around + next_segment
+            var d := (ring + 1) * around + segment
+            indices.append_array(PackedInt32Array([a, b, c, a, c, d]))
+    var arrays: Array = []
+    arrays.resize(Mesh.ARRAY_MAX)
+    arrays[Mesh.ARRAY_VERTEX] = vertices
+    arrays[Mesh.ARRAY_NORMAL] = normals
+    arrays[Mesh.ARRAY_TEX_UV] = uvs
+    arrays[Mesh.ARRAY_INDEX] = indices
+    var head := MeshInstance3D.new()
+    head.name = "TriangularMantisHead"
+    var mesh := ArrayMesh.new()
+    mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+    head.mesh = mesh
+    var cuticle := StandardMaterial3D.new()
+    cuticle.albedo_color = Color(0.50, 0.67, 0.28)
+    cuticle.roughness = 0.78
+    cuticle.specular = 0.18
+    head.material_override = cuticle
+    parent.add_child(head)
+
+func _merge_source_meshes(parts: Array[MeshInstance3D], target: Node3D, merged_name: String) -> void:
+    if parts.size() < 2:
+        return
+    var surface := SurfaceTool.new()
+    surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+    var target_inverse := target.global_transform.affine_inverse()
+    var source_material: Material = parts[0].get_active_material(0)
+    var appended := 0
+    for part in parts:
+        if not is_instance_valid(part) or part.mesh == null:
+            continue
+        var transform_to_target := target_inverse * part.global_transform
+        for surface_index in range(part.mesh.get_surface_count()):
+            surface.append_from(part.mesh, surface_index, transform_to_target)
+        part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        part.queue_free()
+        appended += 1
+    if appended < 2:
+        return
+    var combined := MeshInstance3D.new()
+    combined.name = merged_name
+    combined.mesh = surface.commit()
+    combined.material_override = source_material
+    combined.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    target.add_child(combined)
+
+func _soften_source_materials(root: Node) -> void:
+    var shared_materials: Dictionary = {}
+    var source_parts: Array[MeshInstance3D] = []
+    _collect_source_meshes(root, source_parts)
+    for part in source_parts:
+        if part.mesh == null:
+            continue
+        var is_fine_detail := String(part.name).begins_with("eye_ommatidia") or String(part.name).begins_with("antenna_") or String(part.name).begins_with("cuticle_granule") or String(part.name).begins_with("tibial_spine") or String(part.name).contains("_vein") or String(part.name).contains("_midrib")
+        if is_fine_detail:
+            part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        for surface_index in range(part.mesh.get_surface_count()):
+            var original := part.get_active_material(surface_index)
+            if not original is StandardMaterial3D:
+                continue
+            var base := original as StandardMaterial3D
+            var tint := base.albedo_color
+            var key := "%d_%d_%d_%d" % [int(round(tint.r * 31.0)), int(round(tint.g * 31.0)), int(round(tint.b * 31.0)), int(round(tint.a * 31.0))]
+            var softened: StandardMaterial3D
+            if shared_materials.has(key):
+                softened = shared_materials[key] as StandardMaterial3D
+            else:
+                softened = base.duplicate() as StandardMaterial3D
+                softened.roughness = maxf(softened.roughness, 0.76)
+                softened.metallic = 0.0
+                softened.specular = minf(softened.specular, 0.22)
+                softened.emission_enabled = false
+                shared_materials[key] = softened
+            if part.material_override != null:
+                part.material_override = softened
+            else:
+                part.set_surface_override_material(surface_index, softened)
+
+func _create_source_hindwing(parent: Node3D, side: float) -> void:
+    # Subtle translucent fans sit below the supplied forewings, so the two
+    # layers read separately without enlarging the silhouette unnaturally.
+    var vertices := PackedVector3Array()
+    var normals := PackedVector3Array()
+    var uvs := PackedVector2Array()
+    var indices := PackedInt32Array()
+    var rows := 28
+    var lanes := 4
+    for row in range(rows + 1):
+        var t := float(row) / float(rows)
+        var x := lerpf(-0.02, -1.28, t)
+        var fan := pow(maxf(0.0, sin(PI * t)), 0.72)
+        var width := 0.025 + 0.38 * fan
+        var z := -0.12 + 0.018 * sin(PI * t)
+        for lane in range(lanes + 1):
+            var across := float(lane) / float(lanes)
+            vertices.append(Vector3(x, side * (0.018 + width * across), z + 0.012 * sin(across * PI)))
+            normals.append(Vector3(0.0, 0.0, 1.0))
+            uvs.append(Vector2(t, across))
+    for row in range(rows):
+        for lane in range(lanes):
+            var a := row * (lanes + 1) + lane
+            var b := a + 1
+            var c := b + lanes + 1
+            var d := a + lanes + 1
+            if side < 0.0:
+                indices.append_array(PackedInt32Array([a, c, b, a, d, c]))
+            else:
+                indices.append_array(PackedInt32Array([a, b, c, a, c, d]))
+    var arrays: Array = []
+    arrays.resize(Mesh.ARRAY_MAX)
+    arrays[Mesh.ARRAY_VERTEX] = vertices
+    arrays[Mesh.ARRAY_NORMAL] = normals
+    arrays[Mesh.ARRAY_TEX_UV] = uvs
+    arrays[Mesh.ARRAY_INDEX] = indices
+    var wing := MeshInstance3D.new()
+    wing.name = "TranslucentHindwing"
+    var mesh := ArrayMesh.new()
+    mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+    wing.mesh = mesh
+    var membrane := StandardMaterial3D.new()
+    membrane.albedo_color = Color(0.53, 0.68, 0.32, 0.30)
+    membrane.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    membrane.roughness = 0.86
+    membrane.specular = 0.12
+    membrane.cull_mode = BaseMaterial3D.CULL_DISABLED
+    wing.material_override = membrane
+    wing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    parent.add_child(wing)
+    var vein_surface := SurfaceTool.new()
+    vein_surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+    for vein_index in range(7):
+        var t := 0.14 + float(vein_index) * 0.11
+        var end_x := lerpf(-0.20, -1.12, t)
+        var end_y := side * (0.03 + 0.34 * pow(maxf(0.0, sin(t * PI)), 0.72))
+        _append_vein_tube(vein_surface, Vector3(-0.04, side * 0.022, -0.105), Vector3(end_x, end_y, -0.095), 0.0020, 0.58)
+    var veins := MeshInstance3D.new()
+    veins.name = "HindwingVeins"
+    veins.mesh = vein_surface.commit()
+    var vein_material := StandardMaterial3D.new()
+    vein_material.albedo_color = Color(0.69, 0.76, 0.48, 0.38)
+    vein_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    vein_material.roughness = 0.82
+    vein_material.specular = 0.10
+    vein_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    veins.material_override = vein_material
+    veins.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    parent.add_child(veins)
 
 func _collect_procedural_meshes(root: Node) -> void:
     for child in root.get_children():
@@ -308,7 +655,7 @@ func _toggle_visual_model() -> void:
     use_rigged_visual = not use_rigged_visual
     _apply_visual_mode()
     if notice != null:
-        notice.text = "3D 모델: " + ("리깅 GLB" if use_rigged_visual and rigged_available else "절차적 모델")
+        notice.text = "3D 모델: " + ("정밀 모델" if use_rigged_visual and rigged_available else "절차적 모델")
 
 func _play_rigged_clip(clip: String) -> void:
     if rigged_player == null or not rigged_available:
@@ -338,8 +685,60 @@ func _update_rigged_visual(_dt: float) -> void:
     _play_rigged_clip(state)
     if rigged_pose_driver != null and rigged_ik_enabled:
         rigged_pose_driver.set_motion_targets(state, movement_blend, foot_anchors, foot_in_swing, animal, leg_pivots, head_pivot, strike_time, _dt)
+    _update_source_model_pose(state)
     # Growth is already applied to the shared animal root, so never apply
     # a second growth scale here.
+
+func _update_source_model_pose(state: String) -> void:
+    if source_body_motion == null:
+        return
+    var walking := state in ["WALK", "HUNT", "CLIMB"]
+    var gait_strength := movement_blend if walking else 0.0
+    source_body_motion.position.z = sin(walking_phase * 2.0) * 0.010 * gait_strength
+    source_body_motion.rotation.x = sin(walking_phase) * 0.018 * gait_strength + sin(elapsed * 0.72) * 0.008
+    source_body_motion.rotation.z = sin(walking_phase + 0.7) * 0.012 * gait_strength
+    if source_head_pivot != null:
+        source_head_pivot.rotation.y = sin(elapsed * 0.82) * 0.026 + sin(walking_phase + 0.4) * 0.025 * gait_strength
+        source_head_pivot.rotation.x = sin(elapsed * 0.64) * 0.018
+    if source_abdomen_pivot != null:
+        source_abdomen_pivot.rotation.y = sin(walking_phase + PI) * 0.035 * gait_strength + sin(elapsed * 0.58) * 0.012
+    for i in range(source_antenna_pivots.size()):
+        var antenna := source_antenna_pivots[i]
+        var side_phase := float(i) * PI
+        antenna.rotation.x = sin(elapsed * 2.6 + side_phase) * 0.055 + sin(walking_phase + side_phase) * 0.028 * gait_strength
+        antenna.rotation.z = cos(elapsed * 1.9 + side_phase) * 0.035
+    for i in range(source_walking_hips.size()):
+        var phase_offset := PI if i == 1 or i == 2 else 0.0
+        var phase := walking_phase + phase_offset
+        source_walking_hips[i].rotation.z = sin(phase) * 0.20 * gait_strength
+        source_walking_knees[i].rotation.y = -maxf(0.0, sin(phase)) * 0.27 * gait_strength
+    var strike := state == "STRIKE" or state == "HUNT" and strike_time > 0.0
+    for i in range(source_raptorial_shoulders.size()):
+        var side_phase := float(i) * PI
+        var shoulder_pose := sin(elapsed * 0.72 + side_phase) * 0.020
+        var elbow_pose := -0.025
+        if walking:
+            shoulder_pose += sin(walking_phase + side_phase) * 0.035 * gait_strength
+        if state == "ALERT" or state == "DEFEND":
+            shoulder_pose += 0.09
+            elbow_pose -= 0.08
+        elif state == "GROOM":
+            shoulder_pose += sin(animation_clock * 8.0 + side_phase) * 0.12
+            elbow_pose -= 0.18 + sin(animation_clock * 8.0 + side_phase) * 0.08
+        elif state == "FEED":
+            shoulder_pose -= 0.07
+            elbow_pose -= 0.09
+        elif strike:
+            var attack_clock := strike_time if animation_preview == "AUTO" else preview_strike_clock
+            var strike_blend := sin((1.0 - clampf(attack_clock / 0.65, 0.0, 1.0)) * PI)
+            shoulder_pose += 0.20 * strike_blend
+            elbow_pose -= 0.28 * strike_blend
+        source_raptorial_shoulders[i].rotation.y = shoulder_pose
+        source_raptorial_elbows[i].rotation.y = elbow_pose
+    for i in range(source_wing_pivots.size()):
+        var wing_phase := walking_phase + float(i) * PI
+        var flap := sin(wing_phase) * 0.045 * gait_strength + sin(elapsed * 0.7 + float(i)) * 0.006
+        source_wing_pivots[i].rotation.x = flap
 
 func _load_textures() -> void:
     body_texture = load("res://assets/textures/mantis_cuticle_albedo.png")
@@ -590,8 +989,8 @@ func _raycast_foot_height(point: Vector3) -> float:
     return -0.45
 
 func _create_mantis() -> void:
-    # Adult Hierodula-style mantis. This corrected procedural mesh is the
-    # Android default so the shipped app displays the same model as the source.
+    # Keep the species, green palette, growth scale and full procedural
+    # fallback while the supplied detailed GLB is the default visible model.
     animal = Node3D.new()
     animal.name = "Mantis_01"
     animal.position = Vector3(0, -0.38, 0)
