@@ -22,7 +22,9 @@ var status: Label
 var notice: Label
 var orbit_yaw := 0.0
 var orbit_pitch := 0.25
-var orbit_distance := 4.6
+var orbit_distance := 3.8
+const CAMERA_MIN_DISTANCE := 0.65
+const CAMERA_MAX_DISTANCE := 8.0
 var pointer_last := Vector2.ZERO
 var touching := false
 var touch_points: Dictionary = {}
@@ -103,7 +105,8 @@ var foot_anchors: Array[Vector3] = []
 var foot_in_swing: Array[bool] = []
 var foot_swing_origins: Array[Vector3] = []
 var foot_swing_progress: Array[float] = []
-var foot_toes: Array[MeshInstance3D] = []
+var foot_tarsi: Array = []
+var foot_claws: Array = []
 const FOOT_REPLANT_DISTANCE := 0.24
 const FOOT_SWING_DURATION := 0.23
 
@@ -113,12 +116,12 @@ const RIGGED_MANTIS_SCENE: PackedScene = preload("res://assets/models/mantis_rig
 var rigged_visual: Node3D
 var rigged_player: AnimationPlayer
 var rigged_clip := ""
-var use_rigged_visual := true
+var use_rigged_visual := false
 var rigged_available := false
 var rigged_clips: Dictionary = {}
 var procedural_meshes: Array[MeshInstance3D] = []
 var rigged_import_warnings: Array[String] = []
-var visual_model_scale := 1.0
+var visual_model_scale := 0.26
 # v2.5: runtime rig pose adaptation, applied after the GLB animation player.
 var rigged_pose_driver: RiggedPoseDriver
 var rigged_skeleton: Skeleton3D
@@ -166,7 +169,7 @@ func _ready() -> void:
     _create_climbable_branch()
     _create_mantis()
     _initialize_rigged_visual()
-    planted_foot_heights.resize(6)
+    planted_foot_heights.resize(4)
     planted_foot_heights.fill(-0.48)
     _initialize_foot_anchors()
     _create_ui()
@@ -182,6 +185,10 @@ func _ready() -> void:
     _refresh()
 
 func _initialize_rigged_visual() -> void:
+    # The runtime's corrected mint Hierodula model is procedural. Keep the
+    # older imported GLB out of the shipped view until it is regenerated.
+    if not use_rigged_visual:
+        return
     # Keep procedural geometry available if GLB import or clip discovery fails.
     procedural_meshes.clear()
     _collect_procedural_meshes(animal)
@@ -330,7 +337,7 @@ func _create_world() -> void:
     env.background_color = Color(0.065, 0.085, 0.08)
     env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
     env.ambient_light_color = Color(0.7, 0.8, 0.72)
-    env.ambient_light_energy = 0.6
+    env.ambient_light_energy = 0.82
     world.environment = env
     add_child(world)
     var sun := DirectionalLight3D.new()
@@ -342,19 +349,32 @@ func _create_world() -> void:
     _box(Vector3(3.2, 1.8, 0.06), Vector3(0, 0.14, -1.17), Color(0.19, 0.25, 0.21, 0.45), true)
     _box(Vector3(0.05, 1.8, 2.3), Vector3(-1.62, 0.14, 0), Color(0.5, 0.7, 0.7, 0.16), true)
     _box(Vector3(0.05, 1.8, 2.3), Vector3(1.62, 0.14, 0), Color(0.5, 0.7, 0.7, 0.16), true)
-    for i in range(9):
-        var x := -1.3 + float(i % 5) * 0.56
-        var z := -0.85 + float(i / 5) * 1.45
-        _branch(Vector3(x, -0.43, z), Vector3(x + 0.16, 0.12 + float(i % 3) * 0.13, z - 0.08), 0.025)
-    for i in range(12):
-        var p := Vector3(-1.25 + float(i % 6) * 0.48, -0.49, -0.7 + float(i / 6) * 1.3)
-        _ellipsoid(p, Vector3(0.11, 0.04, 0.16), Color(0.17 + 0.02 * (i % 3), 0.31, 0.12))
+    var branch_rng := RandomNumberGenerator.new()
+    branch_rng.seed = 9182026
+    var branch_clusters: Array[Vector2] = [Vector2(-1.22, -0.78), Vector2(-0.91, 0.66), Vector2(0.94, 0.79), Vector2(1.24, -0.47), Vector2(0.18, -0.96)]
+    for i in range(13):
+        var cluster: Vector2 = branch_clusters[branch_rng.randi_range(0, branch_clusters.size() - 1)]
+        var start := Vector3(cluster.x + branch_rng.randf_range(-0.20, 0.20), -0.48, cluster.y + branch_rng.randf_range(-0.20, 0.20))
+        var rise: float = branch_rng.randf_range(0.38, 0.88)
+        var end := Vector3(clampf(start.x + branch_rng.randf_range(-0.34, 0.34), -1.42, 1.42), start.y + rise, clampf(start.z + branch_rng.randf_range(-0.28, 0.28), -1.0, 1.0))
+        var branch_radius: float = branch_rng.randf_range(0.016, 0.031)
+        _branch(start, end, branch_radius)
+        if i % 2 == 0:
+            var fork_origin: Vector3 = start.lerp(end, branch_rng.randf_range(0.42, 0.72))
+            var fork_end := Vector3(clampf(fork_origin.x + branch_rng.randf_range(-0.32, 0.32), -1.45, 1.45), fork_origin.y + branch_rng.randf_range(0.15, 0.34), clampf(fork_origin.z + branch_rng.randf_range(-0.30, 0.30), -1.02, 1.02))
+            _branch(fork_origin, fork_end, branch_radius * 0.62)
+    for i in range(24):
+        var rock_cluster: Vector2 = branch_clusters[branch_rng.randi_range(0, branch_clusters.size() - 1)]
+        var p := Vector3(rock_cluster.x + branch_rng.randf_range(-0.34, 0.34), -0.49, rock_cluster.y + branch_rng.randf_range(-0.30, 0.30))
+        var pebble_size: Vector3 = Vector3(branch_rng.randf_range(0.035, 0.090), branch_rng.randf_range(0.015, 0.035), branch_rng.randf_range(0.035, 0.075))
+        var pebble_color: Color = Color(0.22, 0.23, 0.18).lerp(Color(0.34, 0.29, 0.20), branch_rng.randf())
+        _ellipsoid(p, pebble_size, pebble_color)
 
 func _create_climbable_branch() -> void:
     # A deliberately wide, reachable branch with matching visual and collision.
     # The original decorative twigs are too narrow for reliable foot placement.
-    _segment(self, climb_branch_start, climb_branch_end, 0.095, Color(0.29, 0.19, 0.11))
-    _walkable_wood(self, climb_branch_start, climb_branch_end, 0.095)
+    _segment(self, climb_branch_start, climb_branch_end, 0.045, Color(0.29, 0.19, 0.11))
+    _walkable_wood(self, climb_branch_start, climb_branch_end, 0.045)
 
 func _advance_climb(dt: float) -> void:
     if not climb_active:
@@ -444,170 +464,231 @@ func _raycast_foot_height(point: Vector3) -> float:
     return -0.45
 
 func _create_mantis() -> void:
-    # Procedural, anatomically inspired placeholder. Not a scanned/photorealistic asset.
+    # Adult Hierodula-style mantis. This corrected procedural mesh is the
+    # Android default so the shipped app displays the same model as the source.
     animal = Node3D.new()
     animal.name = "Mantis_01"
     animal.position = Vector3(0, -0.38, 0)
+    animal.scale = Vector3.ONE * (0.26 * (0.80 + growth * 0.30))
     add_child(animal)
-    var green := Color(0.28, 0.52, 0.18)
-    var dark_green := Color(0.19, 0.39, 0.12)
+    var mint := Color(0.46, 0.74, 0.61)
+    var mint_light := Color(0.61, 0.84, 0.70)
+    var mint_shadow := Color(0.24, 0.45, 0.36)
+    var eye_color := Color(0.035, 0.12, 0.095)
+
     abdomen = Node3D.new()
     abdomen.name = "AbdomenPivot"
     animal.add_child(abdomen)
-    _part(abdomen, Vector3(0, 0.18, 0.13), Vector3(0.105, 0.10, 0.35), green)
-    _part(abdomen, Vector3(0, 0.20, 0.13), Vector3(0.095, 0.05, 0.29), Color(0.38, 0.61, 0.20))
+    # Broad, clearly segmented abdomen with a tapered terminal end.
+    _part(abdomen, Vector3(0, 0.18, 0.14), Vector3(0.12, 0.082, 0.35), mint)
+    for band in range(8):
+        var t: float = float(band) / 7.0
+        var z: float = -0.12 + t * 0.56
+        var taper: float = 0.72 + 0.28 * sin((t * 0.82 + 0.09) * PI)
+        var segment_color: Color = mint_light if band % 2 == 0 else mint
+        _part(abdomen, Vector3(0, 0.185, z), Vector3(0.118 * taper, 0.073 * taper, 0.047), segment_color)
+        _segment(abdomen, Vector3(-0.105 * taper, 0.18, z + 0.029), Vector3(0.105 * taper, 0.18, z + 0.029), 0.0025, mint_shadow)
+        for side_index in range(2):
+            var side: float = -1.0 if side_index == 0 else 1.0
+            _part(abdomen, Vector3(side * 0.119 * taper, 0.175, z), Vector3(0.007, 0.006, 0.010), mint_shadow)
+    _part(abdomen, Vector3(0, 0.16, 0.48), Vector3(0.052, 0.038, 0.066), mint_shadow)
+    for side_index in range(2):
+        var side: float = -1.0 if side_index == 0 else 1.0
+        _segment(abdomen, Vector3(side * 0.024, 0.16, 0.515), Vector3(side * 0.050, 0.145, 0.60), 0.006, mint_shadow)
+        _create_mantis_wing(abdomen, side, false)
+        _create_mantis_wing(abdomen, side, true)
+
     thorax_pivot = Node3D.new()
     thorax_pivot.name = "ThoraxArticulation"
-    thorax_pivot.position = Vector3(0, 0.25, -0.35)
+    thorax_pivot.position = Vector3(0, 0.24, -0.34)
     animal.add_child(thorax_pivot)
-    _part(thorax_pivot, Vector3.ZERO, Vector3(0.060, 0.065, 0.31), dark_green)
+    # Long, narrow pronotum with a slightly widened rear shield.
+    _part(thorax_pivot, Vector3(0, 0.012, 0.015), Vector3(0.052, 0.045, 0.33), mint)
+    _part(thorax_pivot, Vector3(0, -0.003, 0.12), Vector3(0.067, 0.047, 0.11), mint_light)
+    _segment(thorax_pivot, Vector3(0, 0.058, 0.15), Vector3(0, 0.058, -0.27), 0.006, mint_light)
+
     head_pivot = Node3D.new()
     head_pivot.name = "HeadPivot"
-    head_pivot.position = Vector3(0, 0.29, -0.67)
+    head_pivot.position = Vector3(0, 0.29, -0.64)
     animal.add_child(head_pivot)
-    _part(head_pivot, Vector3.ZERO, Vector3(0.16, 0.10, 0.105), green)
-    # Anatomical silhouette details: triangular clypeus and articulated thorax plates.
-    _part(head_pivot, Vector3(0, -0.055, -0.06), Vector3(0.068, 0.030, 0.060), dark_green)
-    for plate in range(4):
-        _part(thorax_pivot, Vector3(0, 0.03, -0.16 + float(plate) * 0.10), Vector3(0.066, 0.014, 0.030), green.darkened(float(plate) * 0.055))
-    # Stylized procedural microdetails; a high-resolution scanned asset is
-    # still needed to achieve genuinely photorealistic insect anatomy.
-    for band in range(6):
-        var z_band := -0.01 + float(band) * 0.052
-        _part(abdomen, Vector3(0, 0.183, z_band), Vector3(0.107, 0.012, 0.007), Color(0.16, 0.33, 0.10))
-    for side in [-1.0, 1.0]:
-        _part(head_pivot, Vector3(side * 0.115, 0.03, -0.055), Vector3(0.052, 0.060, 0.051), Color(0.035, 0.075, 0.045))
-        # Faceted glints suggest compound-eye texture at close camera range.
-        for facet in range(8):
-            var phi := float(facet) * TAU / 8.0
-            _part(head_pivot, Vector3(side * (0.140 + 0.006 * cos(phi)), 0.03 + 0.035 * sin(phi), -0.055 + 0.033 * cos(phi)), Vector3(0.004, 0.004, 0.004), Color(0.12, 0.20, 0.11))
-        for i in range(3):
-            var z := 0.12 - float(i) * 0.21
+    _part(head_pivot, Vector3(0, 0.012, -0.012), Vector3(0.15, 0.11, 0.12), mint_light)
+    _part(head_pivot, Vector3(0, -0.045, -0.087), Vector3(0.084, 0.054, 0.036), mint)
+    _part(head_pivot, Vector3(0, -0.078, -0.097), Vector3(0.036, 0.019, 0.025), mint_shadow)
+    # Three small ocelli sit between the compound eyes, above the clypeus.
+    _part(head_pivot, Vector3(0, 0.092, -0.077), Vector3(0.009, 0.008, 0.008), mint_shadow)
+    for ocellus_side in [-1.0, 1.0]:
+        _part(head_pivot, Vector3(ocellus_side * 0.027, 0.085, -0.073), Vector3(0.008, 0.007, 0.008), mint_shadow)
+    # Short paired palps frame the chewing mouthparts.
+    for palp_side in [-1.0, 1.0]:
+        _segment(head_pivot, Vector3(palp_side * 0.035, -0.060, -0.105), Vector3(palp_side * 0.050, -0.104, -0.132), 0.0035, mint_shadow)
+
+    # Prominent lateral compound eyes, small visible facets, and fine antennae.
+    for side_index in range(2):
+        var side: float = -1.0 if side_index == 0 else 1.0
+        _part(head_pivot, Vector3(side * 0.118, 0.02, -0.024), Vector3(0.072, 0.078, 0.072), eye_color)
+        for facet in range(14):
+            var row: int = int(facet / 4)
+            var column: int = facet % 4
+            var facet_y: float = -0.027 + float(row) * 0.018
+            var facet_z: float = -0.039 + float(column) * 0.026
+            var surface_factor: float = sqrt(maxf(0.05, 1.0 - pow(facet_y / 0.078, 2.0) - pow(facet_z / 0.072, 2.0)))
+            var facet_x: float = 0.118 + 0.072 * surface_factor + 0.003
+            _part(head_pivot, Vector3(side * facet_x, 0.02 + facet_y, -0.024 + facet_z), Vector3(0.0065, 0.007, 0.007), Color(0.18, 0.40, 0.31))
+        var feeler := Node3D.new()
+        feeler.name = "Antenna_%d" % int(side)
+        feeler.position = Vector3(side * 0.045, 0.075, -0.085)
+        head_pivot.add_child(feeler)
+        var antenna_start := Vector3.ZERO
+        for segment_index in range(12):
+            var t: float = float(segment_index + 1) / 12.0
+            var antenna_end := Vector3(side * (0.018 + 0.105 * t + 0.035 * sin(t * PI)), 0.022 * sin(t * PI * 1.3), -0.78 * t)
+            _segment(feeler, antenna_start, antenna_end, 0.0035 * (1.0 - 0.55 * t), mint_shadow)
+            antenna_start = antenna_end
+        antennae.append(feeler)
+
+        # Two walking pairs (four legs), plus one specialized capture pair below.
+        for i in range(2):
+            var leg_z: float = -0.08 if i == 0 else 0.20
             var joint := Node3D.new()
             joint.name = "WalkingLeg_%d_%d" % [int(side), i]
-            joint.position = Vector3(side * 0.08, 0.16, z)
+            joint.position = Vector3(side * 0.052, 0.19, leg_z)
             animal.add_child(joint)
-            var upper := _make_gait_bone(joint, 0.014, green)
-            var lower := _make_gait_bone(joint, 0.010, dark_green)
+            _segment(joint, Vector3.ZERO, Vector3(side * 0.075, -0.005, 0.025), 0.014, mint_shadow)
+            var upper := _make_gait_bone(joint, 0.018, mint_light)
+            var lower := _make_gait_bone(joint, 0.010, mint_shadow)
             leg_pivots.append(joint)
             gait_segments.append([upper, lower])
-            gait_feet.append(Vector3(side * 0.33, -0.48, 0.09))
-            step_targets.append(Vector3(side * 0.33, -0.48, 0.09))
-            var toe := _make_gait_bone(joint, 0.006, dark_green)
-            toe.name = "Tarsus_%d_%d" % [int(side), i]
-            foot_toes.append(toe)
+            var leg_foot := Vector3(side * 0.32, -0.47, leg_z + (0.19 if i == 0 else 0.22))
+            gait_feet.append(leg_foot)
+            step_targets.append(leg_foot)
+            var tarsomeres: Array[MeshInstance3D] = []
+            for tarsomere_index in range(5):
+                var tarsomere := _make_gait_bone(joint, 0.0052 - float(tarsomere_index) * 0.00045, mint_shadow)
+                tarsomere.name = "Tarsomere_%d_%d_%d" % [int(side), i, tarsomere_index]
+                tarsomeres.append(tarsomere)
+            foot_tarsi.append(tarsomeres)
+            var claws: Array[MeshInstance3D] = []
+            for claw_index in range(2):
+                var tarsal_claw := _make_gait_bone(joint, 0.0028, mint_light)
+                tarsal_claw.name = "TarsalClaw_%d_%d_%d" % [int(side), i, claw_index]
+                claws.append(tarsal_claw)
+            foot_claws.append(claws)
+
+        # Enlarged femur folds against a spined tibia to form a clear V-shaped
+        # raptorial foreleg. It is visibly separate from the four walking legs.
         var foreleg := Node3D.new()
         foreleg.name = "RaptorialForeleg_%d" % int(side)
-        foreleg.position = Vector3(side * 0.055, 0.27, -0.51)
+        foreleg.position = Vector3(side * 0.055, 0.255, -0.39)
         animal.add_child(foreleg)
-        # Shoulder, elbow and tibial claw are independent joints, not one rigid limb.
+        var coxa_end := Vector3(side * 0.075, 0.015, -0.035)
+        var femur_end := Vector3(side * 0.19, 0.015, -0.16)
+        _ellipsoid_limb(foreleg, Vector3.ZERO, coxa_end, 0.018, mint_shadow)
         var elbow := Node3D.new()
         elbow.name = "ForelegElbow_%d" % int(side)
-        elbow.position = Vector3(side * 0.19, 0.15, -0.11)
+        elbow.position = femur_end
         foreleg.add_child(elbow)
-        _segment(foreleg, Vector3.ZERO, elbow.position, 0.025, green)
+        _ellipsoid_limb(foreleg, coxa_end, femur_end, 0.043, mint_light)
+        for spine_index in range(9):
+            var t: float = 0.10 + float(spine_index) * 0.095
+            var base: Vector3 = coxa_end.lerp(femur_end, t)
+            var spine_tip: Vector3 = base + Vector3(-side * 0.048, 0.004, -0.014)
+            _segment(foreleg, base, spine_tip, 0.005, mint_shadow)
         var claw := Node3D.new()
         claw.name = "ForelegTibia_%d" % int(side)
-        claw.position = Vector3(0, -0.21, -0.16)
         elbow.add_child(claw)
-        _segment(elbow, Vector3.ZERO, claw.position, 0.030, dark_green)
-        _segment(claw, Vector3.ZERO, Vector3(0, -0.12, -0.08), 0.012, green)
-        for j in range(5):
-            var t := float(j) / 5.0
-            _segment(elbow, Vector3(0, -0.19 + t * 0.17, -0.16 + t * 0.13), Vector3(side * 0.025, -0.22 + t * 0.17, -0.18 + t * 0.13), 0.006, Color(0.47, 0.55, 0.20))
+        var tibia_end := Vector3(-side * 0.15, -0.14, 0.065)
+        _ellipsoid_limb(claw, Vector3.ZERO, tibia_end, 0.022, mint)
+        for spine_index in range(7):
+            var t: float = 0.12 + float(spine_index) * 0.115
+            var base: Vector3 = tibia_end * t
+            _segment(claw, base, base + Vector3(side * 0.033, 0.006, -0.012), 0.0045, mint_shadow)
+        _ellipsoid_limb(claw, tibia_end, tibia_end + Vector3(-side * 0.055, -0.008, 0.032), 0.008, mint_shadow)
         forelegs.append(foreleg)
         foreleg_elbows.append(elbow)
         foreleg_claws.append(claw)
-        var feeler := Node3D.new()
-        feeler.name = "Antenna_%d" % int(side)
-        feeler.position = Vector3(side * 0.06, 0.055, -0.08)
-        head_pivot.add_child(feeler)
-        _segment(feeler, Vector3.ZERO, Vector3(side * 0.11, 0.19, -0.32), 0.004, Color(0.38, 0.37, 0.17))
-        antennae.append(feeler)
 
+func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
+    var segments := 12
+    var start_z: float = 0.005 if hindwing else -0.10
+    var end_z: float = 0.46 if hindwing else 0.52
+    var y: float = 0.255 if hindwing else 0.272
+    var max_width: float = 0.125 if hindwing else 0.095
+    var vertices := PackedVector3Array()
+    var normals := PackedVector3Array()
+    var uvs := PackedVector2Array()
+    for i in range(segments):
+        var t0: float = float(i) / float(segments)
+        var t1: float = float(i + 1) / float(segments)
+        var z0: float = lerpf(start_z, end_z, t0)
+        var z1: float = lerpf(start_z, end_z, t1)
+        var w0: float = 0.012 + sin((t0 * 0.90 + 0.05) * PI) * max_width
+        var w1: float = 0.012 + sin((t1 * 0.90 + 0.05) * PI) * max_width
+        var inner0 := Vector3(side * 0.035, y, z0)
+        var outer0 := Vector3(side * (0.035 + w0), y, z0)
+        var inner1 := Vector3(side * 0.035, y, z1)
+        var outer1 := Vector3(side * (0.035 + w1), y, z1)
+        vertices.append(inner0)
+        vertices.append(outer0)
+        vertices.append(outer1)
+        vertices.append(inner0)
+        vertices.append(outer1)
+        vertices.append(inner1)
+        for vertex_index in range(6):
+            normals.append(Vector3.UP)
+        uvs.append(Vector2(0, t0))
+        uvs.append(Vector2(1, t0))
+        uvs.append(Vector2(1, t1))
+        uvs.append(Vector2(0, t0))
+        uvs.append(Vector2(1, t1))
+        uvs.append(Vector2(0, t1))
+    var arrays: Array = []
+    arrays.resize(Mesh.ARRAY_MAX)
+    arrays[Mesh.ARRAY_VERTEX] = vertices
+    arrays[Mesh.ARRAY_NORMAL] = normals
+    arrays[Mesh.ARRAY_TEX_UV] = uvs
+    var wing_mesh := ArrayMesh.new()
+    wing_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+    var wing_instance := MeshInstance3D.new()
+    wing_instance.name = ("Hindwing" if hindwing else "Forewing") + ("_L" if side < 0.0 else "_R")
+    wing_instance.mesh = wing_mesh
+    var wing_color: Color = Color(0.77, 0.94, 0.82, 0.52) if hindwing else Color(0.62, 0.86, 0.72)
+    var wing_material := _material(wing_color)
+    wing_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    if hindwing:
+        wing_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+        wing_material.roughness = 0.44
+    else:
+        wing_material.roughness = 0.56
+    wing_instance.material_override = wing_material
+    parent.add_child(wing_instance)
+    var vein_color: Color = Color(0.31, 0.57, 0.45) if hindwing else Color(0.37, 0.65, 0.51)
+    _segment(parent, Vector3(side * 0.04, y + 0.006, start_z + 0.025), Vector3(side * 0.065, y + 0.006, end_z - 0.015), 0.0025, vein_color)
+    for vein_index in range(6):
+        var t: float = 0.12 + float(vein_index) * 0.145
+        var z: float = lerpf(start_z + 0.02, end_z - 0.02, t)
+        var width: float = 0.012 + sin((t * 0.90 + 0.05) * PI) * max_width
+        _segment(parent, Vector3(side * 0.042, y + 0.007, z), Vector3(side * (0.035 + width), y + 0.007, z + 0.028), 0.0017, vein_color)
+    if not hindwing:
+        # A small stigma on each forewing helps define the adult Hierodula shape.
+        _part(parent, Vector3(side * 0.106, y + 0.008, 0.025), Vector3(0.012, 0.003, 0.028), Color(0.79, 0.88, 0.61))
 
-    # Independent abdominal sternite ridges, narrow tapered terminal segment,
-    # and a small pronotal collar help the placeholder read as an insect.
-    for ring in range(5):
-        var z_ring := 0.045 + float(ring) * 0.056
-        var taper := 1.0 - float(ring) * 0.085
-        _part(abdomen, Vector3(0, 0.127, z_ring), Vector3(0.086 * taper, 0.009, 0.012), dark_green)
-    _part(abdomen, Vector3(0, 0.17, 0.325), Vector3(0.05, 0.047, 0.065), dark_green)
-    _part(thorax_pivot, Vector3(0, 0.035, -0.13), Vector3(0.079, 0.022, 0.065), green)
-    _enhance_mantis_model()
+func _ellipsoid_limb(parent: Node3D, a: Vector3, b: Vector3, radius: float, tint: Color) -> void:
+    var delta := b - a
+    var length: float = delta.length()
+    if length < 0.0001:
+        return
+    var item := MeshInstance3D.new()
+    var mesh := SphereMesh.new()
+    mesh.radial_segments = 20
+    mesh.rings = 10
+    item.mesh = mesh
+    item.position = (a + b) * 0.5
+    item.quaternion = Quaternion(Vector3.BACK, delta.normalized())
+    item.scale = Vector3(radius, radius, length * 0.64)
+    item.material_override = _material(tint)
+    parent.add_child(item)
 
-# Maps are generated from the source color textures; they are an affordable
-# material-detail approximation, not measured photogrammetric PBR data.
-
-# Twenty lightweight, named anatomical modeling passes. These meshes are
-# stylized procedural geometry, not a scanned specimen or skinned GLB rig.
-func _enhance_mantis_model() -> void:
-    var olive := Color(0.24, 0.43, 0.15)
-    var pale := Color(0.53, 0.66, 0.29)
-    var dark := Color(0.13, 0.25, 0.10)
-    var wing := Color(0.34, 0.55, 0.22, 0.93)
-    # 01 Pronotum dorsal keel
-    _segment(thorax_pivot, Vector3(0, 0.067, 0.13), Vector3(0, 0.069, -0.25), 0.008, pale)
-    # 02 Pronotum left and right lateral ridges
-    for side in [-1.0, 1.0]:
-        _segment(thorax_pivot, Vector3(side * 0.051, 0.022, 0.10), Vector3(side * 0.047, 0.023, -0.25), 0.007, olive)
-    # 03 Pronotum anterior collar
-    _part(thorax_pivot, Vector3(0, 0.018, -0.285), Vector3(0.073, 0.038, 0.024), pale)
-    # 04 Cervical neck connector, parented to head
-    _part(head_pivot, Vector3(0, -0.015, 0.091), Vector3(0.049, 0.038, 0.055), dark)
-    # 05 Triangular frontal shield
-    _part(head_pivot, Vector3(0, 0.015, -0.098), Vector3(0.075, 0.052, 0.024), olive)
-    # 06 Median simple eye (ocellus)
-    _part(head_pivot, Vector3(0, 0.075, -0.082), Vector3(0.013, 0.011, 0.011), dark)
-    # 07 Paired lateral ocelli
-    for side in [-1.0, 1.0]:
-        _part(head_pivot, Vector3(side * 0.032, 0.072, -0.080), Vector3(0.010, 0.009, 0.010), dark)
-    # 08 Clypeal transverse suture
-    _segment(head_pivot, Vector3(-0.051, -0.043, -0.105), Vector3(0.051, -0.043, -0.105), 0.004, pale)
-    # 09 Labrum upper mouth flap
-    _part(head_pivot, Vector3(0, -0.086, -0.092), Vector3(0.035, 0.016, 0.025), olive)
-    # 10 Paired mandible lobes
-    for side in [-1.0, 1.0]:
-        _part(head_pivot, Vector3(side * 0.027, -0.090, -0.081), Vector3(0.016, 0.025, 0.021), dark)
-    # 11 Paired maxillary palps
-    for side in [-1.0, 1.0]:
-        _segment(head_pivot, Vector3(side * 0.043, -0.078, -0.08), Vector3(side * 0.060, -0.11, -0.12), 0.004, pale)
-    # 12 Antennal basal sockets
-    for side in [-1.0, 1.0]:
-        _part(head_pivot, Vector3(side * 0.06, 0.055, -0.08), Vector3(0.017, 0.014, 0.016), dark)
-    # 13 Antennal terminal tips; attached to existing animated feelers
-    for i in range(antennae.size()):
-        var side := -1.0 if i == 0 else 1.0
-        _part(antennae[i], Vector3(side * 0.11, 0.19, -0.32), Vector3(0.006, 0.008, 0.012), pale)
-    # 14 Dorsal tegmina: stylized wing cases, attached to abdomen
-    for side in [-1.0, 1.0]:
-        _part(abdomen, Vector3(side * 0.052, 0.248, 0.145), Vector3(0.044, 0.012, 0.207), wing)
-    # 15 Longitudinal wing veins
-    for side in [-1.0, 1.0]:
-        _segment(abdomen, Vector3(side * 0.051, 0.261, -0.052), Vector3(side * 0.051, 0.261, 0.335), 0.0035, pale)
-    # 16 Oblique wing cross-veins
-    for side in [-1.0, 1.0]:
-        for j in range(4):
-            var z := -0.015 + float(j) * 0.085
-            _segment(abdomen, Vector3(side * 0.025, 0.261, z), Vector3(side * 0.081, 0.258, z + 0.043), 0.0025, olive)
-    # 17 Abdominal lateral spiracles
-    for side in [-1.0, 1.0]:
-        for j in range(5):
-            _part(abdomen, Vector3(side * 0.100, 0.160, 0.005 + float(j) * 0.061), Vector3(0.006, 0.008, 0.012), dark)
-    # 18 Lateral abdominal pleural plates
-    for side in [-1.0, 1.0]:
-        for j in range(4):
-            _part(abdomen, Vector3(side * 0.087, 0.164, 0.037 + float(j) * 0.075), Vector3(0.009, 0.027, 0.026), olive)
-    # 19 Paired terminal cerci
-    for side in [-1.0, 1.0]:
-        _segment(abdomen, Vector3(side * 0.024, 0.160, 0.340), Vector3(side * 0.053, 0.147, 0.425), 0.006, dark)
-    # 20 Raptorial femur gripping spines; these follow elbow animation
-    for i in range(foreleg_elbows.size()):
-        var side := -1.0 if i == 0 else 1.0
-        for j in range(7):
-            var t := float(j) / 7.0
-            var origin := Vector3(0, -0.025 - t * 0.16, -0.026 - t * 0.12)
-            _segment(foreleg_elbows[i], origin, origin + Vector3(side * 0.028, -0.013, -0.012), 0.0035, pale)
+# Surface maps add cuticle detail without overriding the selected mint color.
 
 func _apply_pbr(mat: StandardMaterial3D, kind: String) -> void:
     if pbr_normal.has(kind):
@@ -638,8 +719,9 @@ func _part(parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> void:
         mat.albedo_color = Color.WHITE
         _apply_pbr(mat, "mantis_eye")
     elif body_texture != null and color.g > color.r * 1.15:
-        mat.albedo_texture = body_texture
-        mat.albedo_color = Color(0.85, 1.0, 0.83)
+        # Keep the requested mint pigment; use the existing maps only for
+        # surface response so the old olive albedo cannot recolor the model.
+        mat.albedo_color = color
         _apply_pbr(mat, "mantis_cuticle")
     item.material_override = mat
     parent.add_child(item)
@@ -744,7 +826,6 @@ func _create_ui() -> void:
     animation_label = Label.new()
     animation_label.text = "애니메이션: AUTO"
     column.add_child(animation_label)
-    _button(column, "3D 모델 전환 (GLB / 기본)", func(): _toggle_visual_model())
     _button(column, "자동 행동 애니메이션", func(): _set_animation_preview("AUTO"))
     for clip in ANIMATIONS:
         var selected_clip: String = clip
@@ -767,8 +848,37 @@ func _create_ui() -> void:
     edit_hint.text = "관찰 모드"
     column.add_child(edit_hint)
     notice = Label.new()
-    notice.text = "드래그: 회전 | 휠·두 손가락: 확대"
+    notice.text = "드래그: 회전 | 두 손가락 또는 오른쪽 +/-: 확대"
     column.add_child(notice)
+
+    var zoom_controls := VBoxContainer.new()
+    zoom_controls.anchor_left = 1.0
+    zoom_controls.anchor_top = 0.5
+    zoom_controls.anchor_right = 1.0
+    zoom_controls.anchor_bottom = 0.5
+    zoom_controls.offset_left = -84.0
+    zoom_controls.offset_top = -102.0
+    zoom_controls.offset_right = -14.0
+    zoom_controls.offset_bottom = 102.0
+    zoom_controls.add_theme_constant_override("separation", 8)
+    root_ui.add_child(zoom_controls)
+    var zoom_in := Button.new()
+    zoom_in.text = "+"
+    zoom_in.custom_minimum_size = Vector2(68, 58)
+    zoom_in.add_theme_font_size_override("font_size", 30)
+    zoom_in.pressed.connect(func(): _set_camera_zoom(-0.42))
+    zoom_controls.add_child(zoom_in)
+    var zoom_out := Button.new()
+    zoom_out.text = "−"
+    zoom_out.custom_minimum_size = Vector2(68, 58)
+    zoom_out.add_theme_font_size_override("font_size", 30)
+    zoom_out.pressed.connect(func(): _set_camera_zoom(0.42))
+    zoom_controls.add_child(zoom_out)
+    var zoom_reset := Button.new()
+    zoom_reset.text = "맞춤"
+    zoom_reset.custom_minimum_size = Vector2(68, 42)
+    zoom_reset.pressed.connect(func(): orbit_distance = 3.8; _update_camera())
+    zoom_controls.add_child(zoom_reset)
 
 func _resize_ui() -> void:
     if ui_panel == null:
@@ -788,13 +898,13 @@ func _leaf_mesh() -> ArrayMesh:
     var uv := PackedVector2Array()
     var outline := [
         Vector3(0.0, 0.0, 0.0),
-        Vector3(-0.105, 0.014, 0.105),
-        Vector3(-0.115, 0.009, 0.19),
-        Vector3(-0.068, 0.004, 0.285),
-        Vector3(0.0, 0.0, 0.39),
-        Vector3(0.068, 0.004, 0.285),
-        Vector3(0.115, 0.009, 0.19),
-        Vector3(0.105, 0.014, 0.105)
+        Vector3(-0.082, 0.012, 0.095),
+        Vector3(-0.118, 0.008, 0.18),
+        Vector3(-0.072, 0.005, 0.285),
+        Vector3(0.0, 0.0, 0.43),
+        Vector3(0.071, 0.006, 0.29),
+        Vector3(0.109, 0.010, 0.19),
+        Vector3(0.083, 0.014, 0.095)
     ]
     var middle := Vector3(0, 0.034, 0.19)
     for i in range(outline.size()):
@@ -824,42 +934,54 @@ func _create_animated_ecosystem() -> void:
     rng.seed = 17012026
     var leaf_mesh := _leaf_mesh()
     var leaf_materials: Array[StandardMaterial3D] = []
-    for tint in [Color(0.20, 0.42, 0.14), Color(0.34, 0.50, 0.18), Color(0.45, 0.32, 0.13)]:
+    for tint in [Color(0.12, 0.29, 0.16), Color(0.18, 0.40, 0.22), Color(0.29, 0.48, 0.25), Color(0.39, 0.46, 0.20), Color(0.43, 0.34, 0.16)]:
         var mat := _material(tint)
         mat.cull_mode = BaseMaterial3D.CULL_DISABLED
         mat.vertex_color_use_as_albedo = true
         mat.roughness = 0.86
         leaf_materials.append(mat)
-    var stem_material := _material(Color(0.21, 0.31, 0.12))
-    # 24 small plants, each with a flexible stem and 2-4 animated leaves.
+    var stem_material := _material(Color(0.24, 0.31, 0.15))
+    var plant_clusters: Array[Vector2] = [Vector2(-1.21, -0.82), Vector2(-1.34, 0.18), Vector2(-0.79, 0.77), Vector2(1.27, 0.59), Vector2(0.88, -0.91)]
+    # Cluster plants along the enclosure edges and leave an irregular open
+    # hunting lane through the middle instead of scattering them uniformly.
     for i in range(24):
         var plant := Node3D.new()
         plant.name = "Plant_%02d" % i
-        plant.position = Vector3(rng.randf_range(-1.40, 1.40), -0.53, rng.randf_range(-0.97, 0.97))
+        var plant_cluster: Vector2 = plant_clusters[rng.randi_range(0, plant_clusters.size() - 1)]
+        var plant_angle: float = rng.randf_range(0.0, TAU)
+        var plant_radius: float = rng.randf_range(0.04, 0.38)
+        plant.position = Vector3(plant_cluster.x + cos(plant_angle) * plant_radius, -0.53, plant_cluster.y + sin(plant_angle) * plant_radius)
+        plant.position.x = clampf(plant.position.x, -1.43, 1.43)
+        plant.position.z = clampf(plant.position.z, -1.0, 1.0)
+        plant.rotation.y = rng.randf_range(-PI, PI)
         habitat_motion_root.add_child(plant)
-        var height := rng.randf_range(0.14, 0.37)
+        var height: float = rng.randf_range(0.20, 0.46)
         var stem := MeshInstance3D.new()
         var stem_mesh := CylinderMesh.new()
-        stem_mesh.top_radius = 0.005
-        stem_mesh.bottom_radius = 0.013
+        stem_mesh.top_radius = 0.006
+        stem_mesh.bottom_radius = 0.012
         stem_mesh.height = height
-        stem_mesh.radial_segments = 5
+        stem_mesh.radial_segments = 7
         stem.mesh = stem_mesh
         stem.material_override = stem_material
         stem.position.y = height * 0.5
         plant.add_child(stem)
-        var leaf_count := rng.randi_range(2, 4)
+        if i % 3 == 0:
+            var fork_side: float = -1.0 if i % 2 == 0 else 1.0
+            _segment(plant, Vector3(0, height * 0.30, 0), Vector3(fork_side * 0.085, height * 0.74, 0.018), 0.005, Color(0.22, 0.32, 0.15))
+        var leaf_count: int = rng.randi_range(3, 5)
         for j in range(leaf_count):
             var leaf_joint := Node3D.new()
             leaf_joint.position.y = height * (0.5 + 0.45 * float(j) / float(leaf_count))
-            leaf_joint.rotation.y = float(j) * TAU / float(leaf_count) + rng.randf_range(-0.3, 0.3)
+            leaf_joint.rotation.y = float(j) * TAU / float(leaf_count) + rng.randf_range(-0.65, 0.65)
+            leaf_joint.rotation.z = rng.randf_range(-0.22, 0.22)
             plant.add_child(leaf_joint)
             var leaf := MeshInstance3D.new()
             leaf.mesh = leaf_mesh
             leaf.material_override = leaf_materials[(i + j) % leaf_materials.size()]
-            leaf.scale = Vector3.ONE * rng.randf_range(0.45, 0.85)
-            leaf.rotation.x = -0.22 - 0.07 * float(j % 2)
-            leaf.rotation.z = rng.randf_range(-0.16, 0.16)
+            leaf.scale = Vector3(rng.randf_range(0.65, 1.20), rng.randf_range(0.85, 1.15), rng.randf_range(0.72, 1.30))
+            leaf.rotation.x = rng.randf_range(-0.36, -0.12)
+            leaf.rotation.z = rng.randf_range(-0.22, 0.22)
             leaf_joint.add_child(leaf)
             plant_pivots.append(leaf_joint)
             plant_phases.append(rng.randf_range(0.0, TAU))
@@ -969,26 +1091,42 @@ func _create_habitat_details() -> void:
     add_child(root)
     var rng := RandomNumberGenerator.new()
     rng.seed = 240619
-    var stone_mat := _material(Color(0.25, 0.23, 0.18))
+    var stone_mat := _material(Color(0.25, 0.25, 0.21))
     stone_mat.albedo_texture = stone_texture
     _apply_pbr(stone_mat, "stone")
-    var leaf_mat := _material(Color(0.28, 0.22, 0.10))
-    leaf_mat.albedo_texture = substrate_texture
-    _apply_pbr(leaf_mat, "substrate")
+    var litter_materials: Array[StandardMaterial3D] = []
+    for tint in [Color(0.25, 0.22, 0.13), Color(0.34, 0.29, 0.16), Color(0.18, 0.25, 0.16), Color(0.40, 0.31, 0.18)]:
+        var litter_material := _material(tint)
+        litter_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+        litter_material.vertex_color_use_as_albedo = true
+        litter_materials.append(litter_material)
     var stone_mesh := SphereMesh.new()
     stone_mesh.radial_segments = 8
     stone_mesh.rings = 4
-    var leaf_mesh := SphereMesh.new()
-    leaf_mesh.radial_segments = 6
-    leaf_mesh.rings = 3
-    for i in range(85):
+    var leaf_mesh := _leaf_mesh()
+    var litter_clusters: Array[Vector2] = [Vector2(-1.21, -0.82), Vector2(-1.34, 0.18), Vector2(-0.79, 0.77), Vector2(1.27, 0.59), Vector2(0.88, -0.91)]
+    for i in range(76):
         var item := MeshInstance3D.new()
-        item.mesh = stone_mesh if i % 4 == 0 else leaf_mesh
-        item.material_override = stone_mat if i % 4 == 0 else leaf_mat
-        item.position = Vector3(rng.randf_range(-1.48, 1.48), -0.535, rng.randf_range(-1.02, 1.02))
-        item.scale = Vector3(0.025, 0.009, 0.033) if i % 4 == 0 else Vector3(0.052, 0.006, 0.023)
+        var litter_cluster: Vector2 = litter_clusters[rng.randi_range(0, litter_clusters.size() - 1)]
+        var litter_angle: float = rng.randf_range(0.0, TAU)
+        var litter_radius: float = rng.randf_range(0.04, 0.47)
+        item.position = Vector3(litter_cluster.x + cos(litter_angle) * litter_radius, -0.535, litter_cluster.y + sin(litter_angle) * litter_radius)
         item.rotation.y = rng.randf_range(-PI, PI)
+        if i % 5 == 0:
+            item.mesh = stone_mesh
+            item.material_override = stone_mat
+            item.scale = Vector3(rng.randf_range(0.025, 0.060), rng.randf_range(0.009, 0.018), rng.randf_range(0.025, 0.065))
+        else:
+            item.mesh = leaf_mesh
+            item.material_override = litter_materials[i % litter_materials.size()]
+            item.scale = Vector3(rng.randf_range(0.42, 0.95), 0.35, rng.randf_range(0.48, 1.05))
         root.add_child(item)
+    for i in range(10):
+        var twig_cluster: Vector2 = litter_clusters[rng.randi_range(0, litter_clusters.size() - 1)]
+        var twig_angle: float = rng.randf_range(0.0, TAU)
+        var twig_start := Vector3(twig_cluster.x + rng.randf_range(-0.28, 0.28), -0.525, twig_cluster.y + rng.randf_range(-0.25, 0.25))
+        var twig_end := twig_start + Vector3(cos(twig_angle), 0.0, sin(twig_angle)) * rng.randf_range(0.08, 0.20)
+        _segment(root, twig_start, twig_end, rng.randf_range(0.003, 0.006), Color(0.30, 0.22, 0.13))
 
 func _button(parent: VBoxContainer, label_text: String, callback: Callable) -> void:
     var button := Button.new()
@@ -1028,7 +1166,7 @@ func _process(delta: float) -> void:
             molt_progress = 0.0
             molt_count += 1
             growth = minf(1.0, growth + 0.13)
-            animal.scale = Vector3.ONE * (0.80 + growth * 0.30)
+            animal.scale = Vector3.ONE * (0.26 * (0.80 + growth * 0.30))
             hunger = minf(100.0, hunger + 12.0)
             energy = maxf(15.0, energy - 22.0)
     elif life_age > 150.0 * float(molt_count + 1) and molt_count < 5 and hunger < 65.0 and stress < 40.0:
@@ -1101,9 +1239,9 @@ func _roam(dt: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventMouseButton:
         if event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
-            orbit_distance = maxf(2.2, orbit_distance - 0.3)
+            _set_camera_zoom(-0.35)
         elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
-            orbit_distance = minf(8.0, orbit_distance + 0.3)
+            _set_camera_zoom(0.35)
         elif event.button_index == MOUSE_BUTTON_LEFT:
             if editing:
                 if event.pressed:
@@ -1140,13 +1278,17 @@ func _unhandled_input(event: InputEvent) -> void:
             var points := touch_points.values()
             var distance: float = points[0].distance_to(points[1])
             if pinch_previous > 0.0:
-                orbit_distance = clampf(orbit_distance - (distance - pinch_previous) * 0.008, 2.2, 8.0)
+                orbit_distance = clampf(orbit_distance - (distance - pinch_previous) * 0.014, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE)
             pinch_previous = distance
     _update_camera()
 
 func _orbit(motion: Vector2) -> void:
     orbit_yaw -= motion.x * 0.008
     orbit_pitch = clampf(orbit_pitch + motion.y * 0.006, -0.15, 1.05)
+
+func _set_camera_zoom(distance_delta: float) -> void:
+    orbit_distance = clampf(orbit_distance + distance_delta, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE)
+    _update_camera()
 
 func _update_camera() -> void:
     if camera == null:
@@ -1215,7 +1357,7 @@ func _load_state(show_message: bool) -> void:
     life_age = maxf(0.0, float(parsed.get("life_age", 0.0)))
     molt_count = clampi(int(parsed.get("molt_count", 0)), 0, 5)
     growth = clampf(float(parsed.get("growth", 0.35)), 0.35, 1.0)
-    animal.scale = Vector3.ONE * (0.80 + growth * 0.30)
+    animal.scale = Vector3.ONE * (0.26 * (0.80 + growth * 0.30))
     hunger = clampf(float(parsed.get("hunger", 32.0)), 0.0, 100.0)
     energy = clampf(float(parsed.get("energy", 86.0)), 0.0, 100.0)
     stress = clampf(float(parsed.get("stress", 12.0)), 0.0, 100.0)
@@ -1378,8 +1520,10 @@ func _initialize_foot_anchors() -> void:
     foot_swing_origins.clear()
     foot_swing_progress.clear()
     for i in range(leg_pivots.size()):
-        var side := -1.0 if i < 3 else 1.0
-        var world := leg_pivots[i].to_global(Vector3(side * 0.33, -0.31, 0.28 - float(i % 3) * 0.24))
+        var side: float = -1.0 if i < 2 else 1.0
+        var leg_index: int = i % 2
+        var foot_z: float = -0.10 if leg_index == 0 else 0.16
+        var world := leg_pivots[i].to_global(Vector3(side * 0.32, -0.27, foot_z))
         world.y = _raycast_foot_height(world)
         foot_anchors.append(world)
         foot_swing_origins.append(world)
@@ -1401,12 +1545,12 @@ func _animate_mantis(dt: float) -> void:
     # reachable surface height on rocks, wood, and substrate.
     for i in range(leg_pivots.size()):
         var joint := leg_pivots[i]
-        var side := -1.0 if i < 3 else 1.0
-        var index := i % 3
-        var tripod := (index + (0 if i < 3 else 1)) % 2
+        var side: float = -1.0 if i < 2 else 1.0
+        var index: int = i % 2
+        var tripod: int = (index + (0 if i < 2 else 1)) % 2
         var phase := fposmod(walking_phase + float(tripod) * PI, TAU)
         var swing_window := phase < PI
-        var rest_local := Vector3(side * 0.33, -0.31, 0.28 - float(index) * 0.24)
+        var rest_local := Vector3(side * 0.32, -0.27, -0.10 if index == 0 else 0.16)
         var desired_world := joint.to_global(rest_local)
         if next_state != "CLIMB" or not climb_active:
             desired_world.y = _raycast_foot_height(desired_world) if foot_contacts_enabled else -0.45
@@ -1451,7 +1595,15 @@ func _animate_mantis(dt: float) -> void:
         var knee := _solve_leg_knee(Vector3.ZERO, foot, 0.31, 0.49, side)
         _pose_gait_bone(gait_segments[i][0], Vector3.ZERO, knee)
         _pose_gait_bone(gait_segments[i][1], knee, foot)
-        _pose_gait_bone(foot_toes[i], foot, foot + Vector3(side * 0.025, -0.012, -0.02))
+        var tarsus_end := foot + Vector3(side * 0.085, -0.014, -0.035 if index == 0 else 0.035)
+        var tarsomeres: Array = foot_tarsi[i]
+        for segment_index in range(tarsomeres.size()):
+            var t0: float = float(segment_index) / float(tarsomeres.size())
+            var t1: float = float(segment_index + 1) / float(tarsomeres.size())
+            _pose_gait_bone(tarsomeres[segment_index], foot.lerp(tarsus_end, t0), foot.lerp(tarsus_end, t1))
+        var claws: Array = foot_claws[i]
+        _pose_gait_bone(claws[0], tarsus_end, tarsus_end + Vector3(side * 0.020, -0.004, -0.018))
+        _pose_gait_bone(claws[1], tarsus_end, tarsus_end + Vector3(-side * 0.020, -0.004, -0.018))
     var attack_clock := strike_time if animation_preview == "AUTO" else preview_strike_clock
     for i in range(forelegs.size()):
         var target_pitch := 0.0

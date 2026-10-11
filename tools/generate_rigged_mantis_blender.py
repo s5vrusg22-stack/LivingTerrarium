@@ -1,6 +1,7 @@
 """Blender 4.x: blender -b --python tools/generate_rigged_mantis_blender.py
 Generate editable mantis rig .blend + animated GLB; Blender is required.
-Anatomically inspired, hand-procedural model, not a scan or photoreal asset.
+Adult Hierodula-style mint mantis; the Chiang Mai trade name is not a formal
+species diagnosis. Anatomically inspired, hand-procedural, not a scan.
 Coordinates: Blender Z up, head toward -Y; 1 Blender unit ~= 1 m in game.
 """
 import bpy, math
@@ -23,13 +24,14 @@ def mat(name, color, roughness=0.48, metallic=0.0):
     p.inputs['Metallic'].default_value = metallic
     return m
 
-shell = mat('Chitin - leaf green', (.17,.39,.085), .37)
-light = mat('Chitin - dorsal green', (.32,.54,.13), .46)
-olive = mat('Joint membranes', (.095,.16,.055), .67)
-edge = mat('Segment edge', (.13,.25,.055), .55)
-eye = mat('Compound eye - dark jade', (.015,.06,.045), .18)
-vein = mat('Wing veins', (.34,.46,.16), .48)
-wing = mat('Tegmina - semi matte', (.23,.40,.12), .65)
+shell = mat('Chitin - mint green', (.46,.77,.62), .37)
+light = mat('Chitin - pale mint', (.67,.88,.74), .46)
+olive = mat('Joint membranes', (.22,.43,.34), .67)
+edge = mat('Segment edge', (.29,.52,.41), .55)
+eye = mat('Compound eye - deep jade', (.015,.06,.045), .18)
+vein = mat('Wing veins', (.34,.61,.49), .48)
+wing = mat('Tegmina - mint', (.60,.83,.69), .65)
+hindwing = mat('Hindwing - pale membrane', (.73,.91,.80), .54)
 
 # Each mesh is rigidly weighted to one deform bone. This gives a valid armature
 # and avoids brittle automatic skinning on thin insect limbs.
@@ -79,24 +81,35 @@ ellipsoid('Head triangular capsule',(0,-.67,.32),(.155,.102,.087),light,'head')
 ellipsoid('Clypeus',(0,-.759,.274),(.07,.023,.028),shell,'head')
 for side,letter in [(-1,'L'),(1,'R')]:
     ellipsoid('Compound eye '+letter,(side*.124,-.694,.357),(.053,.058,.056),eye,'head')
-    for i in range(3):
-        ellipsoid('Ocellus '+letter+str(i),(side*(.013+.020*i),-.754,.395),(.008,.007,.008),olive,'head')
-    # Three walking legs on each side, with explicit coxa/femur/tibia/tarsus.
-    for index,y in enumerate((.13,-.07,-.28)):
+    for facet in range(12):
+        row=facet//4; col=facet%4
+        facet_y=-.708+row*.021; facet_z=.323+col*.021
+        dy=facet_y+.694; dz=facet_z-.357
+        surface=.124+.053*math.sqrt(max(.05,1-(dy/.058)**2-(dz/.056)**2))+.003
+        ellipsoid('Eye facet '+letter+str(facet),(side*surface,facet_y,facet_z),(.0055,.006,.006),vein,'head')
+    # Two walking legs on each side, with explicit coxa/femur/tibia/tarsus.
+    for index,y in enumerate((.12,-.13)):
         prefix=f'{letter}_walk{index+1}'
         hip=(side*.055,y,.255)
         coxa=(side*.16,y+.015,.24)
         knee=(side*.29,y+.085,.16)
         ankle=(side*.38,y+.13,.025)
         toe=(side*.41,y+.18,.014)
-        bone(prefix+'_coxa',hip,coxa,'thorax' if index==2 else 'root')
+        bone(prefix+'_coxa',hip,coxa,'thorax')
         bone(prefix+'_femur',coxa,knee,prefix+'_coxa')
         bone(prefix+'_tibia',knee,ankle,prefix+'_femur')
         bone(prefix+'_tarsus',ankle,toe,prefix+'_tibia')
         rod(prefix+' coxa',hip,coxa,.021,.016,shell,prefix+'_coxa')
         rod(prefix+' femur',coxa,knee,.023,.012,light,prefix+'_femur')
         rod(prefix+' tibia',knee,ankle,.011,.005,shell,prefix+'_tibia')
-        rod(prefix+' tarsus',ankle,toe,.005,.002,olive,prefix+'_tarsus')
+        for tarsomere in range(5):
+            t0=tarsomere/5; t1=(tarsomere+1)/5
+            start=Vector(ankle).lerp(Vector(toe),t0)
+            end=Vector(ankle).lerp(Vector(toe),t1)
+            rod(prefix+' tarsomere %02d'%tarsomere,start,end,.005-tarsomere*.00045,.003,olive,prefix+'_tarsus')
+        for claw_side in (-1,1):
+            claw_end=(toe[0]+side*.018+claw_side*.006,toe[1]+.012,toe[2]+.006)
+            rod(prefix+' paired claw',toe,claw_end,.0028,.0007,light,prefix+'_tarsus')
         ellipsoid(prefix+' knee',(knee),(.019,.019,.019),olive,prefix+'_femur')
     # Raptorial foreleg with movable coxa, spined femur, folding tibia.
     prefix=letter+'_raptor'
@@ -120,19 +133,27 @@ for side,letter in [(-1,'L'),(1,'R')]:
         base=Vector(c).lerp(Vector(d),t)
         tip=base+Vector((-side*.008,.018,-.012))
         rod(prefix+' tibial spine %02d'%j,base,tip,.003,.0005,olive,prefix+'_tibia',8)
-    # Antennae in three articulated sections.
+    # Long, visibly curved antennae made from short articulated sections.
     ant=letter+'_antenna'
-    p0=(side*.047,-.74,.38); p1=(side*.078,-.89,.47)
-    p2=(side*.12,-1.03,.53); p3=(side*.17,-1.17,.56)
-    for j,(u,v) in enumerate(((p0,p1),(p1,p2),(p2,p3))):
+    p0=Vector((side*.047,-.74,.38))
+    previous=p0
+    for j in range(10):
+        t=(j+1)/10.0
+        current=Vector((side*(.047+.11*t+.035*math.sin(math.pi*t)),-.74-.56*t,.38+.16*math.sin(math.pi*t)))
+        u=tuple(previous); v=tuple(current)
         bn=ant+str(j)
         bone(bn,u,v,'head' if j==0 else ant+str(j-1))
-        rod(bn,u,v,.004-j*.0008,.002-j*.0004,olive,bn,8)
+        rod(bn,u,v,.0035-j*.00025,.0025-j*.00018,olive,bn,8)
+        previous=current
     # Wing covers and veins follow abdomen.
     ellipsoid('Tegmen '+letter,(side*.065,.15,.345),(.055,.245,.013),wing,'abdomen')
-    for j in range(4):
-        x=side*(.035+j*.016)
-        rod('Wing vein '+letter+str(j),(x,-.05,.358),(x+side*.009,.35,.356),.0025,.001,vein,'abdomen',8)
+    ellipsoid('Membranous hindwing '+letter,(side*.105,.14,.343),(.072,.225,.008),hindwing,'abdomen')
+    for j in range(6):
+        x=side*(.025+j*.018)
+        rod('Wing vein '+letter+str(j),(x,-.09,.358),(x+side*.012,.39,.356),.0022,.0009,vein,'abdomen',8)
+
+for name, center in [('Ocellus_Median',(0,-.754,.395)),('Ocellus_Left',(-.026,-.748,.390)),('Ocellus_Right',(.026,-.748,.390))]:
+    ellipsoid(name,center,(.008,.007,.008),olive,'head')
 
 # Build armature and bind rigid weights.
 bpy.ops.object.armature_add(enter_editmode=True, location=(0,0,0))

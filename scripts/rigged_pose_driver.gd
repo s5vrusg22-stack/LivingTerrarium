@@ -2,9 +2,9 @@ class_name RiggedPoseDriver
 extends Node
 
 # Procedural pose corrections are layered on top of imported glTF clips.
-# Hierarchical CCD is applied to the six walking legs when compatible bones exist.
+# Hierarchical CCD is applied to the four walking legs when compatible bones exist.
 const SIDES := ["L", "R"]
-const LEGS_PER_SIDE := 3
+const LEGS_PER_SIDE := 2
 const MAX_ANGLE := 0.28
 const FOOT_SMOOTHING := 9.0
 const CCD_ITERATIONS := 9
@@ -90,26 +90,26 @@ func setup(target_skeleton: Skeleton3D, target_player: AnimationPlayer) -> void:
             missing.append(name)
         else:
             bone_map[name] = bone
-    leg_offsets.resize(6)
+    leg_offsets.resize(4)
     leg_offsets.fill(0.0)
     valid = missing.is_empty()
     validation_message = "all required rig bones found" if valid else "Missing: " + ", ".join(missing)
     enabled = valid
     chain_bones.clear()
     chain_reach.clear()
-    ik_blend.resize(6)
+    ik_blend.resize(4)
     ik_blend.fill(0.0)
     hierarchical_chains = valid
-    filtered_targets.resize(6)
-    target_ready.resize(6)
+    filtered_targets.resize(4)
+    target_ready.resize(4)
     target_ready.fill(false)
-    invalid_frames.resize(6)
+    invalid_frames.resize(4)
     invalid_frames.fill(0)
-    last_error.resize(6)
+    last_error.resize(4)
     last_error.fill(0.0)
-    solve_iterations.resize(6)
+    solve_iterations.resize(4)
     solve_iterations.fill(0)
-    chain_enabled.resize(6)
+    chain_enabled.resize(4)
     chain_enabled.fill(false)
     joint_rest_bases.clear()
     if valid:
@@ -129,7 +129,7 @@ func setup(target_skeleton: Skeleton3D, target_player: AnimationPlayer) -> void:
                 var tarsus := ankle_rest.distance_to(tip_rest)
                 chain_reach.append(upper + lower + tarsus)
                 var chain_ok := skeleton.get_bone_parent(knee) == hip and skeleton.get_bone_parent(ankle) == knee and skeleton.get_bone_parent(tip) == ankle and upper >= MIN_IK_SEGMENT and lower >= MIN_IK_SEGMENT and tarsus >= MIN_IK_SEGMENT
-                chain_enabled[index if side == "L" else index + 3] = chain_ok
+                chain_enabled[index if side == "L" else index + 2] = chain_ok
                 if not chain_ok:
                     hierarchical_chains = false
                 for bone_id in [hip, knee, ankle]:
@@ -166,7 +166,7 @@ func set_motion_targets(state: String, movement: float, anchors: Array[Vector3],
     skeleton.clear_bones_global_pose_override()
     # A target is supplied in WORLD coordinates by the grounded gait controller.
     # Convert it into the Skeleton3D local frame; never treat it as joint-local.
-    for i in range(6):
+    for i in range(4):
         if i >= anchors.size() or i >= swings.size():
             continue
         if not _finite_vector(anchors[i]):
@@ -176,8 +176,8 @@ func set_motion_targets(state: String, movement: float, anchors: Array[Vector3],
             _solve_leg_ccd(i, skeleton.to_local(anchors[i]), swings[i], movement, dt)
         elif i < joints.size():
             # Flat glTF bones: backward compatibility with older flat skeletons.
-            var side := "L" if i < 3 else "R"
-            var index := i % 3
+            var side := "L" if i < 2 else "R"
+            var index := i % 2
             var target_local := joints[i].to_local(anchors[i])
             var reach_bias := clampf(atan2(target_local.z, maxf(0.1, absf(target_local.y))) * 0.22, -MAX_ANGLE, MAX_ANGLE)
             var lateral_bias := clampf(atan2(target_local.x, maxf(0.1, absf(target_local.y))) * 0.12, -MAX_ANGLE, MAX_ANGLE)
