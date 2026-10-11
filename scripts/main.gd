@@ -61,6 +61,9 @@ var molt_progress := 0.0
 var prey_motion_clock := 0.0
 var walking_phase := 0.0
 var head_pivot: Node3D
+var neck_pivot: Node3D
+var head_gesture_clock := 0.0
+var head_gesture_index := 0
 var mandibles: Array[Node3D] = []
 var forelegs: Array[Node3D] = []
 var wing_pivots: Array[Node3D] = []
@@ -103,6 +106,8 @@ var movement_blend := 0.0
 # Six selectable procedural animation clips: IDLE, WALK, ALERT, GROOM, HUNT, STRIKE.
 # MOLT is an additional lifecycle override. These are runtime poses, not GLB keyframes.
 const ANIMATIONS := ["IDLE", "WALK", "ALERT", "GROOM", "HUNT", "STRIKE", "SCAN", "FEED", "CLIMB", "FLY", "DEFEND"]
+# Forty deterministic head-and-neck gesture profiles cycle during natural behavior.
+const HEAD_GESTURE_COUNT := 40
 var animation_preview := "AUTO"
 var animation_clock := 0.0
 var animation_weight := 0.0
@@ -342,7 +347,7 @@ func _update_rigged_visual(_dt: float) -> void:
         state = "IDLE"
     _play_rigged_clip(state)
     if rigged_pose_driver != null and rigged_ik_enabled:
-        rigged_pose_driver.set_motion_targets(state, movement_blend, foot_anchors, foot_in_swing, animal, leg_pivots, head_pivot, strike_time, _dt)
+        rigged_pose_driver.set_motion_targets(state, movement_blend, foot_anchors, foot_in_swing, animal, leg_pivots, head_pivot, neck_pivot, strike_time, _dt)
     # Growth is already applied to the shared animal root, so never apply
     # a second growth scale here.
 
@@ -885,13 +890,22 @@ func _create_mantis() -> void:
     _segment(thorax_pivot, Vector3(0, 0.050, 0.16), Vector3(0, 0.050, -0.245), 0.0042, mint_light)
     for pronotum_side in [-1.0, 1.0]:
         _segment(thorax_pivot, Vector3(pronotum_side * 0.038, 0.019, 0.13), Vector3(pronotum_side * 0.034, 0.016, -0.23), 0.0018, mint_shadow)
-    # Narrow cervical bridge overlaps the head and front edge of the shield.
+    # Cervical bridge and overlapping cuticle collars keep a separate articulation.
     _part(thorax_pivot, Vector3(0, 0.010, -0.205), Vector3(0.034, 0.027, 0.10), mint)
+    neck_pivot = Node3D.new()
+    neck_pivot.name = "NeckArticulation"
+    neck_pivot.position = Vector3(0, 0.014, -0.185)
+    thorax_pivot.add_child(neck_pivot)
+    _part(neck_pivot, Vector3(0, -0.004, -0.047), Vector3(0.030, 0.024, 0.078), mint)
+    _part(neck_pivot, Vector3(0, 0.006, -0.012), Vector3(0.037, 0.012, 0.026), mint_light)
+    _part(neck_pivot, Vector3(0, -0.013, -0.083), Vector3(0.040, 0.010, 0.018), mint_shadow)
+    for collar_side in [-1.0, 1.0]:
+        _segment(neck_pivot, Vector3(collar_side * 0.025, 0.002, -0.018), Vector3(collar_side * 0.022, -0.002, -0.080), 0.0020, mint_shadow)
 
     head_pivot = Node3D.new()
     head_pivot.name = "HeadPivot"
-    head_pivot.position = Vector3(0, 0.29, -0.64)
-    animal.add_child(head_pivot)
+    head_pivot.position = Vector3(0, 0.036, -0.115)
+    neck_pivot.add_child(head_pivot)
     _part(head_pivot, Vector3(0, 0.012, -0.012), Vector3(0.15, 0.11, 0.12), mint_light)
     _part(head_pivot, Vector3(0, -0.045, -0.087), Vector3(0.084, 0.054, 0.036), mint)
     _part(head_pivot, Vector3(0, -0.078, -0.097), Vector3(0.036, 0.019, 0.025), mint_shadow)
@@ -2800,6 +2814,18 @@ func _initialize_foot_anchors() -> void:
         foot_in_swing.append(false)
         foot_swing_progress.append(0.0)
 
+func _head_gesture_profile(index: int) -> Vector3:
+    # Coprime modular sequences make all 40 gaze, nod, and roll profiles distinct.
+    var slot := index % HEAD_GESTURE_COUNT
+    var yaw_unit: float = float((slot * 17 + 5) % 41) / 20.0 - 1.0
+    var pitch_unit: float = float((slot * 23 + 11) % 43) / 21.0 - 1.0
+    var roll_unit: float = float((slot * 13 + 7) % 47) / 23.0 - 1.0
+    return Vector3(yaw_unit * 0.24, pitch_unit * 0.11, roll_unit * 0.075)
+
+func _head_gesture_duration(index: int) -> float:
+    var slot := index % HEAD_GESTURE_COUNT
+    return 1.65 + float((slot * 11 + 7) % HEAD_GESTURE_COUNT) / float(HEAD_GESTURE_COUNT) * 1.35
+
 func _animate_mantis(dt: float) -> void:
     var next_state := _resolve_animation()
     if next_state != animation_state:
@@ -2810,6 +2836,20 @@ func _animate_mantis(dt: float) -> void:
     var flight_t: float = clampf(flight_demo_clock / FLIGHT_TAKEOFF_DURATION, 0.0, 1.0) if next_state == "FLY" else 0.0
     var flight_pose_blend: float = flight_t * flight_t * (3.0 - 2.0 * flight_t)
     movement_blend = move_toward(movement_blend, 1.0 if walking else 0.0, dt * 3.0)
+    head_gesture_clock += dt
+    var gesture_duration := _head_gesture_duration(head_gesture_index)
+    if head_gesture_clock >= gesture_duration:
+        head_gesture_clock = fmod(head_gesture_clock, gesture_duration)
+        head_gesture_index = (head_gesture_index + 1) % HEAD_GESTURE_COUNT
+        gesture_duration = _head_gesture_duration(head_gesture_index)
+    var gesture_profile := _head_gesture_profile(head_gesture_index)
+    var gesture_progress := clampf(head_gesture_clock / gesture_duration, 0.0, 1.0)
+    var gesture_approach := clampf(gesture_progress / 0.22, 0.0, 1.0)
+    gesture_approach = gesture_approach * gesture_approach * (3.0 - 2.0 * gesture_approach)
+    var gesture_release := clampf((1.0 - gesture_progress) / 0.34, 0.0, 1.0)
+    gesture_release = gesture_release * gesture_release * (3.0 - 2.0 * gesture_release)
+    var gesture_envelope := gesture_approach * gesture_release
+    var gesture_twitch := sin((gesture_progress * 1.7 + float(head_gesture_index) * 0.11) * TAU) * 0.035 * gesture_envelope
     walking_phase += dt * (3.2 if next_state == "CLIMB" else 5.5 if next_state == "HUNT" else 7.0)
     foot_contact_hits = 0
     # Climbing feet are placed on the branch cylinder; flight legs tuck beneath
@@ -2963,24 +3003,64 @@ func _animate_mantis(dt: float) -> void:
     for i in range(antennae.size()):
         var antenna_speed := 5.5 if next_state == "ALERT" else 2.3
         var amplitude := 0.29 if next_state == "ALERT" else 0.16
+        var antenna_side: float = -1.0 if i == 0 else 1.0
         antennae[i].rotation.y = sin(elapsed * antenna_speed + float(i) * 1.5) * amplitude
+        antennae[i].rotation.x = sin(elapsed * 0.83 + float(i) * 1.8) * 0.075 + gesture_profile.y * 0.12 * gesture_envelope
+        antennae[i].rotation.z = sin(elapsed * 1.07 + float(i) * 2.2) * 0.035 * antenna_side
     for i in range(mandibles.size()):
         var chew_motion: float = sin(animation_clock * 6.2 + float(i) * PI) * 0.12 if next_state == "FEED" else 0.0
         mandibles[i].rotation.y = lerpf(mandibles[i].rotation.y, chew_motion, clampf(dt * 12.0, 0.0, 1.0))
+    var gesture_weight := 1.0
+    match next_state:
+        "STRIKE", "FLY":
+            gesture_weight = 0.0
+        "FEED", "DEFEND", "MOLT":
+            gesture_weight = 0.18
+        "HUNT":
+            gesture_weight = 0.42
+        "ALERT":
+            gesture_weight = 0.55
+        "CLIMB":
+            gesture_weight = 0.58
+        "WALK":
+            gesture_weight = 0.66
+        "SCAN":
+            gesture_weight = 0.78
+    var gesture_yaw := (gesture_profile.x + gesture_twitch) * gesture_envelope * gesture_weight
+    var gesture_pitch := gesture_profile.y * gesture_envelope * gesture_weight
+    var gesture_roll := gesture_profile.z * gesture_envelope * gesture_weight
     if head_pivot != null:
         var desired_head_yaw := sin(elapsed * 0.7) * 0.11
+        var desired_neck_yaw := sin(elapsed * 0.37) * 0.025
+        var desired_head_pitch := -0.14 if next_state == "HUNT" else -0.22 if next_state == "FEED" else 0.0
+        var desired_neck_pitch := sin(elapsed * 0.63) * 0.018
         if next_state == "SCAN":
             desired_head_yaw = sin(animation_clock * 1.7) * 0.52
+            desired_neck_yaw = sin(animation_clock * 1.7 + 0.45) * 0.10
+            desired_head_pitch = sin(animation_clock * 1.15) * 0.055
         elif next_state == "GROOM":
             desired_head_yaw = sin(animation_clock * 2.0) * 0.20
+            desired_head_pitch = -0.08 + sin(animation_clock * 2.8) * 0.04
         elif next_state == "ALERT":
             desired_head_yaw = sin(animation_clock * 1.8) * 0.32
+            desired_neck_pitch = -0.035
         elif target_prey != null and is_instance_valid(target_prey):
             var local_target := animal.to_local(target_prey.global_position)
-            desired_head_yaw = clampf(atan2(-local_target.x, -local_target.z), -0.60, 0.60)
+            var prey_yaw := clampf(atan2(-local_target.x, -local_target.z), -0.60, 0.60)
+            desired_head_yaw = prey_yaw * 0.78
+            desired_neck_yaw = prey_yaw * 0.22
+            desired_head_pitch = -0.14
+        desired_head_yaw = clampf(desired_head_yaw + gesture_yaw, -0.80, 0.80)
+        desired_head_pitch = clampf(desired_head_pitch + gesture_pitch, -0.34, 0.26)
+        desired_neck_yaw = clampf(desired_neck_yaw + gesture_yaw * 0.42, -0.22, 0.22)
+        desired_neck_pitch = clampf(desired_neck_pitch + gesture_pitch * 0.34, -0.16, 0.14)
         head_pivot.rotation.y = lerp_angle(head_pivot.rotation.y, desired_head_yaw, clampf(dt * 5.0, 0.0, 1.0))
-        var head_pitch := -0.14 if next_state == "HUNT" else -0.22 if next_state == "FEED" else 0.0
-        head_pivot.rotation.x = lerpf(head_pivot.rotation.x, head_pitch, clampf(dt * 4.0, 0.0, 1.0))
+        head_pivot.rotation.x = lerpf(head_pivot.rotation.x, desired_head_pitch, clampf(dt * 4.0, 0.0, 1.0))
+        head_pivot.rotation.z = lerpf(head_pivot.rotation.z, gesture_roll + sin(elapsed * 0.49) * 0.010, clampf(dt * 3.5, 0.0, 1.0))
+        if neck_pivot != null:
+            neck_pivot.rotation.y = lerp_angle(neck_pivot.rotation.y, desired_neck_yaw, clampf(dt * 3.8, 0.0, 1.0))
+            neck_pivot.rotation.x = lerpf(neck_pivot.rotation.x, desired_neck_pitch, clampf(dt * 3.4, 0.0, 1.0))
+            neck_pivot.rotation.z = lerpf(neck_pivot.rotation.z, gesture_roll * 0.42, clampf(dt * 2.8, 0.0, 1.0))
     if thorax_pivot != null:
         var thorax_target := sin(elapsed * 1.6) * 0.012
         if next_state in ["ALERT", "DEFEND"]:
@@ -2990,6 +3070,8 @@ func _animate_mantis(dt: float) -> void:
         elif next_state == "FEED":
             thorax_target -= 0.045
         thorax_pivot.rotation.x = lerpf(thorax_pivot.rotation.x, thorax_target, clampf(dt * 5.0, 0.0, 1.0))
+        thorax_pivot.rotation.y = lerpf(thorax_pivot.rotation.y, sin(elapsed * 0.52) * 0.009, clampf(dt * 2.8, 0.0, 1.0))
+        thorax_pivot.rotation.z = lerpf(thorax_pivot.rotation.z, cos(elapsed * 0.43) * 0.006, clampf(dt * 2.4, 0.0, 1.0))
     if abdomen != null:
         var abdomen_target := sin(elapsed * 1.3) * 0.018
         if next_state == "ALERT":
