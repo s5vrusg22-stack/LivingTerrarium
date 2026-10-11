@@ -22,10 +22,10 @@ var status: Label
 var notice: Label
 var orbit_yaw := 0.0
 var orbit_pitch := 0.25
-var orbit_distance := 5.3
+var orbit_distance := 4.45
 const CAMERA_MIN_DISTANCE := 0.65
-const CAMERA_MAX_DISTANCE := 13.0
-const BASE_MANTIS_SCALE := 0.46
+const CAMERA_MAX_DISTANCE := 16.0
+const BASE_MANTIS_SCALE := 0.60
 const WALK_BOUND_X := 2.18
 const WALK_BOUND_Z := 1.42
 const PREY_BOUND_X := 2.36
@@ -105,6 +105,7 @@ var animation_label: Label
 var model_details: Array[Node3D] = []
 var body_texture: Texture2D
 var eye_texture: Texture2D
+var leaf_texture: Texture2D
 var bark_texture: Texture2D
 var substrate_texture: Texture2D
 var pbr_normal: Dictionary = {}
@@ -175,6 +176,7 @@ var prey_appendages: Dictionary = {}
 var habitat_motion_root: Node3D
 var drifting_particles: Array[Node3D] = []
 var particle_origins: Array[Vector3] = []
+var leaf_mesh_cache: Dictionary = {}
 
 # v1.8: shared, bounded habitat interaction controller.
 var habitat_interactions: HabitatInteractions
@@ -341,31 +343,52 @@ func _update_rigged_visual(_dt: float) -> void:
 func _load_textures() -> void:
     body_texture = load("res://assets/textures/mantis_cuticle_albedo.png")
     eye_texture = load("res://assets/textures/mantis_eye_albedo.png")
+    leaf_texture = load("res://assets/textures/leaf_albedo.svg")
     bark_texture = load("res://assets/textures/bark_albedo.png")
     substrate_texture = load("res://assets/textures/substrate_albedo.png")
     stone_texture = load("res://assets/textures/stone_albedo.png")
-    for kind in ["mantis_cuticle", "mantis_eye", "bark", "substrate", "stone"]:
-        pbr_normal[kind] = load("res://assets/textures/%s_normal.png" % kind)
-        pbr_roughness[kind] = load("res://assets/textures/%s_roughness.png" % kind)
+    for kind in ["mantis_cuticle", "mantis_eye", "leaf", "bark", "substrate", "stone"]:
+        var texture_extension: String = "svg" if kind == "leaf" else "png"
+        pbr_normal[kind] = load("res://assets/textures/%s_normal.%s" % [kind, texture_extension])
+        pbr_roughness[kind] = load("res://assets/textures/%s_roughness.%s" % [kind, texture_extension])
 
 func _create_world() -> void:
     camera = Camera3D.new()
     camera.current = true
-    camera.fov = 48.0
+    camera.fov = 45.0
     add_child(camera)
     var world := WorldEnvironment.new()
     var env := Environment.new()
     env.background_mode = Environment.BG_COLOR
-    env.background_color = Color(0.065, 0.085, 0.08)
+    env.background_color = Color(0.045, 0.061, 0.052)
     env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-    env.ambient_light_color = Color(0.7, 0.8, 0.72)
-    env.ambient_light_energy = 0.98
+    env.ambient_light_color = Color(0.72, 0.79, 0.66)
+    env.ambient_light_energy = 0.88
+    env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+    env.adjustment_enabled = true
+    env.adjustment_brightness = 1.035
+    env.adjustment_contrast = 1.07
+    env.adjustment_saturation = 0.94
+    env.fog_enabled = true
+    env.fog_mode = Environment.FOG_MODE_DEPTH
+    env.fog_light_color = Color(0.36, 0.43, 0.33)
+    env.fog_depth_begin = 2.0
+    env.fog_depth_end = 9.5
+    env.fog_depth_curve = 1.25
+    env.fog_density = 0.004
+    env.fog_aerial_perspective = 0.18
+    env.fog_sky_affect = 0.0
     world.environment = env
     add_child(world)
     var sun := DirectionalLight3D.new()
     sun.rotation_degrees = Vector3(-55, -25, 0)
-    sun.light_energy = 1.48
+    sun.light_color = Color(1.0, 0.91, 0.74)
+    sun.light_energy = 1.32
     sun.shadow_enabled = true
+    sun.shadow_bias = 0.035
+    sun.shadow_normal_bias = 0.75
+    sun.shadow_filter = Light3D.SHADOW_FILTER_PCF5
+    sun.directional_shadow_max_distance = 7.5
     add_child(sun)
     # The enclosure grows around the existing animal scale. Keep the mantis
     # model's transform unchanged while giving it a roomy, layered habitat.
@@ -672,8 +695,8 @@ func _create_mantis() -> void:
             joint.position = Vector3(side * 0.052, 0.19, leg_z)
             animal.add_child(joint)
             _segment(joint, Vector3.ZERO, Vector3(side * 0.075, -0.005, 0.025), 0.014, mint_shadow)
-            var upper := _make_gait_bone(joint, 0.019, mint_light)
-            var lower := _make_gait_bone(joint, 0.011, mint_shadow)
+            var upper := _make_gait_bone(joint, 0.022, mint_light)
+            var lower := _make_gait_bone(joint, 0.013, mint_shadow)
             leg_pivots.append(joint)
             gait_segments.append([upper, lower])
             var hip_joint := _make_gait_joint(joint, 0.019, mint_shadow)
@@ -682,7 +705,7 @@ func _create_mantis() -> void:
             gait_joints.append([hip_joint, knee_joint, ankle_joint])
             var tibial_spurs: Array[MeshInstance3D] = []
             for spur_index in range(5):
-                var spur := _make_gait_bone(joint, 0.0038, mint_shadow)
+                var spur := _make_gait_bone(joint, 0.0052, mint_shadow)
                 spur.name = "WalkingTibiaSpur_%d_%d_%d" % [int(side), i, spur_index]
                 tibial_spurs.append(spur)
             leg_spurs.append(tibial_spurs)
@@ -755,12 +778,12 @@ func _create_mantis() -> void:
         foreleg_claws.append(claw)
 
 func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
-    var segments := 32
+    var segments := 44
     var start_z: float = -0.015 if hindwing else -0.13
-    var end_z: float = 0.68 if hindwing else 0.70
+    var end_z: float = 0.68 if hindwing else 0.74
     var y: float = 0.245 if hindwing else 0.272
-    var max_width: float = 0.39 if hindwing else 0.18
-    var hinge := Vector3(side * 0.035, y, start_z)
+    var max_width: float = 0.42 if hindwing else 0.215
+    var hinge := Vector3(side * 0.012, y, start_z)
     var vertices := PackedVector3Array()
     var normals := PackedVector3Array()
     var uvs := PackedVector2Array()
@@ -774,13 +797,14 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
         var profile1 := _mantis_wing_profile(t1, hindwing)
         var w0: float = 0.004 + profile0 * max_width
         var w1: float = 0.004 + profile1 * max_width
-        var edge0: float = 0.006 * sin(t0 * PI * 12.0) * sin(t0 * PI)
-        var edge1: float = 0.006 * sin(t1 * PI * 12.0) * sin(t1 * PI)
-        var arch0: float = 0.016 * sin(PI * t0)
-        var arch1: float = 0.016 * sin(PI * t1)
-        var row0: Array[Vector3] = [Vector3(0.0, 0.0, z0 - start_z), Vector3(side * w0 * 0.50, arch0 + 0.012, z0 - start_z), Vector3(side * (w0 + edge0), arch0, z0 - start_z)]
-        var row1: Array[Vector3] = [Vector3(0.0, 0.006, z1 - start_z), Vector3(side * w1 * 0.50, arch1 + 0.012, z1 - start_z), Vector3(side * (w1 + edge1), arch1, z1 - start_z)]
-        for lane in range(2):
+        var edge0: float = 0.0045 * sin(t0 * PI * 14.0) * sin(t0 * PI)
+        var edge1: float = 0.0045 * sin(t1 * PI * 14.0) * sin(t1 * PI)
+        var arch0: float = 0.024 * sin(PI * t0)
+        var arch1: float = 0.024 * sin(PI * t1)
+        var overlap: float = 0.024 if not hindwing else 0.0
+        var row0: Array[Vector3] = [Vector3(-side * overlap, 0.0, z0 - start_z), Vector3(side * (w0 * 0.22 - overlap), arch0 * 0.72, z0 - start_z), Vector3(side * (w0 * 0.56 - overlap), arch0 + 0.010, z0 - start_z), Vector3(side * (w0 * 0.88), arch0 + 0.006, z0 - start_z), Vector3(side * (w0 + edge0), arch0, z0 - start_z)]
+        var row1: Array[Vector3] = [Vector3(-side * overlap, 0.006, z1 - start_z), Vector3(side * (w1 * 0.22 - overlap), arch1 * 0.72, z1 - start_z), Vector3(side * (w1 * 0.56 - overlap), arch1 + 0.010, z1 - start_z), Vector3(side * (w1 * 0.88), arch1 + 0.006, z1 - start_z), Vector3(side * (w1 + edge1), arch1, z1 - start_z)]
+        for lane in range(4):
             var a: Vector3 = row0[lane]
             var b: Vector3 = row0[lane + 1]
             var c: Vector3 = row1[lane + 1]
@@ -789,14 +813,11 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
                 vertices.append(vertex)
                 normals.append(Vector3.UP)
                 var lateral: float = clampf(absf(vertex.x) / maxf(maxf(w0, w1), 0.001), 0.0, 1.0)
-                var vein_shade: float = 0.96 + 0.025 * (1.0 - lateral)
-                colors.append(Color(vein_shade * 1.02, vein_shade, vein_shade * 0.94, 1.0))
-            uvs.append(Vector2(float(lane) * 0.5, t0))
-            uvs.append(Vector2(float(lane + 1) * 0.5, t0))
-            uvs.append(Vector2(float(lane + 1) * 0.5, t1))
-            uvs.append(Vector2(float(lane) * 0.5, t0))
-            uvs.append(Vector2(float(lane + 1) * 0.5, t1))
-            uvs.append(Vector2(float(lane) * 0.5, t1))
+                var vein_shade: float = 0.92 + 0.065 * (1.0 - lateral) + 0.018 * sin(t0 * PI * 9.0 + lateral * 4.0)
+                colors.append(Color(vein_shade * 1.04, vein_shade, vein_shade * 0.91, 1.0))
+            var lane_uv0: float = float(lane) / 4.0
+            var lane_uv1: float = float(lane + 1) / 4.0
+            uvs.append_array(PackedVector2Array([Vector2(lane_uv0, t0), Vector2(lane_uv1, t0), Vector2(lane_uv1, t1), Vector2(lane_uv0, t0), Vector2(lane_uv1, t1), Vector2(lane_uv0, t1)]))
     var arrays: Array = []
     arrays.resize(Mesh.ARRAY_MAX)
     arrays[Mesh.ARRAY_VERTEX] = vertices
@@ -817,7 +838,7 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     var wing_instance := MeshInstance3D.new()
     wing_instance.name = "WingMembrane"
     wing_instance.mesh = wing_mesh
-    var wing_color: Color = Color(0.83, 0.91, 0.68, 0.64) if hindwing else Color(0.62, 0.74, 0.37)
+    var wing_color: Color = Color(0.83, 0.91, 0.68, 0.64) if hindwing else Color(0.55, 0.68, 0.34)
     var wing_material := _material(wing_color)
     if body_texture != null:
         wing_material.albedo_texture = body_texture
@@ -829,33 +850,33 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     wing_material.cull_mode = BaseMaterial3D.CULL_DISABLED
     if hindwing:
         wing_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-        wing_material.roughness = 0.38
+        wing_material.roughness = 0.42
     else:
-        wing_material.roughness = 0.56
+        wing_material.roughness = 0.62
     wing_instance.material_override = wing_material
     wing_pivot.add_child(wing_instance)
     var vein_color: Color = Color(0.43, 0.57, 0.29) if hindwing else Color(0.39, 0.54, 0.25)
-    _segment(wing_pivot, Vector3(0, 0.020, 0.018), Vector3(side * 0.018, 0.021, end_z - start_z - 0.012), 0.0028, vein_color)
-    for vein_index in range(17):
-        var t: float = 0.08 + float(vein_index) * 0.052
+    _segment(wing_pivot, Vector3(-side * (0.012 if not hindwing else 0.0), 0.020, 0.018), Vector3(side * 0.018, 0.025, end_z - start_z - 0.012), 0.0038, vein_color)
+    for vein_index in range(21):
+        var t: float = 0.06 + float(vein_index) * 0.044
         var z: float = (end_z - start_z) * t
         var width: float = _mantis_wing_profile(t, hindwing) * max_width
-        var origin := Vector3(side * width * 0.035, 0.018 + 0.016 * sin(PI * t), z * 0.18)
-        var tip := Vector3(side * width * (0.88 if hindwing else 0.91), 0.014 + 0.015 * sin(PI * t), z)
-        _segment(wing_pivot, origin, tip, 0.00145 if hindwing else 0.0019, vein_color)
+        var origin := Vector3(side * width * 0.035, 0.018 + 0.020 * sin(PI * t), z * 0.18)
+        var tip := Vector3(side * width * (0.88 if hindwing else 0.91), 0.014 + 0.018 * sin(PI * t), z)
+        _segment(wing_pivot, origin, tip, 0.0019 if hindwing else 0.0025, vein_color)
     # Repeated cross-veins and a fine perimeter give the flight membrane a
     # fan of cells while the forewing keeps its long, leathery leaf outline.
-    for cross_index in range(11 if hindwing else 9):
-        var t: float = 0.12 + float(cross_index) * (0.092 if hindwing else 0.105)
+    for cross_index in range(14 if hindwing else 12):
+        var t: float = 0.10 + float(cross_index) * (0.074 if hindwing else 0.081)
         var z: float = (end_z - start_z) * t
         var width: float = _mantis_wing_profile(t, hindwing) * max_width
-        _segment(wing_pivot, Vector3(side * width * 0.24, 0.018, z - 0.018), Vector3(side * width * 0.80, 0.018, z + 0.026), 0.00105, vein_color)
+        _segment(wing_pivot, Vector3(side * width * 0.20, 0.018, z - 0.018), Vector3(side * width * 0.84, 0.018, z + 0.026), 0.00135, vein_color)
         var next_t: float = minf(1.0, t + 0.04)
         var next_width: float = _mantis_wing_profile(next_t, hindwing) * max_width
-        _segment(wing_pivot, Vector3(side * width, 0.012, z), Vector3(side * next_width, 0.012, minf(end_z - start_z, z + (end_z - start_z) * 0.04)), 0.0015, vein_color)
+        _segment(wing_pivot, Vector3(side * width, 0.012, z), Vector3(side * next_width, 0.012, minf(end_z - start_z, z + (end_z - start_z) * 0.04)), 0.0019, vein_color)
     if not hindwing:
         # A subtle, elongated stigma sits on each leathery mint forewing.
-        _part(wing_pivot, Vector3(side * 0.102, 0.021, 0.12), Vector3(0.010, 0.003, 0.032), Color(0.78, 0.84, 0.48))
+        _part(wing_pivot, Vector3(side * 0.112, 0.021, 0.12), Vector3(0.010, 0.003, 0.032), Color(0.78, 0.84, 0.48))
     wing_pivots.append(wing_pivot)
 
 func _mantis_wing_profile(t: float, hindwing: bool) -> float:
@@ -887,6 +908,12 @@ func _ellipsoid_limb(parent: Node3D, a: Vector3, b: Vector3, radius: float, tint
 # individual pale-green body plates and warm joints visible.
 
 func _apply_pbr(mat: StandardMaterial3D, kind: String) -> void:
+    if kind == "bark":
+        mat.uv1_scale = Vector3(1.5, 3.0, 1.0)
+    elif kind == "substrate":
+        mat.uv1_scale = Vector3(3.0, 1.0, 3.0)
+    elif kind == "stone":
+        mat.uv1_scale = Vector3(2.0, 2.0, 2.0)
     if pbr_normal.has(kind):
         mat.normal_enabled = true
         mat.normal_texture = pbr_normal[kind]
@@ -977,7 +1004,7 @@ func _tapered_branch(a: Vector3, b: Vector3, base_radius: float, tip_radius: flo
     mesh.top_radius = maxf(0.004, tip_radius)
     mesh.bottom_radius = maxf(0.006, base_radius)
     mesh.height = a.distance_to(b)
-    mesh.radial_segments = 9
+    mesh.radial_segments = 16
     item.mesh = mesh
     item.position = (a + b) * 0.5
     item.quaternion = Quaternion(Vector3.UP, (b - a).normalized())
@@ -1011,6 +1038,7 @@ func _material(color: Color) -> StandardMaterial3D:
     var mat := StandardMaterial3D.new()
     mat.albedo_color = color
     mat.roughness = 0.68
+    mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
     return mat
 
 func _create_ui() -> void:
@@ -1119,7 +1147,7 @@ func _create_ui() -> void:
     var zoom_reset := Button.new()
     zoom_reset.text = "맞춤"
     zoom_reset.custom_minimum_size = Vector2(68, 42)
-    zoom_reset.pressed.connect(func(): orbit_distance = 5.3; _update_camera())
+    zoom_reset.pressed.connect(func(): orbit_distance = 4.45; _update_camera())
     zoom_controls.add_child(zoom_reset)
 
 func _resize_ui() -> void:
@@ -1130,43 +1158,88 @@ func _resize_ui() -> void:
     ui_panel.size = Vector2(minf(320.0, screen.x * 0.68), maxf(100.0, screen.y - 94.0))
 
 
-# Reusable simple leaf mesh: six triangles with a raised midrib and pointed tip.
-func _leaf_mesh() -> ArrayMesh:
-    # Curved leaf blade with a tapered tip, raised midrib, cupped edges, and a
-    # subtle pigment gradient. Shared by canopy leaves and forest-floor litter.
+# Shared high-resolution botanical blades: curved 28 x 24 quad grids with
+# cupped cross-sections, natural edge undulation, three silhouettes and
+# vertex-painted midrib/secondary veins.
+func _leaf_mesh(shape: int = 0) -> ArrayMesh:
+    var variant: int = posmod(shape, 3)
+    if leaf_mesh_cache.has(variant):
+        return leaf_mesh_cache[variant] as ArrayMesh
     var vertices := PackedVector3Array()
     var colors := PackedColorArray()
     var normals := PackedVector3Array()
     var uv := PackedVector2Array()
-    var stations := 9
-    for i in range(stations - 1):
-        var t0: float = float(i) / float(stations - 1)
-        var t1: float = float(i + 1) / float(stations - 1)
-        var width0: float = 0.004 + pow(maxf(0.0, sin(PI * t0)), 0.82) * 0.112
-        var width1: float = 0.004 + pow(maxf(0.0, sin(PI * t1)), 0.82) * 0.112
-        var z0 := t0 * 0.43
-        var z1 := t1 * 0.43
-        var row0: Array[Vector3] = [Vector3(-width0, 0.0, z0), Vector3(0.0, 0.036 * sin(PI * t0), z0), Vector3(width0, 0.0, z0)]
-        var row1: Array[Vector3] = [Vector3(-width1, 0.0, z1), Vector3(0.0, 0.036 * sin(PI * t1), z1), Vector3(width1, 0.0, z1)]
-        for lane in range(2):
-            var a: Vector3 = row0[lane]
-            var b: Vector3 = row0[lane + 1]
-            var c: Vector3 = row1[lane + 1]
-            var d: Vector3 = row1[lane]
-            for vertex in [a, b, c, a, c, d]:
-                vertices.append(vertex)
-                var center_vein: float = 1.0 if absf(vertex.x) < 0.0001 else 0.0
-                colors.append(Color(0.74 + center_vein * 0.24, 0.86 + center_vein * 0.14, 0.65 + center_vein * 0.18))
-                uv.append(Vector2(vertex.x * 3.0 + 0.5, vertex.z * 2.5))
-                normals.append(Vector3.UP)
+    var indices := PackedInt32Array()
+    var longitudinal_stations := 28
+    var lateral_stations := 24
+    var lengths: Array[float] = [0.50, 0.55, 0.46]
+    var widths: Array[float] = [0.145, 0.092, 0.132]
+    var exponents: Array[float] = [0.72, 1.10, 0.88]
+    var length: float = lengths[variant]
+    var maximum_width: float = widths[variant]
+    var width_exponent: float = exponents[variant]
+    for row in range(longitudinal_stations):
+        var t: float = float(row) / float(longitudinal_stations - 1)
+        var width: float = 0.003 + pow(maxf(0.0, sin(PI * t)), width_exponent) * maximum_width
+        var center_bend: float = 0.018 * sin(PI * t) * (0.7 if variant == 2 else 1.0)
+        for column in range(lateral_stations):
+            var lateral: float = float(column) / float(lateral_stations - 1) * 2.0 - 1.0
+            var edge_wave: float = 0.005 * sin(t * PI * 18.0 + float(variant) * 0.7) * pow(absf(lateral), 5.0) * sin(PI * t)
+            if variant == 2:
+                edge_wave += 0.004 * sin(t * PI * 6.0) * pow(absf(lateral), 3.0) * sin(PI * t)
+            var cupping: float = 0.047 * (1.0 - lateral * lateral) * sin(PI * t)
+            var ripple: float = 0.006 * sin(t * PI * 8.0 + lateral * 2.5) * (1.0 - absf(lateral))
+            var vertex := Vector3(lateral * width + signf(lateral) * edge_wave, cupping + ripple, t * length + center_bend + lateral * lateral * 0.012)
+            vertices.append(vertex)
+            uv.append(Vector2(float(column) / float(lateral_stations - 1), t))
+            var midrib: float = 1.0 - smoothstep(0.0, 0.060, absf(lateral))
+            var secondary_vein := 0.0
+            for vein_index in range(10):
+                var vein_start: float = 0.10 + float(vein_index) * 0.081
+                var vein_end: float = minf(0.98, vein_start + 0.28)
+                if t >= vein_start and t <= vein_end:
+                    var progress: float = (t - vein_start) / maxf(0.001, vein_end - vein_start)
+                    var vein_lateral: float = 0.08 + 0.86 * pow(progress, 0.84)
+                    var distance_to_vein: float = absf(absf(lateral) - vein_lateral)
+                    secondary_vein = maxf(secondary_vein, (1.0 - smoothstep(0.0, 0.045, distance_to_vein)) * sin(PI * progress))
+            var vein_light: float = clampf(midrib * 0.18 + secondary_vein * 0.11, 0.0, 0.24)
+            var mottling: float = 0.025 * sin(t * PI * 21.0 + lateral * 15.0) * sin(lateral * PI * 3.0)
+            colors.append(Color(0.76 + vein_light + mottling, 0.88 + vein_light + mottling, 0.69 + vein_light * 0.78 + mottling, 1.0))
+    for row in range(longitudinal_stations - 1):
+        for column in range(lateral_stations - 1):
+            var a: int = row * lateral_stations + column
+            var b: int = a + 1
+            var d: int = a + lateral_stations
+            var c: int = d + 1
+            indices.append(a)
+            indices.append(c)
+            indices.append(b)
+            indices.append(a)
+            indices.append(d)
+            indices.append(c)
+    normals.resize(vertices.size())
+    for vertex_index in range(normals.size()):
+        normals[vertex_index] = Vector3.ZERO
+    for index in range(0, indices.size(), 3):
+        var a: int = indices[index]
+        var b: int = indices[index + 1]
+        var c: int = indices[index + 2]
+        var face_normal: Vector3 = (vertices[b] - vertices[a]).cross(vertices[c] - vertices[a]).normalized()
+        normals[a] = normals[a] + face_normal
+        normals[b] = normals[b] + face_normal
+        normals[c] = normals[c] + face_normal
+    for vertex_index in range(normals.size()):
+        normals[vertex_index] = normals[vertex_index].normalized()
     var arrays := []
     arrays.resize(Mesh.ARRAY_MAX)
     arrays[Mesh.ARRAY_VERTEX] = vertices
     arrays[Mesh.ARRAY_NORMAL] = normals
     arrays[Mesh.ARRAY_COLOR] = colors
     arrays[Mesh.ARRAY_TEX_UV] = uv
+    arrays[Mesh.ARRAY_INDEX] = indices
     var mesh := ArrayMesh.new()
     mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+    leaf_mesh_cache[variant] = mesh
     return mesh
 
 func _create_animated_ecosystem() -> void:
@@ -1175,13 +1248,20 @@ func _create_animated_ecosystem() -> void:
     add_child(habitat_motion_root)
     var rng := RandomNumberGenerator.new()
     rng.seed = 17012026
-    var leaf_mesh := _leaf_mesh()
+    var leaf_mesh := _leaf_mesh(0)
+    var lanceolate_leaf_mesh := _leaf_mesh(1)
+    var undulate_leaf_mesh := _leaf_mesh(2)
     var leaf_materials: Array[StandardMaterial3D] = []
-    for tint in [Color(0.075, 0.24, 0.15), Color(0.12, 0.35, 0.20), Color(0.19, 0.43, 0.25), Color(0.28, 0.50, 0.28), Color(0.39, 0.49, 0.24), Color(0.47, 0.39, 0.18)]:
+    for tint in [Color(0.10, 0.24, 0.13), Color(0.13, 0.31, 0.17), Color(0.19, 0.37, 0.20), Color(0.27, 0.42, 0.22), Color(0.34, 0.43, 0.23), Color(0.38, 0.36, 0.19)]:
         var mat := _material(tint)
         mat.cull_mode = BaseMaterial3D.CULL_DISABLED
         mat.vertex_color_use_as_albedo = true
-        mat.roughness = 0.86
+        if leaf_texture != null:
+            mat.albedo_texture = leaf_texture
+            _apply_pbr(mat, "leaf")
+            mat.normal_scale = 0.24
+        mat.roughness = 0.72
+        mat.specular = 0.30
         leaf_materials.append(mat)
     var stem_material := _material(Color(0.24, 0.31, 0.15))
     var stem_mesh := CylinderMesh.new()
@@ -1192,7 +1272,7 @@ func _create_animated_ecosystem() -> void:
     var plant_clusters: Array[Vector2] = [Vector2(-2.22, -1.46), Vector2(-2.30, -0.55), Vector2(-2.15, 0.55), Vector2(-1.76, 1.48), Vector2(-0.88, 1.53), Vector2(0.20, 1.55), Vector2(1.28, 1.49), Vector2(2.20, 1.20), Vector2(2.25, 0.25), Vector2(2.22, -0.72), Vector2(1.82, -1.48), Vector2(0.70, -1.54), Vector2(-0.65, -1.50)]
     # Dense but irregular plant groups rise from the substrate into the canopy.
     # The center stays more open so the mantis remains readable at the larger scale.
-    for i in range(45):
+    for i in range(56):
         var plant := Node3D.new()
         plant.name = "Plant_%02d" % i
         var plant_cluster: Vector2 = plant_clusters[rng.randi_range(0, plant_clusters.size() - 1)]
@@ -1236,11 +1316,11 @@ func _create_animated_ecosystem() -> void:
                         pinna.rotation.z = leaflet_side * rng.randf_range(-0.16, 0.16)
                         frond.add_child(pinna)
                         var leaflet := MeshInstance3D.new()
-                        leaflet.mesh = leaf_mesh
+                        leaflet.mesh = lanceolate_leaf_mesh
                         leaflet.material_override = leaf_materials[rng.randi_range(0, 4)]
                         leaflet.scale = Vector3(rng.randf_range(0.48, 0.68), 0.78, rng.randf_range(0.72, 0.94))
                         leaflet.rotation.x = -0.18
-                        leaflet.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+                        leaflet.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if leaflet_index == 2 and frond_index % 2 == 0 and side_index == 0 else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
                         pinna.add_child(leaflet)
                 plant_pivots.append(frond)
                 plant_phases.append(rng.randf_range(0.0, TAU))
@@ -1256,11 +1336,11 @@ func _create_animated_ecosystem() -> void:
                 leaf_joint.rotation.z = rng.randf_range(-0.18, 0.18)
                 plant.add_child(leaf_joint)
                 var leaf := MeshInstance3D.new()
-                leaf.mesh = leaf_mesh
+                leaf.mesh = leaf_mesh if j % 3 != 1 else undulate_leaf_mesh
                 leaf.material_override = leaf_materials[rng.randi_range(0, leaf_materials.size() - 1)]
                 leaf.scale = Vector3(rng.randf_range(1.02, 1.62), 0.9, rng.randf_range(1.45, 2.20))
                 leaf.rotation.x = rng.randf_range(-0.24, -0.06)
-                leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+                leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if j % 7 == 0 else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
                 leaf_joint.add_child(leaf)
                 plant_pivots.append(leaf_joint)
                 plant_phases.append(rng.randf_range(0.0, TAU))
@@ -1275,11 +1355,11 @@ func _create_animated_ecosystem() -> void:
                 leaf_joint.rotation.z = rng.randf_range(-0.30, 0.30)
                 plant.add_child(leaf_joint)
                 var leaf := MeshInstance3D.new()
-                leaf.mesh = leaf_mesh
+                leaf.mesh = lanceolate_leaf_mesh if j % 3 == 0 else undulate_leaf_mesh
                 leaf.material_override = leaf_materials[rng.randi_range(0, leaf_materials.size() - 1)]
                 leaf.scale = Vector3(rng.randf_range(0.76, 1.20), 0.84, rng.randf_range(1.06, 1.62))
                 leaf.rotation.x = rng.randf_range(-0.32, -0.05)
-                leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+                leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if j % 7 == 0 else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
                 leaf_joint.add_child(leaf)
                 plant_pivots.append(leaf_joint)
                 plant_phases.append(rng.randf_range(0.0, TAU))
@@ -1288,7 +1368,7 @@ func _create_animated_ecosystem() -> void:
         plant_phases.append(rng.randf_range(0.0, TAU))
         plant_stiffness.append(rng.randf_range(0.35, 0.8))
     # A few climbing vines hang from the rear branches and connect the layers.
-    for vine_index in range(8):
+    for vine_index in range(11):
         var vine := Node3D.new()
         vine.name = "HangingVine_%02d" % vine_index
         vine.position = Vector3(rng.randf_range(-2.1, 2.1), rng.randf_range(1.10, 1.72), rng.randf_range(-1.62, -1.25))
@@ -1296,14 +1376,14 @@ func _create_animated_ecosystem() -> void:
         habitat_motion_root.add_child(vine)
         var vine_length := rng.randf_range(0.65, 1.35)
         _segment(vine, Vector3.ZERO, Vector3(rng.randf_range(-0.18, 0.18), -vine_length, 0.0), 0.004, Color(0.21, 0.32, 0.16))
-        for leaf_index in range(5):
+        for leaf_index in range(6):
             var leaf := MeshInstance3D.new()
-            leaf.mesh = leaf_mesh
+            leaf.mesh = lanceolate_leaf_mesh if leaf_index % 2 == 0 else undulate_leaf_mesh
             leaf.material_override = leaf_materials[rng.randi_range(0, leaf_materials.size() - 1)]
             leaf.position = Vector3(rng.randf_range(-0.13, 0.13), -vine_length * float(leaf_index + 1) / 6.0, 0.0)
             leaf.rotation = Vector3(-0.35, rng.randf_range(-PI, PI), rng.randf_range(-0.2, 0.2))
             leaf.scale = Vector3(0.86, 0.82, rng.randf_range(0.75, 1.2))
-            leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+            leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if leaf_index % 4 == 0 else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
             vine.add_child(leaf)
     # Ambient motes use shared meshes and stay sparse enough for mobile GPUs.
     var mote_mesh := SphereMesh.new()
@@ -1311,7 +1391,7 @@ func _create_animated_ecosystem() -> void:
     mote_mesh.rings = 3
     var mote_mat := _material(Color(0.68, 0.67, 0.44))
     mote_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-    for i in range(20):
+    for i in range(28):
         var mote := Node3D.new()
         var visual := MeshInstance3D.new()
         visual.mesh = mote_mesh
@@ -1347,13 +1427,17 @@ func _create_habitat_details() -> void:
         var litter_material := _material(tint)
         litter_material.cull_mode = BaseMaterial3D.CULL_DISABLED
         litter_material.vertex_color_use_as_albedo = true
+        if leaf_texture != null:
+            litter_material.albedo_texture = leaf_texture
+            _apply_pbr(litter_material, "leaf")
+            litter_material.normal_scale = 0.22
         litter_materials.append(litter_material)
     var stone_mesh := SphereMesh.new()
-    stone_mesh.radial_segments = 8
-    stone_mesh.rings = 4
-    var leaf_mesh := _leaf_mesh()
+    stone_mesh.radial_segments = 16
+    stone_mesh.rings = 8
+    var leaf_meshes: Array[ArrayMesh] = [_leaf_mesh(0), _leaf_mesh(1), _leaf_mesh(2)]
     var litter_clusters: Array[Vector2] = [Vector2(-2.17, -1.42), Vector2(-2.27, -0.50), Vector2(-2.12, 0.54), Vector2(-1.67, 1.45), Vector2(-0.66, 1.47), Vector2(0.75, 1.45), Vector2(1.85, 1.38), Vector2(2.17, 0.42), Vector2(2.22, -0.58), Vector2(1.73, -1.43), Vector2(0.55, -1.46), Vector2(-0.72, -1.43)]
-    for i in range(168):
+    for i in range(216):
         var item := MeshInstance3D.new()
         var litter_cluster: Vector2 = litter_clusters[rng.randi_range(0, litter_clusters.size() - 1)]
         var litter_angle: float = rng.randf_range(0.0, TAU)
@@ -1365,9 +1449,10 @@ func _create_habitat_details() -> void:
             item.material_override = stone_mat
             item.scale = Vector3(rng.randf_range(0.030, 0.075), rng.randf_range(0.010, 0.023), rng.randf_range(0.028, 0.073))
         else:
-            item.mesh = leaf_mesh
+            item.mesh = leaf_meshes[i % leaf_meshes.size()]
             item.material_override = litter_materials[rng.randi_range(0, litter_materials.size() - 1)]
             item.scale = Vector3(rng.randf_range(0.36, 0.84), 0.22, rng.randf_range(0.48, 1.18))
+            item.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if i % 4 == 0 else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
         root.add_child(item)
     for i in range(20):
         var twig_cluster: Vector2 = litter_clusters[rng.randi_range(0, litter_clusters.size() - 1)]
