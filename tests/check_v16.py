@@ -32,7 +32,7 @@ assert "for i in range(45):" in main and "FernFrond_%d" in main
 assert "for i in range(168):" in main
 assert "for vine_index in range(8):" in main
 assert "Vector2(-2.22, -1.46)" in main
-assert "var stations := 9" in main and "for vein_index in range(11):" in main
+assert "var stations := 9" in main and "for vein_index in range(13):" in main
 
 assert (root / "scenes/main.tscn").exists()
 assert len(list((root / "assets/textures").glob("*.png"))) >= 15
