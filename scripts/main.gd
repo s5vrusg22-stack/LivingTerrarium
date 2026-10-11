@@ -2081,21 +2081,6 @@ func _update_camera() -> void:
     var center := _camera_center()
     camera.position = center + Vector3(sin(orbit_yaw) * cos(orbit_pitch), sin(orbit_pitch), cos(orbit_yaw) * cos(orbit_pitch)) * orbit_distance
     camera.look_at(center, Vector3.UP)
-func _orbit(motion: Vector2) -> void:
-    orbit_yaw -= motion.x * 0.008
-    orbit_pitch = clampf(orbit_pitch + motion.y * 0.006, -0.15, 1.05)
-
-func _set_camera_zoom(distance_delta: float) -> void:
-    orbit_distance = clampf(orbit_distance + distance_delta, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE)
-    _update_camera()
-
-func _update_camera() -> void:
-    if camera == null:
-        return
-    var center := animal.position + Vector3(0, 0.35, 0) if follow_animal and animal != null else Vector3(0, 0.0, 0)
-    camera.position = center + Vector3(sin(orbit_yaw) * cos(orbit_pitch), sin(orbit_pitch), cos(orbit_yaw) * cos(orbit_pitch)) * orbit_distance
-    camera.look_at(center, Vector3.UP)
-
 func _refresh() -> void:
     if status == null:
         return
