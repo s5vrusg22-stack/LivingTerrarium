@@ -168,9 +168,9 @@ func _plant_interactions(dt: float) -> void:
     for joint in host.plant_pivots:
         if not is_instance_valid(joint) or joint.get_parent() == null:
             continue
-        var parent_id := joint.get_parent().get_instance_id()
+        var parent_id: int = joint.get_parent().get_instance_id()
         if propagation.has(parent_id):
-            var id := joint.get_instance_id()
+            var id: int = joint.get_instance_id()
             leaf_velocities[id] = float(leaf_velocities.get(id, 0.0)) + float(propagation[parent_id])
 
 func _prey_interactions(dt: float) -> void:
@@ -211,13 +211,13 @@ func _prey_interactions(dt: float) -> void:
         for other in host.prey_nodes:
             if other == prey or not is_instance_valid(other):
                 continue
-            var diff := prey.position - other.position
+            var diff: Vector3 = prey.position - other.position
             if diff.length_squared() > 0.0001 and diff.length_squared() < 0.012:
                 velocity += diff.normalized() * 0.025
         for decor in host.decorations:
             if not is_instance_valid(decor):
                 continue
-            var diff := prey.position - decor.position
+            var diff: Vector3 = prey.position - decor.position
             if diff.length_squared() > 0.0001 and diff.length_squared() < 0.018:
                 velocity += diff.normalized() * 0.035
         velocity.y = 0.0
@@ -253,7 +253,7 @@ func _habitat_interactions(dt: float) -> void:
         if not is_instance_valid(branch):
             branch_nodes.erase(branch)
             continue
-        var id := branch.get_instance_id()
+        var id: int = branch.get_instance_id()
         var sway := float(branch_velocities.get(id, 0.0))
         if branch.global_position.distance_to(animal_pos) < 0.36:
             sway += dt * clampf(speed, 0.0, 1.0) * 0.45
