@@ -12,6 +12,13 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Generate mantis cuticle PBR maps
+        run: |
+          python -m pip install --disable-pip-version-check numpy pillow
+          python tools/generate_mantis_cuticle_texture.py
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
