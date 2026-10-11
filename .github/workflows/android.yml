@@ -51,11 +51,24 @@ jobs:
           test -x "$ANDROID_HOME/build-tools/34.0.0/apksigner"
           test -f "$HOME/debug.keystore"
           test -f "$HOME/.local/share/godot/export_templates/4.3.stable/android_debug.apk"
-      - name: Import project
+      - name: Import project and reject script parse errors
         shell: bash
         run: |
           set -euo pipefail
-          godot --headless --path . --editor --import --quit
+          godot --headless --path . --editor --import --quit 2>&1 | tee /tmp/godot-import.log
+          if grep -E 'SCRIPT ERROR:|Parse Error:|Failed to load script' /tmp/godot-import.log; then
+            echo 'Godot reported a script import or parse error.' >&2
+            exit 1
+          fi
+      - name: Smoke test the startup scene
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --quit-after 180 2>&1 | tee /tmp/godot-startup.log
+          if grep -E 'SCRIPT ERROR:|Parse Error:|Failed to load script|Invalid call|Invalid set index|Node not found' /tmp/godot-startup.log; then
+            echo 'Godot reported an application startup error.' >&2
+            exit 1
+          fi
       - name: Export Android debug APK
         shell: bash
         run: |

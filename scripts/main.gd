@@ -1393,7 +1393,7 @@ func _input(event: InputEvent) -> void:
         if not menu_touch_dragging and menu_touch_start.distance_to(event.position) > 10.0:
             menu_touch_dragging = true
         if menu_touch_dragging:
-            var delta_y := event.position.y - menu_touch_last.y
+            var delta_y: float = event.position.y - menu_touch_last.y
             var bar := menu_scroll.get_v_scroll_bar()
             menu_scroll.scroll_vertical = clampi(menu_scroll.scroll_vertical - roundi(delta_y), 0, int(bar.max_value))
             menu_touch_last = event.position
