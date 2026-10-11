@@ -553,8 +553,9 @@ func _create_world() -> void:
         _organic_tube(trunk_points, trunk_radii, 12, bark_mat, habitat_root)
         habitat_trunks.append({"points": trunk_points, "radii": trunk_radii})
         # Broad roots taper into the substrate and merge visibly into the trunk.
-        for root_index in range(branch_rng.randi_range(3, 5)):
-            var angle := float(root_index) * TAU / 4.0 + branch_rng.randf_range(-0.38, 0.38)
+        var root_count := branch_rng.randi_range(3, 5)
+        for root_index in range(root_count):
+            var angle := float(root_index) * TAU / float(root_count) + branch_rng.randf_range(-0.38, 0.38)
             var root_end := Vector3(clampf(start.x + cos(angle) * branch_rng.randf_range(0.22, 0.42), -2.46, 2.46), -0.525, clampf(start.z + sin(angle) * branch_rng.randf_range(0.20, 0.39), -1.72, 1.72))
             var root_join := start + Vector3(0.0, 0.16, 0.0)
             var root_c1 := root_end.lerp(root_join, 0.35) + Vector3(0.0, -0.035, 0.0)
