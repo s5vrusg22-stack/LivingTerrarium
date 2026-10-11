@@ -18,17 +18,25 @@ var simulation_paused := false
 var behavior := "휴식"
 var animal: Node3D
 var camera: Camera3D
+var camera_target := Vector3(0, 0.20, 0)
+var camera_pan_offset := Vector3.ZERO
+var camera_pan_mode := false
+var mouse_pan_active := false
+var pan_center_previous := Vector2.ZERO
+var habitat_root: Node3D
+var leaf_detail_texture: Texture2D
+var leaf_normal_texture: Texture2D
 var status: Label
 var notice: Label
 var orbit_yaw := 0.0
-var orbit_pitch := 0.25
-var orbit_distance := 5.3
-const CAMERA_MIN_DISTANCE := 0.65
-const CAMERA_MAX_DISTANCE := 13.0
-const WALK_BOUND_X := 2.18
-const WALK_BOUND_Z := 1.42
-const PREY_BOUND_X := 2.36
-const PREY_BOUND_Z := 1.68
+var orbit_pitch := 0.30
+var orbit_distance := 8.6
+const CAMERA_MIN_DISTANCE := 0.42
+const CAMERA_MAX_DISTANCE := 22.0
+const WALK_BOUND_X := 3.25
+const WALK_BOUND_Z := 2.18
+const PREY_BOUND_X := 3.48
+const PREY_BOUND_Z := 2.46
 var pointer_last := Vector2.ZERO
 var touching := false
 var touch_points: Dictionary = {}
@@ -180,6 +188,7 @@ var habitat_event_count := 0
 
 func _ready() -> void:
     _load_textures()
+    _build_leaf_detail_textures()
     _create_world()
     terrain_root = Node3D.new()
     terrain_root.name = "UserDecorations"
@@ -364,6 +373,13 @@ func _create_world() -> void:
     sun.light_energy = 1.12
     sun.shadow_enabled = true
     add_child(sun)
+    # Scale the habitat around the walkable floor so the animal and its movement
+    # stay unchanged while the enclosure gains 50% more room in every direction.
+    habitat_root = Node3D.new()
+    habitat_root.name = "HabitatScaleRoot"
+    habitat_root.scale = Vector3.ONE * 1.5
+    habitat_root.position = Vector3(0, 0.275, 0)
+    add_child(habitat_root)
     # The enclosure grows around the existing animal scale. Keep the mantis
     # model's transform unchanged while giving it a roomy, layered habitat.
     _box(Vector3(5.2, 0.2, 3.8), Vector3(0, -0.65, 0), Color(0.23, 0.15, 0.09))
@@ -418,9 +434,9 @@ func _create_world() -> void:
 func _create_climbable_branch() -> void:
     # A substantial inclined trunk branch gives the feet a real surface to grip.
     # Its matching collider keeps the climb pose attached to the wood.
-    _tapered_branch(climb_branch_start, climb_branch_end, 0.074, 0.048)
+    _tapered_branch(climb_branch_start, climb_branch_end, 0.074, 0.048, self)
     var fork_start := climb_branch_start.lerp(climb_branch_end, 0.61)
-    _tapered_branch(fork_start, fork_start + Vector3(0.34, 0.38, -0.16), 0.034, 0.012)
+    _tapered_branch(fork_start, fork_start + Vector3(0.34, 0.38, -0.16), 0.034, 0.012, self)
     _walkable_wood(self, climb_branch_start, climb_branch_end, 0.068)
 
 func _advance_climb(dt: float, force_demo: bool = false) -> void:
@@ -518,7 +534,7 @@ func _create_floor_collider() -> void:
     box_shape.size = Vector3(5.2, 0.2, 3.8)
     shape.shape = box_shape
     floor_body.add_child(shape)
-    add_child(floor_body)
+    habitat_root.add_child(floor_body)
 
 func _walkable_sphere(parent: Node3D, center: Vector3, radius: Vector3) -> void:
     var body := StaticBody3D.new()
@@ -989,7 +1005,7 @@ func _ellipsoid(pos: Vector3, scale_value: Vector3, color: Color) -> void:
     item.position = pos
     item.scale = scale_value
     item.material_override = _material(color)
-    add_child(item)
+    (habitat_root if habitat_root != null else self).add_child(item)
 
 func _segment(parent: Node3D, a: Vector3, b: Vector3, radius: float, color: Color) -> void:
     var item := MeshInstance3D.new()
@@ -1010,7 +1026,7 @@ func _segment(parent: Node3D, a: Vector3, b: Vector3, radius: float, color: Colo
 func _branch(a: Vector3, b: Vector3, radius: float) -> void:
     _segment(self, a, b, radius, Color(0.32, 0.21, 0.12))
 
-func _tapered_branch(a: Vector3, b: Vector3, base_radius: float, tip_radius: float) -> void:
+func _tapered_branch(a: Vector3, b: Vector3, base_radius: float, tip_radius: float, target_parent: Node3D = null) -> void:
     var item := MeshInstance3D.new()
     var mesh := CylinderMesh.new()
     mesh.top_radius = maxf(0.004, tip_radius)
@@ -1025,7 +1041,8 @@ func _tapered_branch(a: Vector3, b: Vector3, base_radius: float, tip_radius: flo
         mat.albedo_texture = bark_texture
         _apply_pbr(mat, "bark")
     item.material_override = mat
-    add_child(item)
+    var destination: Node3D = target_parent if target_parent != null else (habitat_root if habitat_root != null else self)
+    destination.add_child(item)
 
 func _box(size: Vector3, pos: Vector3, color: Color, transparent := false) -> void:
     var item := MeshInstance3D.new()
@@ -1044,7 +1061,7 @@ func _box(size: Vector3, pos: Vector3, color: Color, transparent := false) -> vo
         mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
         mat.roughness = 0.08
     item.material_override = mat
-    add_child(item)
+    (habitat_root if habitat_root != null else self).add_child(item)
 
 func _material(color: Color) -> StandardMaterial3D:
     var mat := StandardMaterial3D.new()
@@ -1115,7 +1132,7 @@ func _create_ui() -> void:
     _button(column, "분무 +10%", func(): humidity = minf(100.0, humidity + 10.0); _refresh())
     _button(column, "일시정지 / 재개", func(): simulation_paused = not simulation_paused; _refresh())
     _button(column, "발 접지 켜기/끄기", func(): foot_contacts_enabled = not foot_contacts_enabled; notice.text = "발 접지: " + ("켜짐" if foot_contacts_enabled else "꺼짐"))
-    _button(column, "개체 추적 켜기/끄기", func(): follow_animal = not follow_animal; _update_camera())
+    _button(column, "개체 추적 켜기/끄기", func(): _toggle_follow_camera())
     _button(column, "돌 배치 모드", func(): _set_edit_mode("rock"))
     _button(column, "유목 배치 모드", func(): _set_edit_mode("wood"))
     _button(column, "장식 지우기 모드", func(): _set_edit_mode("erase"))
@@ -1128,7 +1145,7 @@ func _create_ui() -> void:
     edit_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
     column.add_child(edit_hint)
     notice = Label.new()
-    notice.text = "드래그: 회전 | 두 손가락 또는 오른쪽 +/-: 확대"
+    notice.text = "드래그: 회전 | 이동 버튼을 누른 뒤 드래그: 시야 이동 | 두 손가락: 이동·확대"
     notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
     column.add_child(notice)
 
@@ -1138,9 +1155,9 @@ func _create_ui() -> void:
     zoom_controls.anchor_right = 1.0
     zoom_controls.anchor_bottom = 0.5
     zoom_controls.offset_left = -84.0
-    zoom_controls.offset_top = -102.0
+    zoom_controls.offset_top = -150.0
     zoom_controls.offset_right = -14.0
-    zoom_controls.offset_bottom = 102.0
+    zoom_controls.offset_bottom = 150.0
     zoom_controls.add_theme_constant_override("separation", 8)
     root_ui.add_child(zoom_controls)
     var zoom_in := Button.new()
@@ -1158,8 +1175,74 @@ func _create_ui() -> void:
     var zoom_reset := Button.new()
     zoom_reset.text = "맞춤"
     zoom_reset.custom_minimum_size = Vector2(68, 42)
-    zoom_reset.pressed.connect(func(): orbit_distance = 5.3; _update_camera())
+    zoom_reset.pressed.connect(func(): _reset_camera())
     zoom_controls.add_child(zoom_reset)
+
+    var pan_mode_button := Button.new()
+    pan_mode_button.text = "회전"
+    pan_mode_button.custom_minimum_size = Vector2(68, 42)
+    pan_mode_button.pressed.connect(func():
+        camera_pan_mode = not camera_pan_mode
+        pan_mode_button.text = "이동" if camera_pan_mode else "회전"
+        notice.text = "한 손가락 드래그로 시야 이동" if camera_pan_mode else "한 손가락 드래그로 회전"
+    )
+    zoom_controls.add_child(pan_mode_button)
+    var focus_button := Button.new()
+    focus_button.text = "개체"
+    focus_button.custom_minimum_size = Vector2(68, 42)
+    focus_button.pressed.connect(func(): _focus_mantis_camera())
+    zoom_controls.add_child(focus_button)
+
+    var pan_pad := GridContainer.new()
+    pan_pad.columns = 3
+    pan_pad.anchor_left = 1.0
+    pan_pad.anchor_top = 1.0
+    pan_pad.anchor_right = 1.0
+    pan_pad.anchor_bottom = 1.0
+    pan_pad.offset_left = -158.0
+    pan_pad.offset_top = -158.0
+    pan_pad.offset_right = -10.0
+    pan_pad.offset_bottom = -10.0
+    pan_pad.add_theme_constant_override("h_separation", 4)
+    pan_pad.add_theme_constant_override("v_separation", 4)
+    root_ui.add_child(pan_pad)
+    var pad_up_space := Control.new()
+    pad_up_space.custom_minimum_size = Vector2(44, 44)
+    pan_pad.add_child(pad_up_space)
+    var pad_up := Button.new()
+    pad_up.text = "▲"
+    pad_up.custom_minimum_size = Vector2(44, 44)
+    pad_up.pressed.connect(func(): _move_camera_direction(Vector2(0, 1)))
+    pan_pad.add_child(pad_up)
+    var pad_top_space := Control.new()
+    pad_top_space.custom_minimum_size = Vector2(44, 44)
+    pan_pad.add_child(pad_top_space)
+    var pad_left := Button.new()
+    pad_left.text = "◀"
+    pad_left.custom_minimum_size = Vector2(44, 44)
+    pad_left.pressed.connect(func(): _move_camera_direction(Vector2(-1, 0)))
+    pan_pad.add_child(pad_left)
+    var pad_center := Button.new()
+    pad_center.text = "◎"
+    pad_center.custom_minimum_size = Vector2(44, 44)
+    pad_center.pressed.connect(func(): _focus_mantis_camera())
+    pan_pad.add_child(pad_center)
+    var pad_right := Button.new()
+    pad_right.text = "▶"
+    pad_right.custom_minimum_size = Vector2(44, 44)
+    pad_right.pressed.connect(func(): _move_camera_direction(Vector2(1, 0)))
+    pan_pad.add_child(pad_right)
+    var pad_bottom_left_space := Control.new()
+    pad_bottom_left_space.custom_minimum_size = Vector2(44, 44)
+    pan_pad.add_child(pad_bottom_left_space)
+    var pad_down := Button.new()
+    pad_down.text = "▼"
+    pad_down.custom_minimum_size = Vector2(44, 44)
+    pad_down.pressed.connect(func(): _move_camera_direction(Vector2(0, -1)))
+    pan_pad.add_child(pad_down)
+    var pad_bottom_right_space := Control.new()
+    pad_bottom_right_space.custom_minimum_size = Vector2(44, 44)
+    pan_pad.add_child(pad_bottom_right_space)
 
 func _resize_ui() -> void:
     if ui_panel == null:
@@ -1170,34 +1253,107 @@ func _resize_ui() -> void:
 
 
 # Reusable simple leaf mesh: six triangles with a raised midrib and pointed tip.
+func _build_leaf_detail_textures() -> void:
+    var tex_width := 128
+    var tex_height := 256
+    var height_values := PackedFloat32Array()
+    height_values.resize(tex_width * tex_height)
+    var albedo_image := Image.create(tex_width, tex_height, false, Image.FORMAT_RGBA8)
+    for y in range(tex_height):
+        var t: float = float(y) / float(tex_height - 1)
+        for x in range(tex_width):
+            var u: float = float(x) / float(tex_width - 1) * 2.0 - 1.0
+            var central_vein: float = exp(-pow(absf(u) / 0.024, 2.0))
+            var side_vein := 0.0
+            var side_sign: float = -1.0 if u < 0.0 else 1.0
+            for vein_index in range(8):
+                var root_t: float = 0.12 + float(vein_index) * 0.105
+                var vein_t: float = root_t + absf(u) * 0.075 + side_sign * absf(u) * 0.012
+                var distance_to_vein: float = absf(t - vein_t)
+                side_vein = maxf(side_vein, exp(-pow(distance_to_vein / 0.006, 2.0)) * clampf(1.0 - absf(u) * 1.6, 0.0, 1.0))
+            var noise_value: float = sin(float(x) * 12.9898 + float(y) * 78.233) * 43758.5453
+            noise_value = (fposmod(noise_value, 1.0) * 2.0 - 1.0) * 0.018
+            var edge_darkening: float = pow(absf(u), 3.0) * 0.07
+            var pigment: float = clampf(0.94 + noise_value + central_vein * 0.055 - side_vein * 0.13 - edge_darkening, 0.72, 1.0)
+            albedo_image.set_pixel(x, y, Color(clampf(pigment * 1.05, 0.0, 1.0), pigment, clampf(pigment * 0.91, 0.0, 1.0), 1.0))
+            var grain: float = sin(float(x) * 0.41 + float(y) * 0.23) * 0.0012
+            height_values[y * tex_width + x] = central_vein * 0.012 + side_vein * 0.004 + grain
+    var normal_image := Image.create(tex_width, tex_height, false, Image.FORMAT_RGBA8)
+    for y in range(tex_height):
+        for x in range(tex_width):
+            var left_value: float = height_values[y * tex_width + maxi(0, x - 1)]
+            var right_value: float = height_values[y * tex_width + mini(tex_width - 1, x + 1)]
+            var upper_value: float = height_values[maxi(0, y - 1) * tex_width + x]
+            var lower_value: float = height_values[mini(tex_height - 1, y + 1) * tex_width + x]
+            var normal := Vector3((left_value - right_value) * 5.0, (upper_value - lower_value) * 5.0, 1.0).normalized()
+            normal_image.set_pixel(x, y, Color(normal.x * 0.5 + 0.5, normal.y * 0.5 + 0.5, normal.z * 0.5 + 0.5, 1.0))
+    leaf_detail_texture = ImageTexture.create_from_image(albedo_image)
+    leaf_normal_texture = ImageTexture.create_from_image(normal_image)
+
+func _leaf_surface(u: float, t: float) -> Vector3:
+    var safe_t: float = clampf(t, 0.0, 1.0)
+    var taper: float = pow(maxf(0.0, sin(PI * safe_t)), 0.78)
+    var edge_wave: float = 0.003 * sin(safe_t * PI * 24.0) * taper * pow(absf(u), 6.0)
+    var width: float = 0.004 + taper * 0.122 + edge_wave
+    var midrib: float = 0.018 * taper
+    var cup: float = 0.010 * taper * (1.0 - absf(u))
+    var natural_bend: float = 0.008 * sin(safe_t * TAU + 0.35) * taper
+    var serration_lift: float = 0.002 * sin(safe_t * PI * 24.0) * taper * pow(absf(u), 6.0)
+    return Vector3(u * width, midrib + cup + natural_bend + serration_lift, safe_t * 0.56)
+
+func _leaf_surface_normal(u: float, t: float) -> Vector3:
+    var u0: float = maxf(-1.0, u - 0.012)
+    var u1: float = minf(1.0, u + 0.012)
+    var t0: float = maxf(0.0, t - 0.003)
+    var t1: float = minf(1.0, t + 0.003)
+    var tangent_u := _leaf_surface(u1, t) - _leaf_surface(u0, t)
+    var tangent_t := _leaf_surface(u, t1) - _leaf_surface(u, t0)
+    var normal := tangent_t.cross(tangent_u).normalized()
+    return normal if normal.y >= 0.0 else -normal
+
 func _leaf_mesh() -> ArrayMesh:
-    # Curved leaf blade with a tapered tip, raised midrib, cupped edges, and a
-    # subtle pigment gradient. Shared by canopy leaves and forest-floor litter.
+    # Higher-density leaf surfaces have rolled edges, a lifted midrib, gentle
+    # serrations, and normals that catch light across the blade.
     var vertices := PackedVector3Array()
     var colors := PackedColorArray()
     var normals := PackedVector3Array()
     var uv := PackedVector2Array()
-    var stations := 9
-    for i in range(stations - 1):
-        var t0: float = float(i) / float(stations - 1)
-        var t1: float = float(i + 1) / float(stations - 1)
-        var width0: float = 0.004 + pow(maxf(0.0, sin(PI * t0)), 0.82) * 0.112
-        var width1: float = 0.004 + pow(maxf(0.0, sin(PI * t1)), 0.82) * 0.112
-        var z0 := t0 * 0.43
-        var z1 := t1 * 0.43
-        var row0: Array[Vector3] = [Vector3(-width0, 0.0, z0), Vector3(0.0, 0.036 * sin(PI * t0), z0), Vector3(width0, 0.0, z0)]
-        var row1: Array[Vector3] = [Vector3(-width1, 0.0, z1), Vector3(0.0, 0.036 * sin(PI * t1), z1), Vector3(width1, 0.0, z1)]
-        for lane in range(2):
-            var a: Vector3 = row0[lane]
-            var b: Vector3 = row0[lane + 1]
-            var c: Vector3 = row1[lane + 1]
-            var d: Vector3 = row1[lane]
-            for vertex in [a, b, c, a, c, d]:
-                vertices.append(vertex)
-                var center_vein: float = 1.0 if absf(vertex.x) < 0.0001 else 0.0
-                colors.append(Color(0.74 + center_vein * 0.24, 0.86 + center_vein * 0.14, 0.65 + center_vein * 0.18))
-                uv.append(Vector2(vertex.x * 3.0 + 0.5, vertex.z * 2.5))
-                normals.append(Vector3.UP)
+    var station_count := 25
+    var lane_count := 10
+    var rows: Array = []
+    for station in range(station_count):
+        var t: float = float(station) / float(station_count - 1)
+        var row: Array[Vector3] = []
+        for lane in range(lane_count + 1):
+            var u: float = float(lane) / float(lane_count) * 2.0 - 1.0
+            row.append(_leaf_surface(u, t))
+        rows.append(row)
+    for station in range(station_count - 1):
+        var t0: float = float(station) / float(station_count - 1)
+        var t1: float = float(station + 1) / float(station_count - 1)
+        for lane in range(lane_count):
+            var u0: float = float(lane) / float(lane_count) * 2.0 - 1.0
+            var u1: float = float(lane + 1) / float(lane_count) * 2.0 - 1.0
+            var p00: Vector3 = rows[station][lane]
+            var p10: Vector3 = rows[station][lane + 1]
+            var p11: Vector3 = rows[station + 1][lane + 1]
+            var p01: Vector3 = rows[station + 1][lane]
+            var uv00 := Vector2((u0 + 1.0) * 0.5, t0)
+            var uv10 := Vector2((u1 + 1.0) * 0.5, t0)
+            var uv11 := Vector2((u1 + 1.0) * 0.5, t1)
+            var uv01 := Vector2((u0 + 1.0) * 0.5, t1)
+            for entry in [[p00, uv00, u0, t0], [p10, uv10, u1, t0], [p11, uv11, u1, t1], [p00, uv00, u0, t0], [p11, uv11, u1, t1], [p01, uv01, u0, t1]]:
+                var point: Vector3 = entry[0]
+                var point_uv: Vector2 = entry[1]
+                var point_u: float = entry[2]
+                var point_t: float = entry[3]
+                vertices.append(point)
+                uv.append(point_uv)
+                normals.append(_leaf_surface_normal(point_u, point_t))
+                var edge_factor: float = pow(absf(point_u), 2.0)
+                var central_vein: float = exp(-pow(absf(point_u) / 0.040, 2.0))
+                var tone: float = 0.96 + 0.04 * sin(PI * point_t) - edge_factor * 0.06 + central_vein * 0.025
+                colors.append(Color(tone, clampf(tone + 0.015, 0.0, 1.0), clampf(tone - 0.025, 0.0, 1.0), 1.0))
     var arrays := []
     arrays.resize(Mesh.ARRAY_MAX)
     arrays[Mesh.ARRAY_VERTEX] = vertices
@@ -1207,20 +1363,23 @@ func _leaf_mesh() -> ArrayMesh:
     var mesh := ArrayMesh.new()
     mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
     return mesh
-
 func _create_animated_ecosystem() -> void:
     habitat_motion_root = Node3D.new()
     habitat_motion_root.name = "AnimatedEcosystem"
-    add_child(habitat_motion_root)
+    habitat_root.add_child(habitat_motion_root)
     var rng := RandomNumberGenerator.new()
     rng.seed = 17012026
     var leaf_mesh := _leaf_mesh()
     var leaf_materials: Array[StandardMaterial3D] = []
-    for tint in [Color(0.075, 0.24, 0.15), Color(0.12, 0.35, 0.20), Color(0.19, 0.43, 0.25), Color(0.28, 0.50, 0.28), Color(0.39, 0.49, 0.24), Color(0.47, 0.39, 0.18)]:
+    for tint in [Color(0.055, 0.18, 0.045), Color(0.09, 0.26, 0.065), Color(0.14, 0.34, 0.09), Color(0.20, 0.42, 0.12), Color(0.28, 0.34, 0.10), Color(0.32, 0.24, 0.07)]:
         var mat := _material(tint)
         mat.cull_mode = BaseMaterial3D.CULL_DISABLED
         mat.vertex_color_use_as_albedo = true
-        mat.roughness = 0.86
+        mat.albedo_texture = leaf_detail_texture
+        mat.normal_enabled = true
+        mat.normal_texture = leaf_normal_texture
+        mat.normal_scale = 0.12
+        mat.roughness = 0.88
         leaf_materials.append(mat)
     var stem_material := _material(Color(0.24, 0.31, 0.15))
     var stem_mesh := CylinderMesh.new()
@@ -1367,15 +1526,15 @@ func _create_habitat_details() -> void:
     var frame_color := Color(0.14, 0.18, 0.16)
     for x in [-2.57, 2.57]:
         for z in [-1.87, 1.87]:
-            _segment(self, Vector3(x, -0.53, z), Vector3(x, 2.14, z), 0.014, frame_color)
+            _segment(habitat_root, Vector3(x, -0.53, z), Vector3(x, 2.14, z), 0.014, frame_color)
     for y in [-0.53, 2.14]:
         for z in [-1.87, 1.87]:
-            _segment(self, Vector3(-2.57, y, z), Vector3(2.57, y, z), 0.014, frame_color)
+            _segment(habitat_root, Vector3(-2.57, y, z), Vector3(2.57, y, z), 0.014, frame_color)
         for x in [-2.57, 2.57]:
-            _segment(self, Vector3(x, y, -1.87), Vector3(x, y, 1.87), 0.014, frame_color)
+            _segment(habitat_root, Vector3(x, y, -1.87), Vector3(x, y, 1.87), 0.014, frame_color)
     var root := Node3D.new()
     root.name = "SubstrateDetails"
-    add_child(root)
+    habitat_root.add_child(root)
     var rng := RandomNumberGenerator.new()
     rng.seed = 240619
     var stone_mat := _material(Color(0.25, 0.25, 0.21))
@@ -1756,6 +1915,20 @@ func _clear_menu_click_suppression() -> void:
     suppress_menu_click = false
 
 func _unhandled_input(event: InputEvent) -> void:
+    if event is InputEventKey and event.pressed and not event.echo:
+        var direction := Vector2.ZERO
+        if event.keycode == KEY_W or event.keycode == KEY_UP:
+            direction.y = 1.0
+        elif event.keycode == KEY_S or event.keycode == KEY_DOWN:
+            direction.y = -1.0
+        elif event.keycode == KEY_A or event.keycode == KEY_LEFT:
+            direction.x = -1.0
+        elif event.keycode == KEY_D or event.keycode == KEY_RIGHT:
+            direction.x = 1.0
+        if direction != Vector2.ZERO:
+            _move_camera_direction(direction)
+            get_viewport().set_input_as_handled()
+            return
     if event is InputEventMouseButton:
         if event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
             _set_camera_zoom(-0.35)
@@ -1769,13 +1942,21 @@ func _unhandled_input(event: InputEvent) -> void:
                 elif not edit_mouse_moved and edit_mouse_start.distance_to(event.position) < 16.0:
                     _place_at_screen(event.position)
             touching = event.pressed and not editing
+            mouse_pan_active = false
+            pointer_last = event.position
+        elif event.button_index == MOUSE_BUTTON_MIDDLE or event.button_index == MOUSE_BUTTON_RIGHT:
+            touching = event.pressed and not editing
+            mouse_pan_active = event.pressed and not editing
             pointer_last = event.position
     elif event is InputEventMouseMotion:
         if editing and event.button_mask & MOUSE_BUTTON_MASK_LEFT:
             if edit_mouse_start.distance_to(event.position) > 16.0:
                 edit_mouse_moved = true
         elif touching:
-            _orbit(event.relative)
+            if mouse_pan_active or camera_pan_mode:
+                _pan_camera(event.relative)
+            else:
+                _orbit(event.relative)
     elif event is InputEventScreenTouch:
         if editing and not event.pressed and touch_points.size() <= 1 and not edit_touch_moved and edit_touch_start.distance_to(event.position) < 20.0:
             _place_at_screen(event.position)
@@ -1787,20 +1968,111 @@ func _unhandled_input(event: InputEvent) -> void:
         else:
             touch_points.erase(event.index)
         pinch_previous = 0.0
+        pan_center_previous = Vector2.ZERO
     elif event is InputEventScreenDrag:
         touch_points[event.index] = event.position
         if editing and (touch_points.size() > 1 or edit_touch_start.distance_to(event.position) > 20.0):
             edit_touch_moved = true
         if touch_points.size() == 1:
-            _orbit(event.relative)
+            if camera_pan_mode:
+                _pan_camera(event.relative)
+            else:
+                _orbit(event.relative)
         elif touch_points.size() == 2:
             var points := touch_points.values()
-            var distance: float = points[0].distance_to(points[1])
+            var point_a: Vector2 = points[0]
+            var point_b: Vector2 = points[1]
+            var midpoint: Vector2 = (point_a + point_b) * 0.5
+            var distance: float = point_a.distance_to(point_b)
             if pinch_previous > 0.0:
                 orbit_distance = clampf(orbit_distance - (distance - pinch_previous) * 0.014, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE)
+                _pan_camera(midpoint - pan_center_previous)
             pinch_previous = distance
+            pan_center_previous = midpoint
     _update_camera()
 
+func _orbit(motion: Vector2) -> void:
+    orbit_yaw -= motion.x * 0.008
+    orbit_pitch = clampf(orbit_pitch + motion.y * 0.006, -1.42, 1.42)
+
+func _pan_camera(motion: Vector2) -> void:
+    if camera == null:
+        return
+    var right := camera.global_transform.basis.x.normalized()
+    var up := camera.global_transform.basis.y.normalized()
+    var pan_scale: float = orbit_distance * 0.0014
+    _apply_camera_translation(-right * motion.x * pan_scale + up * motion.y * pan_scale)
+
+func _move_camera_direction(direction: Vector2) -> void:
+    var right := Vector3(cos(orbit_yaw), 0.0, -sin(orbit_yaw))
+    var forward := Vector3(-sin(orbit_yaw), 0.0, -cos(orbit_yaw))
+    var step: float = maxf(0.16, orbit_distance * 0.045)
+    _apply_camera_translation((right * direction.x + forward * direction.y) * step)
+
+func _apply_camera_translation(delta: Vector3) -> void:
+    var center := _camera_center() + delta
+    center.x = clampf(center.x, -5.5, 5.5)
+    center.y = clampf(center.y, -0.72, 4.0)
+    center.z = clampf(center.z, -4.2, 4.2)
+    if follow_animal and animal != null:
+        camera_pan_offset = center - (animal.position + Vector3(0, 0.35, 0))
+    else:
+        camera_target = center
+    _update_camera()
+
+func _camera_center() -> Vector3:
+    if follow_animal and animal != null:
+        return animal.position + Vector3(0, 0.35, 0) + camera_pan_offset
+    return camera_target
+
+func _toggle_follow_camera() -> void:
+    if animal == null:
+        return
+    if follow_animal:
+        camera_target = _camera_center()
+        camera_pan_offset = Vector3.ZERO
+        follow_animal = false
+    else:
+        camera_pan_offset = camera_target - (animal.position + Vector3(0, 0.35, 0))
+        follow_animal = true
+    _update_camera()
+
+func _focus_mantis_camera() -> void:
+    if animal == null:
+        return
+    follow_animal = true
+    camera_pan_offset = Vector3.ZERO
+    orbit_distance = 1.8
+    _update_camera()
+
+func _fit_enclosure_distance() -> float:
+    var vertical_fov: float = deg_to_rad(camera.fov)
+    var screen := get_viewport().get_visible_rect().size
+    var aspect: float = maxf(0.45, screen.x / maxf(1.0, screen.y))
+    var horizontal_fov: float = 2.0 * atan(tan(vertical_fov * 0.5) * aspect)
+    var vertical_distance: float = 3.15 / tan(vertical_fov * 0.5)
+    var horizontal_distance: float = 4.35 / tan(horizontal_fov * 0.5)
+    return clampf(maxf(vertical_distance, horizontal_distance) * 1.12, 7.5, CAMERA_MAX_DISTANCE)
+
+func _reset_camera() -> void:
+    follow_animal = false
+    camera_pan_offset = Vector3.ZERO
+    camera_target = Vector3(0, 0.20, 0)
+    orbit_yaw = 0.0
+    orbit_pitch = 0.30
+    orbit_distance = _fit_enclosure_distance()
+    _update_camera()
+
+func _set_camera_zoom(distance_delta: float) -> void:
+    orbit_distance = clampf(orbit_distance + distance_delta, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE)
+    _update_camera()
+
+func _update_camera() -> void:
+    if camera == null:
+        return
+    var center := _camera_center()
+    camera.position = center + Vector3(sin(orbit_yaw) * cos(orbit_pitch), sin(orbit_pitch), cos(orbit_yaw) * cos(orbit_pitch)) * orbit_distance
+    camera.look_at(center, Vector3.UP)
 func _orbit(motion: Vector2) -> void:
     orbit_yaw -= motion.x * 0.008
     orbit_pitch = clampf(orbit_pitch + motion.y * 0.006, -0.15, 1.05)
