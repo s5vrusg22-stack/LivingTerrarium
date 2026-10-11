@@ -30,7 +30,7 @@ var status: Label
 var notice: Label
 var orbit_yaw := 0.0
 var orbit_pitch := 0.30
-var orbit_distance := 8.6
+var orbit_distance := 5.3
 const CAMERA_MIN_DISTANCE := 0.42
 const CAMERA_MAX_DISTANCE := 22.0
 const WALK_BOUND_X := 3.25
@@ -1173,7 +1173,7 @@ func _create_ui() -> void:
     zoom_out.pressed.connect(func(): _set_camera_zoom(0.42))
     zoom_controls.add_child(zoom_out)
     var zoom_reset := Button.new()
-    zoom_reset.text = "맞춤"
+    zoom_reset.text = "전체"
     zoom_reset.custom_minimum_size = Vector2(68, 42)
     zoom_reset.pressed.connect(func(): _reset_camera())
     zoom_controls.add_child(zoom_reset)
