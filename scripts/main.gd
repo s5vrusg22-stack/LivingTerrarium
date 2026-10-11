@@ -376,7 +376,6 @@ func _create_world() -> void:
     env.fog_depth_end = 9.5
     env.fog_depth_curve = 1.25
     env.fog_density = 0.004
-    env.fog_aerial_perspective = 0.18
     env.fog_sky_affect = 0.0
     world.environment = env
     add_child(world)
@@ -387,7 +386,7 @@ func _create_world() -> void:
     sun.shadow_enabled = true
     sun.shadow_bias = 0.035
     sun.shadow_normal_bias = 0.75
-    sun.shadow_filter = Light3D.SHADOW_FILTER_PCF5
+    sun.shadow_blur = 1.15
     sun.directional_shadow_max_distance = 7.5
     add_child(sun)
     # The enclosure grows around the existing animal scale. Keep the mantis
