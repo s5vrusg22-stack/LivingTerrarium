@@ -404,11 +404,11 @@ func _organic_tube(points: Array[Vector3], radii: Array[float], radial_segments:
             var c := (ring + 1) * sides + next_side
             var d := (ring + 1) * sides + side
             indices.append(a)
-            indices.append(c)
             indices.append(b)
-            indices.append(a)
-            indices.append(d)
             indices.append(c)
+            indices.append(a)
+            indices.append(c)
+            indices.append(d)
     var arrays := []
     arrays.resize(Mesh.ARRAY_MAX)
     arrays[Mesh.ARRAY_VERTEX] = vertices
@@ -419,6 +419,7 @@ func _organic_tube(points: Array[Vector3], radii: Array[float], radial_segments:
     tube_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
     var item := MeshInstance3D.new()
     item.mesh = tube_mesh
+    mat.cull_mode = BaseMaterial3D.CULL_DISABLED
     item.material_override = mat
     item.position = Vector3.ZERO
     parent.add_child(item)
