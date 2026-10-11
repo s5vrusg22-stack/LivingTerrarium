@@ -48,6 +48,7 @@ var prey_motion_clock := 0.0
 var walking_phase := 0.0
 var head_pivot: Node3D
 var forelegs: Array[Node3D] = []
+var wing_pivots: Array[Node3D] = []
 var leg_pivots: Array[Node3D] = []
 var gait_segments: Array = []
 var gait_feet: Array[Vector3] = []
@@ -70,6 +71,12 @@ var prey_alert_radius := 0.43
 var step_height := 0.085
 var stats_visible := true
 var ui_panel: PanelContainer
+var menu_scroll: ScrollContainer
+var menu_touch_index := -1
+var menu_touch_start := Vector2.ZERO
+var menu_touch_last := Vector2.ZERO
+var menu_touch_dragging := false
+var suppress_menu_click := false
 var foot_contact_smoothing := 10.0
 var planted_foot_heights: Array[float] = []
 var foot_contacts_enabled := true
@@ -80,7 +87,7 @@ var foot_contact_hits := 0
 var movement_blend := 0.0
 # Six selectable procedural animation clips: IDLE, WALK, ALERT, GROOM, HUNT, STRIKE.
 # MOLT is an additional lifecycle override. These are runtime poses, not GLB keyframes.
-const ANIMATIONS := ["IDLE", "WALK", "ALERT", "GROOM", "HUNT", "STRIKE", "SCAN", "FEED", "CLIMB", "DEFEND"]
+const ANIMATIONS := ["IDLE", "WALK", "ALERT", "GROOM", "HUNT", "STRIKE", "SCAN", "FEED", "CLIMB", "FLY", "DEFEND"]
 var animation_preview := "AUTO"
 var animation_clock := 0.0
 var animation_weight := 0.0
@@ -134,7 +141,11 @@ var climb_cooldown := 18.0
 var climb_branch_start := Vector3(-0.18, -0.43, 0.60)
 var climb_branch_end := Vector3(-0.02, 0.38, 0.52)
 const CLIMB_SPEED := 0.18
-const CLIMB_BODY_CLEARANCE := 0.12
+const CLIMB_BODY_CLEARANCE := 0.115
+var climb_direction := 1.0
+var climb_pause := 0.0
+var flight_demo_clock := 0.0
+var feed_demo_prey: Node3D
 
 
 
@@ -351,24 +362,42 @@ func _create_world() -> void:
     _box(Vector3(0.05, 1.8, 2.3), Vector3(1.62, 0.14, 0), Color(0.5, 0.7, 0.7, 0.16), true)
     var branch_rng := RandomNumberGenerator.new()
     branch_rng.seed = 9182026
-    var branch_clusters: Array[Vector2] = [Vector2(-1.22, -0.78), Vector2(-0.91, 0.66), Vector2(0.94, 0.79), Vector2(1.24, -0.47), Vector2(0.18, -0.96)]
-    for i in range(13):
+    var branch_clusters: Array[Vector2] = [Vector2(-1.27, -0.83), Vector2(-1.36, -0.14), Vector2(-1.16, 0.74), Vector2(-0.62, 0.88), Vector2(0.55, 0.91), Vector2(1.28, 0.63), Vector2(1.35, -0.12), Vector2(1.02, -0.86), Vector2(0.22, -0.98)]
+    # A few irregular, tapered trunks give the enclosure a forest edge. The
+    # middle remains open so the mantis and its flight path stay visible.
+    var trunk_sites: Array[Vector2] = [Vector2(-1.31, -0.79), Vector2(-1.36, 0.10), Vector2(-1.12, 0.78), Vector2(-0.62, 0.88), Vector2(1.28, 0.66), Vector2(1.34, -0.20), Vector2(0.98, -0.87)]
+    for i in range(trunk_sites.size()):
+        var site: Vector2 = trunk_sites[i]
+        var start := Vector3(site.x + branch_rng.randf_range(-0.10, 0.10), -0.53, site.y + branch_rng.randf_range(-0.10, 0.10))
+        var top := Vector3(clampf(start.x + branch_rng.randf_range(-0.16, 0.16), -1.43, 1.43), branch_rng.randf_range(0.42, 0.72), clampf(start.z + branch_rng.randf_range(-0.14, 0.14), -1.02, 1.02))
+        _tapered_branch(start, top, branch_rng.randf_range(0.075, 0.105), branch_rng.randf_range(0.032, 0.048))
+        # Flared roots and broken forks make the trunks less like upright rods.
+        for root_index in range(3):
+            var angle := float(root_index) * TAU / 3.0 + branch_rng.randf_range(-0.3, 0.3)
+            var root_end := start + Vector3(cos(angle) * branch_rng.randf_range(0.12, 0.20), 0.045, sin(angle) * branch_rng.randf_range(0.12, 0.20))
+            _tapered_branch(root_end, start + Vector3(0.0, 0.06, 0.0), 0.018, 0.048)
+        var fork_count := branch_rng.randi_range(2, 3)
+        for fork_index in range(fork_count):
+            var fork_start := start.lerp(top, branch_rng.randf_range(0.42, 0.78))
+            var fork_end := Vector3(clampf(fork_start.x + branch_rng.randf_range(-0.34, 0.34), -1.47, 1.47), fork_start.y + branch_rng.randf_range(0.15, 0.32), clampf(fork_start.z + branch_rng.randf_range(-0.30, 0.30), -1.03, 1.03))
+            _tapered_branch(fork_start, fork_end, branch_rng.randf_range(0.028, 0.044), branch_rng.randf_range(0.010, 0.018))
+    # A handful of fallen branches lie at different angles among the plants.
+    for i in range(8):
         var cluster: Vector2 = branch_clusters[branch_rng.randi_range(0, branch_clusters.size() - 1)]
-        var start := Vector3(cluster.x + branch_rng.randf_range(-0.20, 0.20), -0.48, cluster.y + branch_rng.randf_range(-0.20, 0.20))
-        var rise: float = branch_rng.randf_range(0.38, 0.88)
-        var end := Vector3(clampf(start.x + branch_rng.randf_range(-0.34, 0.34), -1.42, 1.42), start.y + rise, clampf(start.z + branch_rng.randf_range(-0.28, 0.28), -1.0, 1.0))
-        var branch_radius: float = branch_rng.randf_range(0.016, 0.031)
-        _branch(start, end, branch_radius)
-        if i % 2 == 0:
-            var fork_origin: Vector3 = start.lerp(end, branch_rng.randf_range(0.42, 0.72))
-            var fork_end := Vector3(clampf(fork_origin.x + branch_rng.randf_range(-0.32, 0.32), -1.45, 1.45), fork_origin.y + branch_rng.randf_range(0.15, 0.34), clampf(fork_origin.z + branch_rng.randf_range(-0.30, 0.30), -1.02, 1.02))
-            _branch(fork_origin, fork_end, branch_radius * 0.62)
-    for i in range(24):
+        var start := Vector3(cluster.x + branch_rng.randf_range(-0.20, 0.20), -0.49, cluster.y + branch_rng.randf_range(-0.20, 0.20))
+        var end := start + Vector3(branch_rng.randf_range(-0.24, 0.24), branch_rng.randf_range(0.10, 0.35), branch_rng.randf_range(-0.25, 0.25))
+        _tapered_branch(start, end, branch_rng.randf_range(0.035, 0.055), branch_rng.randf_range(0.012, 0.024))
+    for i in range(48):
         var rock_cluster: Vector2 = branch_clusters[branch_rng.randi_range(0, branch_clusters.size() - 1)]
         var p := Vector3(rock_cluster.x + branch_rng.randf_range(-0.34, 0.34), -0.49, rock_cluster.y + branch_rng.randf_range(-0.30, 0.30))
-        var pebble_size: Vector3 = Vector3(branch_rng.randf_range(0.035, 0.090), branch_rng.randf_range(0.015, 0.035), branch_rng.randf_range(0.035, 0.075))
+        var pebble_size: Vector3 = Vector3(branch_rng.randf_range(0.035, 0.085), branch_rng.randf_range(0.014, 0.031), branch_rng.randf_range(0.030, 0.072))
         var pebble_color: Color = Color(0.22, 0.23, 0.18).lerp(Color(0.34, 0.29, 0.20), branch_rng.randf())
         _ellipsoid(p, pebble_size, pebble_color)
+    for i in range(12):
+        var cluster: Vector2 = branch_clusters[branch_rng.randi_range(0, branch_clusters.size() - 1)]
+        var rock_pos := Vector3(cluster.x + branch_rng.randf_range(-0.26, 0.26), -0.49, cluster.y + branch_rng.randf_range(-0.24, 0.24))
+        var rock_size := Vector3(branch_rng.randf_range(0.075, 0.14), branch_rng.randf_range(0.035, 0.075), branch_rng.randf_range(0.065, 0.13))
+        _ellipsoid(rock_pos, rock_size, Color(0.24, 0.25, 0.21).lerp(Color(0.39, 0.34, 0.25), branch_rng.randf()))
 
 func _create_climbable_branch() -> void:
     # A deliberately wide, reachable branch with matching visual and collision.
@@ -376,9 +405,9 @@ func _create_climbable_branch() -> void:
     _segment(self, climb_branch_start, climb_branch_end, 0.045, Color(0.29, 0.19, 0.11))
     _walkable_wood(self, climb_branch_start, climb_branch_end, 0.045)
 
-func _advance_climb(dt: float) -> void:
+func _advance_climb(dt: float, force_demo: bool = false) -> void:
     if not climb_active:
-        if climb_cooldown > 0.0 or molting or stress > 65.0 or hunger > 45.0:
+        if (climb_cooldown > 0.0 and not force_demo) or molting or (stress > 65.0 and not force_demo) or (hunger > 45.0 and not force_demo):
             return
         # Walk towards the foot of the branch before starting the ascent.
         var approach := Vector3(climb_branch_start.x, -0.38, climb_branch_start.z)
@@ -390,22 +419,71 @@ func _advance_climb(dt: float) -> void:
             return
         climb_active = true
         climb_progress = 0.0
+        climb_direction = 1.0
+        climb_pause = 0.0
         for i in range(foot_in_swing.size()):
             foot_in_swing[i] = false
         behavior = "나뭇가지 등반"
-    climb_progress = minf(1.0, climb_progress + dt * CLIMB_SPEED / climb_branch_start.distance_to(climb_branch_end))
+    if climb_pause > 0.0:
+        climb_pause = maxf(0.0, climb_pause - dt)
+    elif climb_direction > 0.0:
+        climb_progress = minf(1.0, climb_progress + dt * CLIMB_SPEED / climb_branch_start.distance_to(climb_branch_end))
+    else:
+        climb_progress = maxf(0.0, climb_progress - dt * CLIMB_SPEED / climb_branch_start.distance_to(climb_branch_end))
     var center := climb_branch_start.lerp(climb_branch_end, climb_progress)
     var tangent := (climb_branch_end - climb_branch_start).normalized()
-    var target := center + Vector3.UP * CLIMB_BODY_CLEARANCE
-    animal.position = animal.position.lerp(target, clampf(dt * 3.5, 0.0, 1.0))
-    animal.rotation.y = lerp_angle(animal.rotation.y, atan2(-tangent.x, -tangent.z), clampf(dt * 3.0, 0.0, 1.0))
-    behavior = "나뭇가지 등반"
-    if climb_progress >= 1.0 and animal.position.distance_to(target) < 0.035:
+    var radial := Vector3(0.0, 0.0, 1.0)
+    radial = (radial - tangent * radial.dot(tangent)).normalized()
+    var travel_direction := tangent * climb_direction
+    var target := center + radial * CLIMB_BODY_CLEARANCE
+    var target_basis := Basis.looking_at(travel_direction, radial)
+    animal.position = animal.position.lerp(target, clampf(dt * 8.0, 0.0, 1.0))
+    animal.quaternion = animal.quaternion.slerp(target_basis.get_rotation_quaternion(), clampf(dt * 7.0, 0.0, 1.0))
+    behavior = "가지에 매달림" if climb_pause > 0.0 else "나뭇가지 등반"
+    if climb_direction > 0.0 and climb_progress >= 1.0 and animal.position.distance_to(target) < 0.035:
+        climb_direction = -1.0
+        climb_pause = 0.8
+    elif climb_direction < 0.0 and climb_progress <= 0.0 and animal.position.distance_to(target) < 0.045:
         climb_active = false
         climb_cooldown = 38.0
-        # Return to the floor gradually on the next exploration phase.
+        animal.position = Vector3(climb_branch_start.x, -0.38, climb_branch_start.z)
+        animal.quaternion = Quaternion.IDENTITY
         roam_target = Vector3(climb_branch_start.x, -0.38, climb_branch_start.z)
         roam_time = 0.0
+        if animation_preview == "CLIMB":
+            animation_preview = "AUTO"
+            if animation_label != null:
+                animation_label.text = "애니메이션: AUTO"
+
+func _advance_flight(dt: float) -> void:
+    flight_demo_clock += dt
+    var t := flight_demo_clock
+    var dx := 0.49 * cos(t * 0.78)
+    var dz := -0.25 * sin(t * 0.56)
+    animal.position = Vector3(0.66 * sin(t * 0.78), -0.055 + sin(t * 2.9) * 0.045, 0.43 * cos(t * 0.56))
+    animal.rotation.y = lerp_angle(animal.rotation.y, atan2(-dx, -dz), clampf(dt * 3.8, 0.0, 1.0))
+
+func _ensure_feed_demo_prey() -> void:
+    if feed_demo_prey != null and is_instance_valid(feed_demo_prey):
+        feed_demo_prey.visible = true
+        return
+    feed_demo_prey = Node3D.new()
+    feed_demo_prey.name = "FeedDemonstrationPrey"
+    animal.add_child(feed_demo_prey)
+    var body := MeshInstance3D.new()
+    var body_mesh := SphereMesh.new()
+    body_mesh.radial_segments = 10
+    body_mesh.rings = 6
+    body.mesh = body_mesh
+    body.scale = Vector3(0.13, 0.10, 0.17)
+    body.material_override = _material(Color(0.57, 0.32, 0.12))
+    feed_demo_prey.add_child(body)
+    for side in [-1.0, 1.0]:
+        for leg_index in range(3):
+            var z := (float(leg_index) - 1.0) * 0.10
+            _segment(feed_demo_prey, Vector3(side * 0.065, -0.015, z), Vector3(side * 0.14, -0.07, z + 0.035), 0.009, Color(0.31, 0.20, 0.12))
+        _segment(feed_demo_prey, Vector3(side * 0.025, 0.055, -0.10), Vector3(side * 0.09, 0.10, -0.19), 0.003, Color(0.34, 0.23, 0.14))
+    feed_demo_prey.position = Vector3(0.0, 0.20, -0.80)
 
 func _create_floor_collider() -> void:
     var floor_body := StaticBody3D.new()
@@ -469,7 +547,7 @@ func _create_mantis() -> void:
     animal = Node3D.new()
     animal.name = "Mantis_01"
     animal.position = Vector3(0, -0.38, 0)
-    animal.scale = Vector3.ONE * (0.26 * (0.80 + growth * 0.30))
+    animal.scale = Vector3.ONE * (0.32 * (0.80 + growth * 0.30))
     add_child(animal)
     var mint := Color(0.46, 0.74, 0.61)
     var mint_light := Color(0.61, 0.84, 0.70)
@@ -591,8 +669,8 @@ func _create_mantis() -> void:
         for spine_index in range(9):
             var t: float = 0.10 + float(spine_index) * 0.095
             var base: Vector3 = coxa_end.lerp(femur_end, t)
-            var spine_tip: Vector3 = base + Vector3(-side * 0.048, 0.004, -0.014)
-            _segment(foreleg, base, spine_tip, 0.005, mint_shadow)
+            var spine_tip: Vector3 = base + Vector3(-side * 0.052, 0.004, -0.014)
+            _segment(foreleg, base, spine_tip, 0.006, mint_shadow)
         var claw := Node3D.new()
         claw.name = "ForelegTibia_%d" % int(side)
         elbow.add_child(claw)
@@ -601,7 +679,7 @@ func _create_mantis() -> void:
         for spine_index in range(7):
             var t: float = 0.12 + float(spine_index) * 0.115
             var base: Vector3 = tibia_end * t
-            _segment(claw, base, base + Vector3(side * 0.033, 0.006, -0.012), 0.0045, mint_shadow)
+            _segment(claw, base, base + Vector3(side * 0.036, 0.006, -0.012), 0.0055, mint_shadow)
         _ellipsoid_limb(claw, tibia_end, tibia_end + Vector3(-side * 0.055, -0.008, 0.032), 0.008, mint_shadow)
         forelegs.append(foreleg)
         foreleg_elbows.append(elbow)
@@ -612,7 +690,8 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     var start_z: float = 0.005 if hindwing else -0.10
     var end_z: float = 0.46 if hindwing else 0.52
     var y: float = 0.255 if hindwing else 0.272
-    var max_width: float = 0.125 if hindwing else 0.095
+    var max_width: float = 0.16 if hindwing else 0.125
+    var hinge := Vector3(side * 0.035, y, start_z)
     var vertices := PackedVector3Array()
     var normals := PackedVector3Array()
     var uvs := PackedVector2Array()
@@ -623,10 +702,10 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
         var z1: float = lerpf(start_z, end_z, t1)
         var w0: float = 0.012 + sin((t0 * 0.90 + 0.05) * PI) * max_width
         var w1: float = 0.012 + sin((t1 * 0.90 + 0.05) * PI) * max_width
-        var inner0 := Vector3(side * 0.035, y, z0)
-        var outer0 := Vector3(side * (0.035 + w0), y, z0)
-        var inner1 := Vector3(side * 0.035, y, z1)
-        var outer1 := Vector3(side * (0.035 + w1), y, z1)
+        var inner0 := Vector3(side * 0.035, y, z0) - hinge
+        var outer0 := Vector3(side * (0.035 + w0), y, z0) - hinge
+        var inner1 := Vector3(side * 0.035, y, z1) - hinge
+        var outer1 := Vector3(side * (0.035 + w1), y, z1) - hinge
         vertices.append(inner0)
         vertices.append(outer0)
         vertices.append(outer1)
@@ -648,10 +727,16 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     arrays[Mesh.ARRAY_TEX_UV] = uvs
     var wing_mesh := ArrayMesh.new()
     wing_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+    var wing_pivot := Node3D.new()
+    wing_pivot.name = ("HindwingPivot" if hindwing else "ForewingPivot") + ("_L" if side < 0.0 else "_R")
+    wing_pivot.position = hinge
+    wing_pivot.set_meta("wing_side", side)
+    wing_pivot.set_meta("hindwing", hindwing)
+    parent.add_child(wing_pivot)
     var wing_instance := MeshInstance3D.new()
-    wing_instance.name = ("Hindwing" if hindwing else "Forewing") + ("_L" if side < 0.0 else "_R")
+    wing_instance.name = "WingMembrane"
     wing_instance.mesh = wing_mesh
-    var wing_color: Color = Color(0.77, 0.94, 0.82, 0.52) if hindwing else Color(0.62, 0.86, 0.72)
+    var wing_color: Color = Color(0.77, 0.94, 0.82, 0.72) if hindwing else Color(0.62, 0.86, 0.72)
     var wing_material := _material(wing_color)
     wing_material.cull_mode = BaseMaterial3D.CULL_DISABLED
     if hindwing:
@@ -660,17 +745,18 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     else:
         wing_material.roughness = 0.56
     wing_instance.material_override = wing_material
-    parent.add_child(wing_instance)
+    wing_pivot.add_child(wing_instance)
     var vein_color: Color = Color(0.31, 0.57, 0.45) if hindwing else Color(0.37, 0.65, 0.51)
-    _segment(parent, Vector3(side * 0.04, y + 0.006, start_z + 0.025), Vector3(side * 0.065, y + 0.006, end_z - 0.015), 0.0025, vein_color)
+    _segment(wing_pivot, Vector3(side * 0.04, y + 0.006, start_z + 0.025) - hinge, Vector3(side * 0.065, y + 0.006, end_z - 0.015) - hinge, 0.0025, vein_color)
     for vein_index in range(6):
         var t: float = 0.12 + float(vein_index) * 0.145
         var z: float = lerpf(start_z + 0.02, end_z - 0.02, t)
         var width: float = 0.012 + sin((t * 0.90 + 0.05) * PI) * max_width
-        _segment(parent, Vector3(side * 0.042, y + 0.007, z), Vector3(side * (0.035 + width), y + 0.007, z + 0.028), 0.0017, vein_color)
+        _segment(wing_pivot, Vector3(side * 0.042, y + 0.007, z) - hinge, Vector3(side * (0.035 + width), y + 0.007, z + 0.028) - hinge, 0.0017, vein_color)
     if not hindwing:
         # A small stigma on each forewing helps define the adult Hierodula shape.
-        _part(parent, Vector3(side * 0.106, y + 0.008, 0.025), Vector3(0.012, 0.003, 0.028), Color(0.79, 0.88, 0.61))
+        _part(wing_pivot, Vector3(side * 0.106, y + 0.008, 0.025) - hinge, Vector3(0.012, 0.003, 0.028), Color(0.79, 0.88, 0.61))
+    wing_pivots.append(wing_pivot)
 
 func _ellipsoid_limb(parent: Node3D, a: Vector3, b: Vector3, radius: float, tint: Color) -> void:
     var delta := b - a
@@ -764,6 +850,23 @@ func _segment(parent: Node3D, a: Vector3, b: Vector3, radius: float, color: Colo
 func _branch(a: Vector3, b: Vector3, radius: float) -> void:
     _segment(self, a, b, radius, Color(0.32, 0.21, 0.12))
 
+func _tapered_branch(a: Vector3, b: Vector3, base_radius: float, tip_radius: float) -> void:
+    var item := MeshInstance3D.new()
+    var mesh := CylinderMesh.new()
+    mesh.top_radius = maxf(0.004, tip_radius)
+    mesh.bottom_radius = maxf(0.006, base_radius)
+    mesh.height = a.distance_to(b)
+    mesh.radial_segments = 9
+    item.mesh = mesh
+    item.position = (a + b) * 0.5
+    item.quaternion = Quaternion(Vector3.UP, (b - a).normalized())
+    var mat := _material(Color(0.34, 0.22, 0.13))
+    if bark_texture != null:
+        mat.albedo_texture = bark_texture
+        _apply_pbr(mat, "bark")
+    item.material_override = mat
+    add_child(item)
+
 func _box(size: Vector3, pos: Vector3, color: Color, transparent := false) -> void:
     var item := MeshInstance3D.new()
     var mesh := BoxMesh.new()
@@ -804,19 +907,24 @@ func _create_ui() -> void:
     ui_panel.position = Vector2(16, 74)
     ui_panel.custom_minimum_size = Vector2(280, 0)
     root_ui.add_child(ui_panel)
-    var scroll := ScrollContainer.new()
-    scroll.custom_minimum_size = Vector2(300, 0)
-    scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-    ui_panel.add_child(scroll)
+    menu_scroll = ScrollContainer.new()
+    menu_scroll.custom_minimum_size = Vector2(300, 0)
+    menu_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    menu_scroll.mouse_filter = Control.MOUSE_FILTER_PASS
+    menu_scroll.scroll_deadzone = 8
+    ui_panel.add_child(menu_scroll)
     var column := VBoxContainer.new()
     column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    scroll.add_child(column)
+    column.mouse_filter = Control.MOUSE_FILTER_PASS
+    menu_scroll.add_child(column)
     get_viewport().size_changed.connect(_resize_ui)
     call_deferred("_resize_ui")
     var title := Label.new()
     title.text = "LIVING TERRARIUM 3D"
+    title.mouse_filter = Control.MOUSE_FILTER_IGNORE
     column.add_child(title)
     status = Label.new()
+    status.mouse_filter = Control.MOUSE_FILTER_IGNORE
     column.add_child(status)
     _button(column, "먹이 추가", func(): _add_food())
     _button(column, "바람 켜기/끄기", func(): wind_enabled = not wind_enabled; notice.text = "바람: " + ("켜짐" if wind_enabled else "꺼짐"))
@@ -825,11 +933,19 @@ func _create_ui() -> void:
     _button(column, "바람 세기 변경", func(): wind_strength = fmod(wind_strength + 0.25, 1.26); notice.text = "바람 세기: %.2f" % wind_strength)
     animation_label = Label.new()
     animation_label.text = "애니메이션: AUTO"
+    animation_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
     column.add_child(animation_label)
     _button(column, "자동 행동 애니메이션", func(): _set_animation_preview("AUTO"))
     for clip in ANIMATIONS:
         var selected_clip: String = clip
-        _button(column, "동작 시연: " + selected_clip, func(): _set_animation_preview(selected_clip))
+        var clip_label := "동작 시연: " + selected_clip
+        if selected_clip == "FEED":
+            clip_label = "동작 시연: 먹이 먹기"
+        elif selected_clip == "FLY":
+            clip_label = "동작 시연: 비행"
+        elif selected_clip == "CLIMB":
+            clip_label = "동작 시연: 가지 오르기"
+        _button(column, clip_label, func(): _set_animation_preview(selected_clip))
     _button(column, "관찰 기록", func(): notice.text = "성장 %.0f%% / 탈피 %d회 / 경과 %.0f초" % [growth * 100.0, molt_count, life_age])
     _button(column, "온도 +1°C", func(): temperature = minf(38.0, temperature + 1.0); _refresh())
     _button(column, "온도 -1°C", func(): temperature = maxf(15.0, temperature - 1.0); _refresh())
@@ -846,9 +962,11 @@ func _create_ui() -> void:
     _button(column, "불러오기", func(): _load_state(true))
     edit_hint = Label.new()
     edit_hint.text = "관찰 모드"
+    edit_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
     column.add_child(edit_hint)
     notice = Label.new()
     notice.text = "드래그: 회전 | 두 손가락 또는 오른쪽 +/-: 확대"
+    notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
     column.add_child(notice)
 
     var zoom_controls := VBoxContainer.new()
@@ -941,21 +1059,21 @@ func _create_animated_ecosystem() -> void:
         mat.roughness = 0.86
         leaf_materials.append(mat)
     var stem_material := _material(Color(0.24, 0.31, 0.15))
-    var plant_clusters: Array[Vector2] = [Vector2(-1.21, -0.82), Vector2(-1.34, 0.18), Vector2(-0.79, 0.77), Vector2(1.27, 0.59), Vector2(0.88, -0.91)]
+    var plant_clusters: Array[Vector2] = [Vector2(-1.27, -0.83), Vector2(-1.36, -0.18), Vector2(-1.19, 0.62), Vector2(-0.70, 0.86), Vector2(0.37, 0.94), Vector2(1.28, 0.66), Vector2(1.37, -0.18), Vector2(1.02, -0.86), Vector2(0.20, -0.96)]
     # Cluster plants along the enclosure edges and leave an irregular open
     # hunting lane through the middle instead of scattering them uniformly.
-    for i in range(24):
+    for i in range(36):
         var plant := Node3D.new()
         plant.name = "Plant_%02d" % i
         var plant_cluster: Vector2 = plant_clusters[rng.randi_range(0, plant_clusters.size() - 1)]
         var plant_angle: float = rng.randf_range(0.0, TAU)
-        var plant_radius: float = rng.randf_range(0.04, 0.38)
+        var plant_radius: float = rng.randf_range(0.07, 0.43)
         plant.position = Vector3(plant_cluster.x + cos(plant_angle) * plant_radius, -0.53, plant_cluster.y + sin(plant_angle) * plant_radius)
         plant.position.x = clampf(plant.position.x, -1.43, 1.43)
         plant.position.z = clampf(plant.position.z, -1.0, 1.0)
         plant.rotation.y = rng.randf_range(-PI, PI)
         habitat_motion_root.add_child(plant)
-        var height: float = rng.randf_range(0.20, 0.46)
+        var height: float = rng.randf_range(0.24, 0.56)
         var stem := MeshInstance3D.new()
         var stem_mesh := CylinderMesh.new()
         stem_mesh.top_radius = 0.006
@@ -969,7 +1087,7 @@ func _create_animated_ecosystem() -> void:
         if i % 3 == 0:
             var fork_side: float = -1.0 if i % 2 == 0 else 1.0
             _segment(plant, Vector3(0, height * 0.30, 0), Vector3(fork_side * 0.085, height * 0.74, 0.018), 0.005, Color(0.22, 0.32, 0.15))
-        var leaf_count: int = rng.randi_range(3, 5)
+        var leaf_count: int = rng.randi_range(4, 6)
         for j in range(leaf_count):
             var leaf_joint := Node3D.new()
             leaf_joint.position.y = height * (0.5 + 0.45 * float(j) / float(leaf_count))
@@ -979,7 +1097,7 @@ func _create_animated_ecosystem() -> void:
             var leaf := MeshInstance3D.new()
             leaf.mesh = leaf_mesh
             leaf.material_override = leaf_materials[(i + j) % leaf_materials.size()]
-            leaf.scale = Vector3(rng.randf_range(0.65, 1.20), rng.randf_range(0.85, 1.15), rng.randf_range(0.72, 1.30))
+            leaf.scale = Vector3(rng.randf_range(0.78, 1.38), rng.randf_range(0.85, 1.18), rng.randf_range(0.90, 1.48))
             leaf.rotation.x = rng.randf_range(-0.36, -0.12)
             leaf.rotation.z = rng.randf_range(-0.22, 0.22)
             leaf_joint.add_child(leaf)
@@ -1132,7 +1250,16 @@ func _button(parent: VBoxContainer, label_text: String, callback: Callable) -> v
     var button := Button.new()
     button.text = label_text
     button.custom_minimum_size = Vector2(260, 48)
-    button.pressed.connect(callback)
+    # Let a vertical drag begun over a button bubble to the parent
+    # ScrollContainer; Button still emits `pressed` for a tap.
+    button.mouse_filter = Control.MOUSE_FILTER_PASS
+    button.focus_mode = Control.FOCUS_NONE
+    button.pressed.connect(func():
+        if suppress_menu_click:
+            suppress_menu_click = false
+            return
+        callback.call()
+    )
     parent.add_child(button)
 
 func _process(delta: float) -> void:
@@ -1166,7 +1293,7 @@ func _process(delta: float) -> void:
             molt_progress = 0.0
             molt_count += 1
             growth = minf(1.0, growth + 0.13)
-            animal.scale = Vector3.ONE * (0.26 * (0.80 + growth * 0.30))
+            animal.scale = Vector3.ONE * (0.32 * (0.80 + growth * 0.30))
             hunger = minf(100.0, hunger + 12.0)
             energy = maxf(15.0, energy - 22.0)
     elif life_age > 150.0 * float(molt_count + 1) and molt_count < 5 and hunger < 65.0 and stress < 40.0:
@@ -1177,6 +1304,16 @@ func _process(delta: float) -> void:
     stress = clampf(stress + (dt * 0.75 if temperature < 21.0 or temperature > 31.0 or humidity < 40.0 else -dt * 0.15), 0.0, 100.0)
     if molting:
         pass
+    elif animation_preview == "FLY":
+        _advance_flight(dt)
+        behavior = "비행 시연"
+    elif animation_preview == "FEED":
+        behavior = "먹이 먹기 시연"
+        if feed_demo_prey != null and is_instance_valid(feed_demo_prey):
+            feed_demo_prey.position = Vector3(0.0, 0.20 + sin(animation_clock * 10.0) * 0.006, -0.80)
+            feed_demo_prey.rotation.y = sin(animation_clock * 3.0) * 0.14
+    elif animation_preview == "CLIMB":
+        _advance_climb(dt, true)
     elif climb_active:
         _advance_climb(dt)
     elif stress > 65.0:
@@ -1235,6 +1372,35 @@ func _roam(dt: float) -> void:
         animal.position.x = clampf(animal.position.x, -1.10, 1.10)
         animal.position.z = clampf(animal.position.z, -0.70, 0.70)
         energy = maxf(0.0, energy - dt * 0.3)
+
+func _input(event: InputEvent) -> void:
+    if menu_scroll == null or not ui_panel.visible or editing:
+        return
+    if event is InputEventScreenTouch:
+        if event.pressed:
+            if menu_scroll.get_global_rect().has_point(event.position):
+                menu_touch_index = event.index
+                menu_touch_start = event.position
+                menu_touch_last = event.position
+                menu_touch_dragging = false
+        elif event.index == menu_touch_index:
+            if menu_touch_dragging:
+                suppress_menu_click = true
+                call_deferred("_clear_menu_click_suppression")
+            menu_touch_index = -1
+            menu_touch_dragging = false
+    elif event is InputEventScreenDrag and event.index == menu_touch_index:
+        if not menu_touch_dragging and menu_touch_start.distance_to(event.position) > 10.0:
+            menu_touch_dragging = true
+        if menu_touch_dragging:
+            var delta_y := event.position.y - menu_touch_last.y
+            var bar := menu_scroll.get_v_scroll_bar()
+            menu_scroll.scroll_vertical = clampi(menu_scroll.scroll_vertical - roundi(delta_y), 0, int(bar.max_value))
+            menu_touch_last = event.position
+            get_viewport().set_input_as_handled()
+
+func _clear_menu_click_suppression() -> void:
+    suppress_menu_click = false
 
 func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventMouseButton:
@@ -1357,7 +1523,7 @@ func _load_state(show_message: bool) -> void:
     life_age = maxf(0.0, float(parsed.get("life_age", 0.0)))
     molt_count = clampi(int(parsed.get("molt_count", 0)), 0, 5)
     growth = clampf(float(parsed.get("growth", 0.35)), 0.35, 1.0)
-    animal.scale = Vector3.ONE * (0.26 * (0.80 + growth * 0.30))
+    animal.scale = Vector3.ONE * (0.32 * (0.80 + growth * 0.30))
     hunger = clampf(float(parsed.get("hunger", 32.0)), 0.0, 100.0)
     energy = clampf(float(parsed.get("energy", 86.0)), 0.0, 100.0)
     stress = clampf(float(parsed.get("stress", 12.0)), 0.0, 100.0)
@@ -1481,8 +1647,25 @@ func _surface_height_at(world_point: Vector3) -> float:
 func _set_animation_preview(clip: String) -> void:
     if clip != "AUTO" and not ANIMATIONS.has(clip):
         return
+    if clip != "FEED" and feed_demo_prey != null and is_instance_valid(feed_demo_prey):
+        feed_demo_prey.queue_free()
+        feed_demo_prey = null
+    if clip in ["FLY", "FEED", "CLIMB"]:
+        climb_active = false
+        animal.quaternion = Quaternion.IDENTITY
+        if clip != "CLIMB":
+            animal.position.y = -0.38
+    if clip == "CLIMB":
+        climb_cooldown = 0.0
+        climb_progress = 0.0
+        climb_direction = 1.0
+        climb_pause = 0.0
+    if clip == "FLY":
+        flight_demo_clock = 0.0
     animation_preview = clip
     animation_clock = 0.0
+    if clip == "FEED":
+        _ensure_feed_demo_prey()
     if clip == "STRIKE":
         preview_strike_clock = 0.65
         if rigged_player != null and rigged_clip == "STRIKE" and use_rigged_visual:
@@ -1540,62 +1723,67 @@ func _animate_mantis(dt: float) -> void:
     movement_blend = move_toward(movement_blend, 1.0 if walking else 0.0, dt * 3.0)
     walking_phase += dt * (3.2 if next_state == "CLIMB" else 5.5 if next_state == "HUNT" else 7.0)
     foot_contact_hits = 0
-    # World-space stance locking prevents the feet from sliding with the body.
-    # Tripod groups alternate their swing intervals; raycasts find the next
-    # reachable surface height on rocks, wood, and substrate.
+    # Climbing feet are placed on the branch cylinder; flight legs tuck beneath
+    # the thorax rather than reaching toward a stale floor contact.
     for i in range(leg_pivots.size()):
         var joint := leg_pivots[i]
         var side: float = -1.0 if i < 2 else 1.0
         var index: int = i % 2
-        var tripod: int = (index + (0 if i < 2 else 1)) % 2
-        var phase := fposmod(walking_phase + float(tripod) * PI, TAU)
-        var swing_window := phase < PI
-        var rest_local := Vector3(side * 0.32, -0.27, -0.10 if index == 0 else 0.16)
-        var desired_world := joint.to_global(rest_local)
-        if next_state != "CLIMB" or not climb_active:
-            desired_world.y = _raycast_foot_height(desired_world) if foot_contacts_enabled else -0.45
-        if next_state == "CLIMB" and climb_active:
-            # Place feet against the inclined branch cylinder rather than the floor.
+        var foot := Vector3.ZERO
+        var foot_world := Vector3.ZERO
+        if next_state == "FLY":
+            foot = Vector3(side * 0.24, -0.085, 0.02 if index == 0 else 0.14)
+            foot_anchors[i] = joint.to_global(foot)
+            foot_in_swing[i] = false
+        elif next_state == "CLIMB" and climb_active:
             var axis := climb_branch_end - climb_branch_start
-            var t_axis := clampf((desired_world - climb_branch_start).dot(axis) / axis.length_squared(), 0.0, 1.0)
+            var step_phase := walking_phase + float(i % 2) * PI + (PI if i >= 2 else 0.0)
+            var t_axis := clampf(climb_progress + (0.105 if index == 0 else -0.105) + sin(step_phase) * 0.025, 0.0, 1.0)
             var on_axis := climb_branch_start + axis * t_axis
-            var outward := desired_world - on_axis
-            if outward.length_squared() < 0.0001:
-                outward = Vector3.UP
-            desired_world = on_axis + outward.normalized() * 0.095
-        # The branch is the supporting surface; do not project climb targets
-        # back onto the floor before calculating contact.
-        var drift := foot_anchors[i].distance_to(desired_world)
-        if walking and swing_window and not foot_in_swing[i] and drift > 0.055:
-            foot_in_swing[i] = true
-            foot_swing_origins[i] = foot_anchors[i]
-            foot_swing_progress[i] = 0.0
-        var foot_world := foot_anchors[i]
-        if foot_in_swing[i]:
-            foot_swing_progress[i] = minf(1.0, foot_swing_progress[i] + dt / FOOT_SWING_DURATION)
-            var t := foot_swing_progress[i]
-            var eased := t * t * (3.0 - 2.0 * t)
-            var destination := desired_world
-            foot_world = foot_swing_origins[i].lerp(destination, eased)
-            foot_world.y += sin(t * PI) * step_height
-            if t >= 1.0:
-                foot_in_swing[i] = false
-                foot_anchors[i] = destination
+            var outward := animal.global_basis.y.normalized()
+            var lateral := animal.global_basis.x.normalized() * side
+            var contact_normal := (outward * 0.62 + lateral * 0.78).normalized()
+            foot_world = on_axis + contact_normal * 0.067
+            foot_anchors[i] = foot_world
+            foot_in_swing[i] = false
+            foot = joint.to_local(foot_world)
         else:
+            # World-space stance locking holds the four walking feet while the
+            # body moves. Raycasts find their next foothold on the floor/rocks.
+            var tripod: int = (index + (0 if i < 2 else 1)) % 2
+            var phase := fposmod(walking_phase + float(tripod) * PI, TAU)
+            var swing_window := phase < PI
+            var rest_local := Vector3(side * 0.32, -0.27, -0.10 if index == 0 else 0.16)
+            var desired_world := joint.to_global(rest_local)
+            desired_world.y = _raycast_foot_height(desired_world) if foot_contacts_enabled else -0.45
+            var drift := foot_anchors[i].distance_to(desired_world)
+            if walking and swing_window and not foot_in_swing[i] and drift > 0.055:
+                foot_in_swing[i] = true
+                foot_swing_origins[i] = foot_anchors[i]
+                foot_swing_progress[i] = 0.0
             foot_world = foot_anchors[i]
-            # Avoid overextending a leg when the body turns abruptly.
-            if walking and drift > FOOT_REPLANT_DISTANCE:
-                foot_anchors[i] = desired_world
-                foot_world = desired_world
-        var foot := joint.to_local(foot_world)
-        # Clamp unreachable IK targets to the limb's maximum extension.
+            if foot_in_swing[i]:
+                foot_swing_progress[i] = minf(1.0, foot_swing_progress[i] + dt / FOOT_SWING_DURATION)
+                var t := foot_swing_progress[i]
+                var eased := t * t * (3.0 - 2.0 * t)
+                foot_world = foot_swing_origins[i].lerp(desired_world, eased)
+                foot_world.y += sin(t * PI) * step_height
+                if t >= 1.0:
+                    foot_in_swing[i] = false
+                    foot_anchors[i] = desired_world
+            else:
+                foot_world = foot_anchors[i]
+                if walking and drift > FOOT_REPLANT_DISTANCE:
+                    foot_anchors[i] = desired_world
+                    foot_world = desired_world
+            foot = joint.to_local(foot_world)
         var reach := foot.length()
         if reach > 0.795:
             foot = foot / reach * 0.795
         var knee := _solve_leg_knee(Vector3.ZERO, foot, 0.31, 0.49, side)
         _pose_gait_bone(gait_segments[i][0], Vector3.ZERO, knee)
         _pose_gait_bone(gait_segments[i][1], knee, foot)
-        var tarsus_end := foot + Vector3(side * 0.085, -0.014, -0.035 if index == 0 else 0.035)
+        var tarsus_end := foot + Vector3(side * (0.12 if next_state == "FLY" else 0.085), -0.014, -0.035 if index == 0 else 0.035)
         var tarsomeres: Array = foot_tarsi[i]
         for segment_index in range(tarsomeres.size()):
             var t0: float = float(segment_index) / float(tarsomeres.size())
@@ -1632,7 +1820,9 @@ func _animate_mantis(dt: float) -> void:
                 target_pitch = -0.62 + sin(animation_clock * 12.0 + float(i) * PI) * 0.16
                 target_yaw = (0.18 if i == 0 else -0.18)
             "CLIMB":
-                target_pitch = -0.20 + sin(walking_phase + float(i) * PI) * 0.17
+                target_pitch = -0.48 + sin(walking_phase + float(i) * PI) * 0.14
+            "FLY":
+                target_pitch = -0.72 + sin(animation_clock * 22.0 + float(i) * PI) * 0.08
             "DEFEND":
                 target_pitch = -0.95 + sin(animation_clock * 3.0) * 0.12
                 target_yaw = (-0.30 if i == 0 else 0.30)
@@ -1657,7 +1847,11 @@ func _animate_mantis(dt: float) -> void:
                 elbow_target = -1.0
                 claw_target = 1.35
             "CLIMB":
-                elbow_target = -0.3 + sin(walking_phase + float(i) * PI) * 0.35
+                elbow_target = -0.78 + sin(walking_phase + float(i) * PI) * 0.28
+                claw_target = 1.0 + sin(walking_phase + float(i) * PI) * 0.20
+            "FLY":
+                elbow_target = -0.86
+                claw_target = 1.22
         foreleg_elbows[i].rotation.x = lerpf(foreleg_elbows[i].rotation.x, elbow_target, clampf(dt * 11.0, 0.0, 1.0))
         foreleg_claws[i].rotation.x = lerpf(foreleg_claws[i].rotation.x, claw_target, clampf(dt * 13.0, 0.0, 1.0))
     for i in range(antennae.size()):
@@ -1695,7 +1889,17 @@ func _animate_mantis(dt: float) -> void:
         elif next_state == "FEED":
             abdomen_target += sin(animation_clock * 5.0) * 0.035
         abdomen.rotation.x = lerpf(abdomen.rotation.x, abdomen_target, clampf(dt * 4.0, 0.0, 1.0))
-    animal.rotation.z = lerpf(animal.rotation.z, sin(elapsed * 5.0) * 0.05 if molting else 0.0, clampf(dt * 4.0, 0.0, 1.0))
+    if next_state == "FEED" and feed_demo_prey != null and is_instance_valid(feed_demo_prey):
+        feed_demo_prey.position = Vector3(0.0, 0.20 + sin(animation_clock * 10.0) * 0.006, -0.80)
+        feed_demo_prey.rotation.y = sin(animation_clock * 3.0) * 0.14
+    for wing_pivot in wing_pivots:
+        var wing_side := float(wing_pivot.get_meta("wing_side"))
+        var is_hindwing := bool(wing_pivot.get_meta("hindwing"))
+        var target_flap := sin(animation_clock * 22.0 + (PI * 0.46 if is_hindwing else 0.0)) * (0.78 if is_hindwing else 0.68) * wing_side if next_state == "FLY" else sin(elapsed * 1.4 + (PI if is_hindwing else 0.0)) * 0.035 * wing_side
+        wing_pivot.rotation.z = lerpf(wing_pivot.rotation.z, target_flap, clampf(dt * 22.0, 0.0, 1.0))
+    if not (next_state == "CLIMB" and climb_active):
+        var body_roll_target := sin(elapsed * 5.0) * 0.05 if molting else sin(animation_clock * 1.25) * 0.11 if next_state == "FLY" else 0.0
+        animal.rotation.z = lerpf(animal.rotation.z, body_roll_target, clampf(dt * 4.0, 0.0, 1.0))
     if animation_preview == "STRIKE" and preview_strike_clock <= 0.0:
         preview_strike_clock = 0.65
 

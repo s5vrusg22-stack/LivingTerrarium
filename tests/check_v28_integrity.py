@@ -18,6 +18,7 @@ s=(p/'scripts/rigged_pose_driver.gd').read_text()
 for term in ['get_bone_global_rest','chain_reach','ik_blend','IK_EPSILON','clear_bones_global_pose_override','_solve_leg_ccd','get_bone_global_pose','set_bone_global_pose_override']:
  assert term in s,term
 m=(p/'scripts/main.gd').read_text()
-assert 'if next_state != "CLIMB" or not climb_active:' in m
-assert 'desired_world = on_axis + outward.normalized() * 0.095' in m
+assert 'elif next_state == "CLIMB" and climb_active:' in m
+assert 'foot_world = on_axis + contact_normal * 0.067' in m
+assert 'Basis.looking_at(travel_direction, radial)' in m
 print('v2.8 GLB skeleton and IK integration static checks passed')

@@ -15,7 +15,8 @@ assert 'foreleg.name = "RaptorialForeleg_%d"' in main
 assert "tarsomeres: Array[MeshInstance3D]" in main
 assert "range(5):" in main and 'tarsal_claw.name = "TarsalClaw_' in main
 assert "func _create_mantis_wing(" in main
-assert '"Hindwing" if hindwing else "Forewing"' in main
+assert '"HindwingPivot" if hindwing else "ForewingPivot"' in main
+assert 'wing_pivots.append(wing_pivot)' in main and 'wing_pivot.rotation.z' in main
 assert "BaseMaterial3D.TRANSPARENCY_ALPHA" in main
 assert "surface_factor" in main and "for facet in range(14):" in main
 assert "Antenna_%d" in main and "ocellus_side" in main
@@ -24,7 +25,7 @@ assert "Color(0.46, 0.74, 0.61)" in main
 assert "plant_clusters[rng.randi_range" in main
 assert "branch_clusters[branch_rng.randi_range" in main
 assert "litter_clusters[rng.randi_range" in main
-assert "Vector2(0.18, -0.96)" in main
+assert "Vector2(0.22, -0.98)" in main
 
 assert (root / "scenes/main.tscn").exists()
 assert len(list((root / "assets/textures").glob("*.png"))) >= 15

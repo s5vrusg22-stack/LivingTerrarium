@@ -2,10 +2,10 @@ from pathlib import Path
 import json, struct
 p=Path(__file__).resolve().parents[1]
 s=(p/'scripts/rigged_pose_driver.gd').read_text()
-keys=['HIP_SWING_LIMIT','KNEE_SWING_LIMIT','ANKLE_SWING_LIMIT','CCD_DAMPING','CCD_STALL_LIMIT','_rotation_from_to','_safe_target','rotation_budget','get_ik_report','ik_error_history','MAX_FRAME_DELTA','MIN_FRAME_DELTA','ik_success','ik_iterations','last_max_error','CCD_PROGRESS_EPSILON','MAX_HIP_TO_FOOT_RATIO']
+keys=['HIP_YAW_LIMIT','HIP_PITCH_LIMIT','KNEE_FLEX_LIMIT','ANKLE_FLEX_LIMIT','MAX_FRAME_DELTA','MAX_INVALID_FRAMES','STANCE_WEIGHT','SWING_WEIGHT','CLIMB_STANCE_WEIGHT','CCD_DAMPING','_limit_joint_rotation','_finite_vector','_finite_basis','get_ik_diagnostics','target_ready.fill(false)','last_error[leg_index]','chain_enabled']
 for key in keys: assert key in s,key
 assert s.count('func _solve_leg_ccd(')==1
-assert s.count('func get_ik_report(')==1
+assert s.count('func get_ik_diagnostics(')==1
 assert 'set_bone_global_pose_override' in s
 assert 'skeleton.clear_bones_global_pose_override()' in s
 raw=(p/'assets/models/mantis_rigged.glb').read_bytes()
