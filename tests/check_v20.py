@@ -12,7 +12,7 @@ for marker in [
     'func _mantis_wing_profile(', 'var max_width: float = 0.42 if hindwing else 0.215',
     'const BASE_MANTIS_SCALE := 0.60', 'gait_joints.append([hip_joint, knee_joint, ankle_joint])',
     'var longitudinal_stations := 28', 'var lateral_stations := 24',
-    'var secondary_vein := 0.0', 'sun.shadow_filter = Light3D.SHADOW_FILTER_PCF5',
+    'var secondary_vein := 0.0', 'sun.shadow_blur = 1.15',
     'env.adjustment_contrast = 1.07', 'leaf_mesh_cache[variant] = mesh',
     'TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC',
     'leg_spurs.append(tibial_spurs)', 'counter_sway * 0.045',
