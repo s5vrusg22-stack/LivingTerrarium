@@ -41,7 +41,8 @@ var skeleton: Skeleton3D
 var player: AnimationPlayer
 var bone_map: Dictionary = {}
 var leg_offsets: Array[float] = []
-var head_offset := 0.0
+var head_rotation_offset := Vector3.ZERO
+var neck_rotation_offset := Vector3.ZERO
 var foreleg_offset := 0.0
 var active_state := "IDLE"
 var hierarchical_chains := false
@@ -139,7 +140,8 @@ func setup(target_skeleton: Skeleton3D, target_player: AnimationPlayer) -> void:
 
 func reset_offsets() -> void:
     leg_offsets.fill(0.0)
-    head_offset = 0.0
+    head_rotation_offset = Vector3.ZERO
+    neck_rotation_offset = Vector3.ZERO
     foreleg_offset = 0.0
     ik_blend.fill(0.0)
     target_ready.fill(false)
@@ -149,7 +151,7 @@ func reset_offsets() -> void:
     if skeleton != null:
         skeleton.clear_bones_global_pose_override()
 
-func set_motion_targets(state: String, movement: float, anchors: Array[Vector3], swings: Array[bool], animal_root: Node3D, joints: Array[Node3D], head: Node3D, strike_timer: float, dt: float) -> void:
+func set_motion_targets(state: String, movement: float, anchors: Array[Vector3], swings: Array[bool], animal_root: Node3D, joints: Array[Node3D], head: Node3D, neck: Node3D, strike_timer: float, dt: float) -> void:
     if not enabled or not valid or skeleton == null:
         return
     if dt <= 0.0 or not is_finite(dt):
@@ -185,9 +187,16 @@ func set_motion_targets(state: String, movement: float, anchors: Array[Vector3],
             leg_offsets[i] = move_toward(leg_offsets[i], goal, dt * FOOT_SMOOTHING)
             _apply_local_rotation("Rig_Coxa_%s%d" % [side, index], Vector3.RIGHT, leg_offsets[i], 0.72)
             _apply_local_rotation("Rig_Tibia_%s%d" % [side, index], Vector3.RIGHT, -leg_offsets[i] * 0.62, 0.62)
-    var head_goal := clampf(head.rotation.y if head != null else 0.0, -0.35, 0.35)
-    head_offset = move_toward(head_offset, head_goal, dt * 6.0)
-    _apply_local_rotation("Rig_Head", Vector3.UP, head_offset, 0.65)
+    var head_goal := Vector3.ZERO
+    if head != null:
+        head_goal = Vector3(clampf(head.rotation.x, -0.34, 0.26), clampf(head.rotation.y, -0.80, 0.80), clampf(head.rotation.z, -0.12, 0.12))
+    head_rotation_offset = head_rotation_offset.lerp(head_goal, clampf(dt * 6.0, 0.0, 1.0))
+    var neck_goal := Vector3.ZERO
+    if neck != null:
+        neck_goal = Vector3(clampf(neck.rotation.x, -0.16, 0.14), clampf(neck.rotation.y, -0.22, 0.22), clampf(neck.rotation.z, -0.08, 0.08))
+    neck_rotation_offset = neck_rotation_offset.lerp(neck_goal, clampf(dt * 4.5, 0.0, 1.0))
+    _apply_local_rotation_vector("Rig_Head", head_rotation_offset, 0.65)
+    _apply_local_rotation_vector("Rig_Thorax", neck_rotation_offset, 0.24)
     var strike_goal := -0.45 if state == "STRIKE" and strike_timer > 0.0 else -0.18 if state in ["HUNT", "ALERT"] else 0.0
     foreleg_offset = move_toward(foreleg_offset, strike_goal, dt * 10.0)
     for side in SIDES:
@@ -202,6 +211,16 @@ func _apply_local_rotation(name: String, axis: Vector3, angle: float, strength: 
     # the bind pose. Global pose overrides are intentionally nonpersistent.
     var base := skeleton.get_bone_global_pose_no_override(index)
     var rotated := base.rotated_local(axis, angle)
+    skeleton.set_bone_global_pose_override(index, rotated, strength, false)
+
+func _apply_local_rotation_vector(name: String, rotation: Vector3, strength: float) -> void:
+    if not bone_map.has(name):
+        return
+    var index: int = bone_map[name]
+    var base := skeleton.get_bone_global_pose_no_override(index)
+    var rotated := base.rotated_local(Vector3.RIGHT, rotation.x)
+    rotated = rotated.rotated_local(Vector3.UP, rotation.y)
+    rotated = rotated.rotated_local(Vector3.BACK, rotation.z)
     skeleton.set_bone_global_pose_override(index, rotated, strength, false)
 
 func _solve_leg_ccd(leg_index: int, target: Vector3, swinging: bool, movement: float, dt: float) -> void:
