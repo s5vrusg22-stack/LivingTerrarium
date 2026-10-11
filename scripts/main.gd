@@ -907,7 +907,7 @@ func _create_mantis() -> void:
     head_pivot.name = "HeadPivot"
     head_pivot.position = Vector3(0, 0.036, -0.115)
     neck_pivot.add_child(head_pivot)
-    _part(head_pivot, Vector3(0, 0.012, -0.012), Vector3(0.15, 0.11, 0.12), mint_light)
+    _add_mantis_head_plate(head_pivot, mint_light)
     _part(head_pivot, Vector3(0, -0.045, -0.087), Vector3(0.084, 0.054, 0.036), mint)
     _part(head_pivot, Vector3(0, -0.078, -0.097), Vector3(0.036, 0.019, 0.025), mint_shadow)
     # Soft cheek plates give the broad, triangular mantis face a defined lower edge.
@@ -1039,6 +1039,74 @@ func _create_mantis() -> void:
         forelegs.append(foreleg)
         foreleg_elbows.append(elbow)
         foreleg_claws.append(claw)
+
+func _mantis_head_plate_point(u: float, t: float) -> Vector3:
+    var safe_t := clampf(t, 0.0, 1.0)
+    var shape := pow(maxf(0.0, sin(PI * pow(safe_t, 0.84))), 0.62)
+    var upper_fill := lerpf(0.78, 1.0, clampf(safe_t / 0.35, 0.0, 1.0))
+    var chin_taper := 1.0 - 0.28 * pow(maxf(0.0, (safe_t - 0.58) / 0.42), 1.2)
+    var half_width := 0.012 + 0.137 * shape * upper_fill * chin_taper
+    var front_bulge := 0.050 * shape * sqrt(maxf(0.0, 1.0 - u * u))
+    var cheek_sculpt := 0.004 * absf(u) * sin(safe_t * PI)
+    return Vector3(u * half_width, 0.105 - safe_t * 0.194, -0.018 - front_bulge + cheek_sculpt)
+
+func _add_mantis_head_plate(parent: Node3D, tint: Color) -> void:
+    # A gently convex, tapered face shield replaces the large round head piece.
+    var row_count := 48
+    var lane_count := 36
+    var stride := lane_count + 1
+    var vertices := PackedVector3Array()
+    var normals := PackedVector3Array()
+    var uvs := PackedVector2Array()
+    var colors := PackedColorArray()
+    var indices := PackedInt32Array()
+    for row in range(row_count + 1):
+        var t := float(row) / float(row_count)
+        for lane in range(stride):
+            var u := float(lane) / float(lane_count) * 2.0 - 1.0
+            var point := _mantis_head_plate_point(u, t)
+            vertices.append(point)
+            var u_before := maxf(-1.0, u - 0.015)
+            var u_after := minf(1.0, u + 0.015)
+            var t_before := maxf(0.0, t - 0.003)
+            var t_after := minf(1.0, t + 0.003)
+            var tangent_u := _mantis_head_plate_point(u_after, t) - _mantis_head_plate_point(u_before, t)
+            var tangent_t := _mantis_head_plate_point(u, t_after) - _mantis_head_plate_point(u, t_before)
+            normals.append(tangent_u.cross(tangent_t).normalized())
+            uvs.append(Vector2(float(lane) / float(lane_count), t))
+            var edge_shade := pow(absf(u), 5.0) * 0.075
+            var pigment := 0.98 + 0.018 * sin(t * TAU * 2.0 + u * 1.3) - edge_shade
+            colors.append(Color(tint.r * pigment, tint.g * pigment, tint.b * pigment, 1.0))
+    for row in range(row_count):
+        for lane in range(lane_count):
+            var a := row * stride + lane
+            var b := a + 1
+            var d := (row + 1) * stride + lane
+            var c := d + 1
+            indices.append(a)
+            indices.append(b)
+            indices.append(c)
+            indices.append(a)
+            indices.append(c)
+            indices.append(d)
+    var arrays: Array = []
+    arrays.resize(Mesh.ARRAY_MAX)
+    arrays[Mesh.ARRAY_VERTEX] = vertices
+    arrays[Mesh.ARRAY_NORMAL] = normals
+    arrays[Mesh.ARRAY_TEX_UV] = uvs
+    arrays[Mesh.ARRAY_COLOR] = colors
+    arrays[Mesh.ARRAY_INDEX] = indices
+    var plate_mesh := ArrayMesh.new()
+    plate_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+    var plate := MeshInstance3D.new()
+    plate.name = "HeadCuticleShield"
+    plate.mesh = plate_mesh
+    var plate_material := _mantis_material(Color.WHITE)
+    plate_material.vertex_color_use_as_albedo = true
+    plate_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    plate_material.roughness = 0.56
+    plate.material_override = plate_material
+    parent.add_child(plate)
 
 func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     # Smooth leaf-like forewings cover most of the abdomen; pale hindwings stay tucked below.
