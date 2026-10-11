@@ -1317,6 +1317,7 @@ func _leaf_mesh() -> ArrayMesh:
     var vertices := PackedVector3Array()
     var colors := PackedColorArray()
     var normals := PackedVector3Array()
+    var tangents := PackedFloat32Array()
     var uv := PackedVector2Array()
     var station_count := 25
     var lane_count := 10
@@ -1350,14 +1351,21 @@ func _leaf_mesh() -> ArrayMesh:
                 vertices.append(point)
                 uv.append(point_uv)
                 normals.append(_leaf_surface_normal(point_u, point_t))
+                var tangent_u := _leaf_surface(minf(1.0, point_u + 0.012), point_t) - _leaf_surface(maxf(-1.0, point_u - 0.012), point_t)
+                tangent_u = tangent_u.normalized()
+                tangents.append(tangent_u.x)
+                tangents.append(tangent_u.y)
+                tangents.append(tangent_u.z)
+                tangents.append(1.0)
                 var edge_factor: float = pow(absf(point_u), 2.0)
                 var central_vein: float = exp(-pow(absf(point_u) / 0.040, 2.0))
                 var tone: float = 0.96 + 0.04 * sin(PI * point_t) - edge_factor * 0.06 + central_vein * 0.025
-                colors.append(Color(tone, clampf(tone + 0.015, 0.0, 1.0), clampf(tone - 0.025, 0.0, 1.0), 1.0))
+                colors.append(Color(clampf(tone, 0.0, 1.0), clampf(tone + 0.015, 0.0, 1.0), clampf(tone - 0.025, 0.0, 1.0), 1.0))
     var arrays := []
     arrays.resize(Mesh.ARRAY_MAX)
     arrays[Mesh.ARRAY_VERTEX] = vertices
     arrays[Mesh.ARRAY_NORMAL] = normals
+    arrays[Mesh.ARRAY_TANGENT] = tangents
     arrays[Mesh.ARRAY_COLOR] = colors
     arrays[Mesh.ARRAY_TEX_UV] = uv
     var mesh := ArrayMesh.new()
@@ -1456,7 +1464,7 @@ func _create_animated_ecosystem() -> void:
                 var leaf := MeshInstance3D.new()
                 leaf.mesh = leaf_mesh
                 leaf.material_override = leaf_materials[rng.randi_range(0, leaf_materials.size() - 1)]
-                leaf.scale = Vector3(rng.randf_range(1.02, 1.62), 0.9, rng.randf_range(1.45, 2.20))
+                leaf.scale = Vector3(rng.randf_range(0.56, 0.90), 0.9, rng.randf_range(0.82, 1.25))
                 leaf.rotation.x = rng.randf_range(-0.24, -0.06)
                 leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
                 leaf_joint.add_child(leaf)
@@ -1475,7 +1483,7 @@ func _create_animated_ecosystem() -> void:
                 var leaf := MeshInstance3D.new()
                 leaf.mesh = leaf_mesh
                 leaf.material_override = leaf_materials[rng.randi_range(0, leaf_materials.size() - 1)]
-                leaf.scale = Vector3(rng.randf_range(0.76, 1.20), 0.84, rng.randf_range(1.06, 1.62))
+                leaf.scale = Vector3(rng.randf_range(0.48, 0.80), 0.84, rng.randf_range(0.70, 1.12))
                 leaf.rotation.x = rng.randf_range(-0.32, -0.05)
                 leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
                 leaf_joint.add_child(leaf)
