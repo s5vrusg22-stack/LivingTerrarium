@@ -27,17 +27,18 @@ var habitat_root: Node3D
 var habitat_trunks: Array[Dictionary] = []
 var leaf_detail_texture: Texture2D
 var leaf_normal_texture: Texture2D
+var variegated_leaf_texture: Texture2D
 var status: Label
 var notice: Label
 var orbit_yaw := 0.0
 var orbit_pitch := 0.30
 var orbit_distance := 5.3
 const CAMERA_MIN_DISTANCE := 0.42
-const CAMERA_MAX_DISTANCE := 22.0
-const WALK_BOUND_X := 3.25
-const WALK_BOUND_Z := 2.18
-const PREY_BOUND_X := 3.48
-const PREY_BOUND_Z := 2.46
+const CAMERA_MAX_DISTANCE := 30.0
+const WALK_BOUND_X := 3.70
+const WALK_BOUND_Z := 2.52
+const PREY_BOUND_X := 3.96
+const PREY_BOUND_Z := 2.80
 var pointer_last := Vector2.ZERO
 var touching := false
 var touch_points: Dictionary = {}
@@ -358,7 +359,7 @@ func _load_textures() -> void:
 func _create_wood_curve(p0: Vector3, p1: Vector3, p2: Vector3, p3: Vector3, base_radius: float, tip_radius: float, radial_segments: int, mat: StandardMaterial3D, parent: Node3D, buttress := false) -> void:
     var points: Array[Vector3] = []
     var radii: Array[float] = []
-    var ring_count := 17
+    var ring_count := 41
     for ring in range(ring_count):
         var t := float(ring) / float(ring_count - 1)
         var inv := 1.0 - t
@@ -490,6 +491,74 @@ func _create_bark_moss(trunks: Array[Dictionary], rng: RandomNumberGenerator) ->
                 leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
                 patch.add_child(leaf)
 
+func _create_bromeliads(leaf_mesh: ArrayMesh, materials: Array[StandardMaterial3D], rng: RandomNumberGenerator) -> void:
+    var tree_choices: Array[int] = [1, 4, 6, 8, 9, 10]
+    var ring_choices: Array[int] = [8, 8, 7, 9, 8, 7]
+    for i in range(mini(tree_choices.size(), habitat_trunks.size())):
+        var trunk: Dictionary = habitat_trunks[tree_choices[i]]
+        var points: Array = trunk["points"]
+        var radii: Array = trunk["radii"]
+        var ring: int = mini(ring_choices[i], points.size() - 2)
+        var tangent: Vector3 = (points[ring + 1] - points[ring - 1]).normalized()
+        var facing := Vector3(0.0, 0.0, 1.0)
+        facing = (facing - tangent * facing.dot(tangent)).normalized()
+        if facing.length_squared() < 0.001:
+            facing = tangent.cross(Vector3.RIGHT).normalized()
+        var anchor: Vector3 = points[ring] + facing * (radii[ring] + 0.065)
+        _create_bromeliad(habitat_motion_root, anchor, rng.randf_range(0.78, 1.06), leaf_mesh, materials, rng, i)
+
+func _create_bromeliad(parent: Node3D, anchor: Vector3, size: float, leaf_mesh: ArrayMesh, materials: Array[StandardMaterial3D], rng: RandomNumberGenerator, species: int) -> void:
+    var rosette := Node3D.new()
+    rosette.name = "Bromeliad_%02d" % species
+    rosette.position = anchor
+    rosette.scale = Vector3.ONE * size
+    parent.add_child(rosette)
+    var accent_sets: Array = [[3, 4, 7], [4, 5, 6], [6, 7, 8], [3, 5, 8], [4, 7, 9], [3, 6, 8]]
+    var accents: Array = accent_sets[species % accent_sets.size()]
+    var center_mesh := SphereMesh.new()
+    center_mesh.radial_segments = 16
+    center_mesh.rings = 10
+    var center := MeshInstance3D.new()
+    center.mesh = center_mesh
+    center.position = Vector3(0.0, 0.085, 0.0)
+    center.scale = Vector3(0.075, 0.09, 0.075)
+    center.material_override = materials[rng.randi_range(0, 2)]
+    rosette.add_child(center)
+    var leaf_count := 16
+    for leaf_index in range(leaf_count):
+        var inner := leaf_index >= 9
+        var angle := TAU * float(leaf_index) / float(leaf_count) + rng.randf_range(-0.18, 0.18)
+        var leaf_joint := Node3D.new()
+        leaf_joint.position = Vector3(0.0, 0.035 + (0.025 if inner else 0.0), 0.0)
+        leaf_joint.rotation.y = angle
+        leaf_joint.rotation.x = rng.randf_range(-0.82, -0.62) if inner else rng.randf_range(-0.40, -0.12)
+        leaf_joint.rotation.z = rng.randf_range(-0.10, 0.10)
+        rosette.add_child(leaf_joint)
+        var leaf := MeshInstance3D.new()
+        leaf.mesh = leaf_mesh
+        var material_index := accents[(leaf_index - 9) % accents.size()] if inner else rng.randi_range(0, 2)
+        leaf.material_override = materials[material_index]
+        leaf.scale = Vector3(rng.randf_range(0.78, 1.14), 0.92, rng.randf_range(1.28, 1.82)) if not inner else Vector3(rng.randf_range(0.68, 0.94), 0.94, rng.randf_range(1.00, 1.38))
+        leaf.rotation.x = rng.randf_range(-0.12, 0.06)
+        leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        leaf_joint.add_child(leaf)
+        plant_pivots.append(leaf_joint)
+        plant_phases.append(rng.randf_range(0.0, TAU))
+        plant_stiffness.append(rng.randf_range(0.26, 0.48))
+    var inflorescence_mat: StandardMaterial3D = materials[accents[0]]
+    _segment(rosette, Vector3(0.0, 0.11, 0.0), Vector3(0.0, 0.29, 0.0), 0.008, Color(0.42, 0.16, 0.10))
+    for flower_index in range(7):
+        var flower := MeshInstance3D.new()
+        flower.mesh = center_mesh
+        var flower_angle := TAU * float(flower_index) / 7.0
+        flower.position = Vector3(cos(flower_angle) * 0.025, 0.26 + rng.randf_range(-0.025, 0.055), sin(flower_angle) * 0.025)
+        flower.scale = Vector3(0.018, 0.036, 0.018)
+        flower.material_override = inflorescence_mat
+        rosette.add_child(flower)
+    plant_pivots.append(rosette)
+    plant_phases.append(rng.randf_range(0.0, TAU))
+    plant_stiffness.append(0.20)
+
 func _create_world() -> void:
     camera = Camera3D.new()
     camera.current = true
@@ -514,7 +583,7 @@ func _create_world() -> void:
     # stay unchanged while the enclosure gains 50% more room in every direction.
     habitat_root = Node3D.new()
     habitat_root.name = "HabitatScaleRoot"
-    habitat_root.scale = Vector3.ONE * 1.5
+    habitat_root.scale = Vector3.ONE * 1.70
     habitat_root.position = Vector3(0, 0.275, 0)
     add_child(habitat_root)
     # The enclosure grows around the existing animal scale. Keep the mantis
@@ -542,15 +611,15 @@ func _create_world() -> void:
         var bark_mat := _bark_material(bark_tint)
         var trunk_points: Array[Vector3] = []
         var trunk_radii: Array[float] = []
-        for ring in range(17):
-            var t := float(ring) / 16.0
+        for ring in range(41):
+            var t := float(ring) / 40.0
             var inv := 1.0 - t
             var center := start * (inv * inv * inv) + control_a * (3.0 * inv * inv * t) + control_b * (3.0 * inv * t * t) + top * (t * t * t)
             trunk_points.append(center)
             var radius := lerpf(trunk_radius, trunk_radius * 0.30, t) * (1.0 + 0.60 * pow(inv, 7.0))
             radius *= 1.0 + 0.025 * sin(float(ring) * 1.63 + float(i))
             trunk_radii.append(radius)
-        _organic_tube(trunk_points, trunk_radii, 12, bark_mat, habitat_root)
+        _organic_tube(trunk_points, trunk_radii, 16, bark_mat, habitat_root)
         habitat_trunks.append({"points": trunk_points, "radii": trunk_radii})
         # Broad roots taper into the substrate and merge visibly into the trunk.
         var root_count := branch_rng.randi_range(3, 5)
@@ -1410,8 +1479,8 @@ func _resize_ui() -> void:
 
 # Reusable simple leaf mesh: six triangles with a raised midrib and pointed tip.
 func _build_leaf_detail_textures() -> void:
-    var tex_width := 128
-    var tex_height := 256
+    var tex_width := 256
+    var tex_height := 512
     var height_values := PackedFloat32Array()
     height_values.resize(tex_width * tex_height)
     var albedo_image := Image.create(tex_width, tex_height, false, Image.FORMAT_RGBA8)
@@ -1427,13 +1496,15 @@ func _build_leaf_detail_textures() -> void:
                 var vein_t: float = root_t + absf(u) * 0.075 + side_sign * absf(u) * 0.012
                 var distance_to_vein: float = absf(t - vein_t)
                 side_vein = maxf(side_vein, exp(-pow(distance_to_vein / 0.006, 2.0)) * clampf(1.0 - absf(u) * 1.6, 0.0, 1.0))
+            var fine_phase := t * TAU * 40.0 - absf(u) * 8.0 - sin(u * PI) * 0.35
+            var fine_veins := exp(-pow(absf(sin(fine_phase)) / 0.12, 2.0)) * clampf(1.0 - absf(u) * 0.72, 0.0, 1.0)
             var noise_value: float = sin(float(x) * 12.9898 + float(y) * 78.233) * 43758.5453
-            noise_value = (fposmod(noise_value, 1.0) * 2.0 - 1.0) * 0.018
-            var edge_darkening: float = pow(absf(u), 3.0) * 0.07
-            var pigment: float = clampf(0.94 + noise_value + central_vein * 0.055 - side_vein * 0.13 - edge_darkening, 0.72, 1.0)
-            albedo_image.set_pixel(x, y, Color(clampf(pigment * 1.05, 0.0, 1.0), pigment, clampf(pigment * 0.91, 0.0, 1.0), 1.0))
-            var grain: float = sin(float(x) * 0.41 + float(y) * 0.23) * 0.0012
-            height_values[y * tex_width + x] = central_vein * 0.012 + side_vein * 0.004 + grain
+            noise_value = (fposmod(noise_value, 1.0) * 2.0 - 1.0) * 0.024
+            var edge_darkening: float = pow(absf(u), 3.0) * 0.08
+            var pigment: float = clampf(0.94 + noise_value + central_vein * 0.06 - side_vein * 0.13 - fine_veins * 0.018 - edge_darkening, 0.69, 1.0)
+            albedo_image.set_pixel(x, y, Color(clampf(pigment * 1.05, 0.0, 1.0), pigment, clampf(pigment * 0.90, 0.0, 1.0), 1.0))
+            var grain: float = sin(float(x) * 0.41 + float(y) * 0.23) * 0.0018
+            height_values[y * tex_width + x] = central_vein * 0.014 + side_vein * 0.004 + fine_veins * 0.0018 + grain
     var normal_image := Image.create(tex_width, tex_height, false, Image.FORMAT_RGBA8)
     for y in range(tex_height):
         for x in range(tex_width):
@@ -1445,6 +1516,18 @@ func _build_leaf_detail_textures() -> void:
             normal_image.set_pixel(x, y, Color(normal.x * 0.5 + 0.5, normal.y * 0.5 + 0.5, normal.z * 0.5 + 0.5, 1.0))
     leaf_detail_texture = ImageTexture.create_from_image(albedo_image)
     leaf_normal_texture = ImageTexture.create_from_image(normal_image)
+    var variegated_image := Image.create(tex_width, tex_height, false, Image.FORMAT_RGBA8)
+    for y in range(tex_height):
+        var t: float = float(y) / float(tex_height - 1)
+        for x in range(tex_width):
+            var u: float = float(x) / float(tex_width - 1) * 2.0 - 1.0
+            var rib_phase := absf(sin(u * PI * 8.0 + sin(t * TAU * 2.0) * 0.42))
+            var pale_rib := exp(-pow(rib_phase / 0.17, 2.0))
+            var edge := pow(absf(u), 2.1)
+            var green := clampf(0.68 + 0.29 * pale_rib - edge * 0.10, 0.0, 1.0)
+            var variegation_color := Color(green, clampf(green * 1.02, 0.0, 1.0), clampf(green * 0.76 + 0.18 * pale_rib, 0.0, 1.0), 1.0)
+            variegated_image.set_pixel(x, y, variegation_color)
+    variegated_leaf_texture = ImageTexture.create_from_image(variegated_image)
 
 func _leaf_surface(u: float, t: float) -> Vector3:
     var safe_t: float = clampf(t, 0.0, 1.0)
@@ -1475,8 +1558,8 @@ func _leaf_mesh() -> ArrayMesh:
     var normals := PackedVector3Array()
     var tangents := PackedFloat32Array()
     var uv := PackedVector2Array()
-    var station_count := 25
-    var lane_count := 10
+    var station_count := 40
+    var lane_count := 16
     var rows: Array = []
     for station in range(station_count):
         var t: float = float(station) / float(station_count - 1)
@@ -1551,10 +1634,29 @@ func _create_animated_ecosystem() -> void:
     stem_mesh.bottom_radius = 0.015
     stem_mesh.height = 1.0
     stem_mesh.radial_segments = 7
+    var bromeliad_materials: Array[StandardMaterial3D] = []
+    for tint in [Color(0.09, 0.27, 0.07), Color(0.18, 0.39, 0.10), Color(0.30, 0.46, 0.13), Color(0.72, 0.12, 0.11), Color(0.46, 0.045, 0.11), Color(0.77, 0.15, 0.27), Color(0.90, 0.29, 0.30), Color(0.88, 0.31, 0.08), Color(0.70, 0.64, 0.18), Color(0.78, 0.76, 0.52)]:
+        var bract_mat := _material(tint)
+        bract_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+        bract_mat.vertex_color_use_as_albedo = true
+        bract_mat.albedo_texture = leaf_detail_texture
+        bract_mat.normal_enabled = true
+        bract_mat.normal_texture = leaf_normal_texture
+        bract_mat.normal_scale = 0.13
+        bract_mat.roughness = 0.80
+        bromeliad_materials.append(bract_mat)
+    var variegated_leaf_material := _material(Color(0.72, 0.88, 0.52))
+    variegated_leaf_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    variegated_leaf_material.vertex_color_use_as_albedo = true
+    variegated_leaf_material.albedo_texture = variegated_leaf_texture
+    variegated_leaf_material.normal_enabled = true
+    variegated_leaf_material.normal_texture = leaf_normal_texture
+    variegated_leaf_material.normal_scale = 0.10
+    variegated_leaf_material.roughness = 0.84
     var plant_clusters: Array[Vector2] = [Vector2(-2.22, -1.46), Vector2(-2.30, -0.55), Vector2(-2.15, 0.55), Vector2(-1.76, 1.48), Vector2(-0.88, 1.53), Vector2(0.20, 1.55), Vector2(1.28, 1.49), Vector2(2.20, 1.20), Vector2(2.25, 0.25), Vector2(2.22, -0.72), Vector2(1.82, -1.48), Vector2(0.70, -1.54), Vector2(-0.65, -1.50)]
     # Dense but irregular plant groups rise from the substrate into the canopy.
     # The center stays more open so the mantis remains readable at the larger scale.
-    for i in range(56):
+    for i in range(72):
         var plant := Node3D.new()
         plant.name = "Plant_%02d" % i
         var plant_cluster: Vector2 = plant_clusters[rng.randi_range(0, plant_clusters.size() - 1)]
@@ -1638,8 +1740,8 @@ func _create_animated_ecosystem() -> void:
                 plant.add_child(leaf_joint)
                 var leaf := MeshInstance3D.new()
                 leaf.mesh = leaf_mesh
-                leaf.material_override = leaf_materials[rng.randi_range(0, leaf_materials.size() - 1)]
-                leaf.scale = Vector3(rng.randf_range(0.82, 1.20), 0.86, rng.randf_range(0.82, 1.22))
+                leaf.material_override = variegated_leaf_material if (i + j) % 6 == 0 else leaf_materials[rng.randi_range(0, leaf_materials.size() - 1)]
+                leaf.scale = Vector3(rng.randf_range(0.90, 1.28), 0.86, rng.randf_range(0.88, 1.28))
                 leaf.rotation.x = rng.randf_range(-0.32, -0.05)
                 leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
                 leaf_joint.add_child(leaf)
@@ -1649,6 +1751,7 @@ func _create_animated_ecosystem() -> void:
         plant_pivots.append(plant)
         plant_phases.append(rng.randf_range(0.0, TAU))
         plant_stiffness.append(rng.randf_range(0.35, 0.8))
+    _create_bromeliads(leaf_mesh, bromeliad_materials, rng)
     # Climbing stems coil around real trunk surfaces; a smaller number trail down from the canopy.
     for vine_index in range(14):
         if habitat_trunks.is_empty():
@@ -1673,8 +1776,8 @@ func _create_animated_ecosystem() -> void:
         var phase := rng.randf_range(0.0, TAU)
         var path_points: Array[Vector3] = []
         var path_radii: Array[float] = []
-        for sample in range(17):
-            var t := float(sample) / 16.0
+        for sample in range(41):
+            var t := float(sample) / 40.0
             var coil := t * TAU * (1.05 if climbing else 0.38) + phase
             var local_y := vine_length * t * (1.0 if climbing else -1.0)
             var sway_x := sin(coil) * (0.045 + 0.055 * t) + 0.035 * sin(t * PI)
@@ -1685,7 +1788,7 @@ func _create_animated_ecosystem() -> void:
         var leaf_count := rng.randi_range(5, 7) if climbing else rng.randi_range(4, 6)
         for leaf_index in range(leaf_count):
             var t := 0.12 + 0.135 * float(leaf_index)
-            var ring := clampi(roundi(t * 16.0), 1, 15)
+            var ring := clampi(roundi(t * 40.0), 1, 39)
             var side := -1.0 if leaf_index % 2 == 0 else 1.0
             var leaf_joint := Node3D.new()
             leaf_joint.position = path_points[ring] + Vector3(side * 0.026, 0.0, 0.018)
@@ -1756,7 +1859,7 @@ func _create_habitat_details() -> void:
     stone_mesh.rings = 4
     var leaf_mesh := _leaf_mesh()
     var litter_clusters: Array[Vector2] = [Vector2(-2.17, -1.42), Vector2(-2.27, -0.50), Vector2(-2.12, 0.54), Vector2(-1.67, 1.45), Vector2(-0.66, 1.47), Vector2(0.75, 1.45), Vector2(1.85, 1.38), Vector2(2.17, 0.42), Vector2(2.22, -0.58), Vector2(1.73, -1.43), Vector2(0.55, -1.46), Vector2(-0.72, -1.43)]
-    for i in range(232):
+    for i in range(280):
         var item := MeshInstance3D.new()
         var litter_cluster: Vector2 = litter_clusters[rng.randi_range(0, litter_clusters.size() - 1)]
         var litter_angle: float = rng.randf_range(0.0, TAU)
@@ -1781,7 +1884,7 @@ func _create_habitat_details() -> void:
         var moss_mat := _material(tint)
         moss_mat.roughness = 0.98
         ground_moss_materials.append(moss_mat)
-    for moss_index in range(76):
+    for moss_index in range(100):
         var moss_patch := Node3D.new()
         var moss_x := rng.randf_range(-2.36, 2.36)
         var moss_z := rng.randf_range(-1.68, 1.68)
@@ -2279,8 +2382,8 @@ func _fit_enclosure_distance() -> float:
     var screen := get_viewport().get_visible_rect().size
     var aspect: float = maxf(0.45, screen.x / maxf(1.0, screen.y))
     var horizontal_fov: float = 2.0 * atan(tan(vertical_fov * 0.5) * aspect)
-    var vertical_distance: float = 3.15 / tan(vertical_fov * 0.5)
-    var horizontal_distance: float = 4.35 / tan(horizontal_fov * 0.5)
+    var vertical_distance: float = 3.90 / tan(vertical_fov * 0.5)
+    var horizontal_distance: float = 4.75 / tan(horizontal_fov * 0.5)
     return clampf(maxf(vertical_distance, horizontal_distance) * 1.12, 7.5, CAMERA_MAX_DISTANCE)
 
 func _reset_camera() -> void:
