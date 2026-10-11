@@ -25,6 +25,7 @@ var orbit_pitch := 0.25
 var orbit_distance := 5.3
 const CAMERA_MIN_DISTANCE := 0.65
 const CAMERA_MAX_DISTANCE := 13.0
+const BASE_MANTIS_SCALE := 0.46
 const WALK_BOUND_X := 2.18
 const WALK_BOUND_Z := 1.42
 const PREY_BOUND_X := 2.36
@@ -56,6 +57,8 @@ var forelegs: Array[Node3D] = []
 var wing_pivots: Array[Node3D] = []
 var leg_pivots: Array[Node3D] = []
 var gait_segments: Array = []
+var gait_joints: Array = []
+var leg_spurs: Array = []
 var gait_feet: Array[Vector3] = []
 var abdomen: Node3D
 var prey_velocities: Dictionary = {}
@@ -569,7 +572,7 @@ func _create_mantis() -> void:
     animal = Node3D.new()
     animal.name = "Mantis_01"
     animal.position = Vector3(0, -0.38, 0)
-    animal.scale = Vector3.ONE * (0.32 * (0.80 + growth * 0.30))
+    animal.scale = Vector3.ONE * (BASE_MANTIS_SCALE * (0.80 + growth * 0.30))
     add_child(animal)
     var mint := Color(0.42, 0.60, 0.24)
     var mint_light := Color(0.63, 0.73, 0.38)
@@ -669,16 +672,26 @@ func _create_mantis() -> void:
             joint.position = Vector3(side * 0.052, 0.19, leg_z)
             animal.add_child(joint)
             _segment(joint, Vector3.ZERO, Vector3(side * 0.075, -0.005, 0.025), 0.014, mint_shadow)
-            var upper := _make_gait_bone(joint, 0.011, mint_light)
-            var lower := _make_gait_bone(joint, 0.008, mint_shadow)
+            var upper := _make_gait_bone(joint, 0.019, mint_light)
+            var lower := _make_gait_bone(joint, 0.011, mint_shadow)
             leg_pivots.append(joint)
             gait_segments.append([upper, lower])
+            var hip_joint := _make_gait_joint(joint, 0.019, mint_shadow)
+            var knee_joint := _make_gait_joint(joint, 0.016, mint_light)
+            var ankle_joint := _make_gait_joint(joint, 0.012, mint_shadow)
+            gait_joints.append([hip_joint, knee_joint, ankle_joint])
+            var tibial_spurs: Array[MeshInstance3D] = []
+            for spur_index in range(5):
+                var spur := _make_gait_bone(joint, 0.0038, mint_shadow)
+                spur.name = "WalkingTibiaSpur_%d_%d_%d" % [int(side), i, spur_index]
+                tibial_spurs.append(spur)
+            leg_spurs.append(tibial_spurs)
             var leg_foot := Vector3(side * 0.32, -0.47, leg_z + (0.19 if i == 0 else 0.22))
             gait_feet.append(leg_foot)
             step_targets.append(leg_foot)
             var tarsomeres: Array[MeshInstance3D] = []
             for tarsomere_index in range(5):
-                var tarsomere := _make_gait_bone(joint, 0.0045 - float(tarsomere_index) * 0.00038, mint_shadow)
+                var tarsomere := _make_gait_bone(joint, 0.0050 - float(tarsomere_index) * 0.00042, mint_shadow)
                 tarsomere.name = "Tarsomere_%d_%d_%d" % [int(side), i, tarsomere_index]
                 tarsomeres.append(tarsomere)
             foot_tarsi.append(tarsomeres)
@@ -706,33 +719,33 @@ func _create_mantis() -> void:
         foreleg.add_child(elbow)
         # A broad, flattened femoral blade makes the mantis's capture arm
         # unmistakable; alternating inner spines oppose the tibial teeth.
-        _ellipsoid_limb(foreleg, coxa_end, femur_end, 0.055, mint_light)
-        _ellipsoid_limb(foreleg, coxa_end.lerp(femur_end, 0.08), coxa_end.lerp(femur_end, 0.92), 0.026, mint)
-        _ellipsoid_limb(foreleg, coxa_end.lerp(femur_end, 0.10) + Vector3(0.0, 0.030, 0.0), coxa_end.lerp(femur_end, 0.90) + Vector3(0.0, 0.030, 0.0), 0.010, mint_light)
+        _ellipsoid_limb(foreleg, coxa_end, femur_end, 0.067, mint_light)
+        _ellipsoid_limb(foreleg, coxa_end.lerp(femur_end, 0.08), coxa_end.lerp(femur_end, 0.92), 0.031, mint)
+        _ellipsoid_limb(foreleg, coxa_end.lerp(femur_end, 0.10) + Vector3(0.0, 0.034, 0.0), coxa_end.lerp(femur_end, 0.90) + Vector3(0.0, 0.034, 0.0), 0.012, mint_light)
         _part(foreleg, femur_end, Vector3(0.023, 0.023, 0.025), mint_shadow)
         for spine_index in range(11):
             var t: float = 0.08 + float(spine_index) * 0.083
             var base: Vector3 = coxa_end.lerp(femur_end, t)
-            var spine_tip: Vector3 = base + Vector3(-side * (0.043 if spine_index % 2 == 0 else 0.052), 0.003, -0.016)
-            _segment(foreleg, base, spine_tip, 0.0065 if spine_index % 2 == 0 else 0.0055, mint_shadow)
+            var spine_tip: Vector3 = base + Vector3(-side * (0.052 if spine_index % 2 == 0 else 0.061), 0.003, -0.018)
+            _segment(foreleg, base, spine_tip, 0.0075 if spine_index % 2 == 0 else 0.0065, mint_shadow)
         # Two longer discoidal spines make the prey-facing femur edge distinct
         # from the shorter comb of marginal teeth.
         for spine_index in range(2):
             var t: float = 0.43 + float(spine_index) * 0.19
             var base: Vector3 = coxa_end.lerp(femur_end, t)
-            var spine_tip: Vector3 = base + Vector3(-side * 0.069, 0.004, -0.022)
-            _segment(foreleg, base, spine_tip, 0.009, mint_shadow)
+            var spine_tip: Vector3 = base + Vector3(-side * 0.080, 0.004, -0.024)
+            _segment(foreleg, base, spine_tip, 0.010, mint_shadow)
         var claw := Node3D.new()
         claw.name = "ForelegTibia_%d" % int(side)
         elbow.add_child(claw)
         var tibia_end := Vector3(-side * 0.15, -0.13, -0.115)
-        _ellipsoid_limb(claw, Vector3.ZERO, tibia_end, 0.024, mint)
+        _ellipsoid_limb(claw, Vector3.ZERO, tibia_end, 0.030, mint)
         _part(claw, Vector3.ZERO, Vector3(0.020, 0.020, 0.020), mint_shadow)
         for spine_index in range(11):
             var t: float = 0.08 + float(spine_index) * 0.083
             var base: Vector3 = tibia_end * t
-            var tooth_length: float = 0.041 if spine_index % 3 == 1 else 0.030
-            _segment(claw, base, base + Vector3(side * tooth_length, 0.006, -0.014), 0.0055 if spine_index % 3 else 0.0065, mint_shadow)
+            var tooth_length: float = 0.050 if spine_index % 3 == 1 else 0.036
+            _segment(claw, base, base + Vector3(side * tooth_length, 0.006, -0.014), 0.0060 if spine_index % 3 else 0.0070, mint_shadow)
         var tarsal_palm := tibia_end + Vector3(-side * 0.018, -0.006, -0.035)
         _ellipsoid_limb(claw, tibia_end, tarsal_palm, 0.009, mint_shadow)
         _ellipsoid_limb(claw, tarsal_palm, tarsal_palm + Vector3(-side * 0.028, -0.004, -0.038), 0.0055, mint_light)
@@ -744,9 +757,9 @@ func _create_mantis() -> void:
 func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     var segments := 32
     var start_z: float = -0.015 if hindwing else -0.13
-    var end_z: float = 0.57 if hindwing else 0.64
+    var end_z: float = 0.68 if hindwing else 0.70
     var y: float = 0.245 if hindwing else 0.272
-    var max_width: float = 0.34 if hindwing else 0.15
+    var max_width: float = 0.39 if hindwing else 0.18
     var hinge := Vector3(side * 0.035, y, start_z)
     var vertices := PackedVector3Array()
     var normals := PackedVector3Array()
@@ -799,7 +812,7 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     wing_pivot.set_meta("hindwing", hindwing)
     if hindwing:
         # The broad membrane stays folded beneath the tegmina while resting.
-        wing_pivot.scale.x = 0.36
+        wing_pivot.scale.x = 0.45
     parent.add_child(wing_pivot)
     var wing_instance := MeshInstance3D.new()
     wing_instance.name = "WingMembrane"
@@ -1594,7 +1607,7 @@ func _process(delta: float) -> void:
             molt_progress = 0.0
             molt_count += 1
             growth = minf(1.0, growth + 0.13)
-            animal.scale = Vector3.ONE * (0.32 * (0.80 + growth * 0.30))
+            animal.scale = Vector3.ONE * (BASE_MANTIS_SCALE * (0.80 + growth * 0.30))
             hunger = minf(100.0, hunger + 12.0)
             energy = maxf(15.0, energy - 22.0)
     elif life_age > 150.0 * float(molt_count + 1) and molt_count < 5 and hunger < 65.0 and stress < 40.0:
@@ -1824,7 +1837,7 @@ func _load_state(show_message: bool) -> void:
     life_age = maxf(0.0, float(parsed.get("life_age", 0.0)))
     molt_count = clampi(int(parsed.get("molt_count", 0)), 0, 5)
     growth = clampf(float(parsed.get("growth", 0.35)), 0.35, 1.0)
-    animal.scale = Vector3.ONE * (0.32 * (0.80 + growth * 0.30))
+    animal.scale = Vector3.ONE * (BASE_MANTIS_SCALE * (0.80 + growth * 0.30))
     hunger = clampf(float(parsed.get("hunger", 32.0)), 0.0, 100.0)
     energy = clampf(float(parsed.get("energy", 86.0)), 0.0, 100.0)
     stress = clampf(float(parsed.get("stress", 12.0)), 0.0, 100.0)
@@ -1894,6 +1907,17 @@ func _make_gait_bone(parent: Node3D, radius: float, tint: Color) -> MeshInstance
     bone.material_override = _cuticle_material(tint)
     parent.add_child(bone)
     return bone
+
+func _make_gait_joint(parent: Node3D, radius: float, tint: Color) -> MeshInstance3D:
+    var joint := MeshInstance3D.new()
+    var mesh := SphereMesh.new()
+    mesh.radial_segments = 12
+    mesh.rings = 8
+    joint.mesh = mesh
+    joint.scale = Vector3.ONE * radius
+    joint.material_override = _cuticle_material(tint)
+    parent.add_child(joint)
+    return joint
 
 func _pose_gait_bone(bone: MeshInstance3D, a: Vector3, b: Vector3) -> void:
     var direction := b - a
@@ -2030,6 +2054,8 @@ func _animate_mantis(dt: float) -> void:
     var flight_pose_blend: float = flight_t * flight_t * (3.0 - 2.0 * flight_t)
     movement_blend = move_toward(movement_blend, 1.0 if walking else 0.0, dt * 3.0)
     walking_phase += dt * (3.2 if next_state == "CLIMB" else 5.5 if next_state == "HUNT" else 7.0)
+    var gait_sway: float = sin(walking_phase) * movement_blend
+    var counter_sway: float = sin(walking_phase + PI) * movement_blend
     foot_contact_hits = 0
     # Climbing feet are placed on the branch cylinder; flight legs tuck beneath
     # the thorax rather than reaching toward a stale floor contact.
@@ -2102,6 +2128,16 @@ func _animate_mantis(dt: float) -> void:
         var knee := _solve_leg_knee(Vector3.ZERO, foot, 0.31, 0.49, side)
         _pose_gait_bone(gait_segments[i][0], Vector3.ZERO, knee)
         _pose_gait_bone(gait_segments[i][1], knee, foot)
+        var joints: Array = gait_joints[i]
+        joints[0].position = Vector3.ZERO
+        joints[1].position = knee
+        joints[2].position = foot
+        var spurs: Array = leg_spurs[i]
+        for spur_index in range(spurs.size()):
+            var spur_t: float = 0.18 + float(spur_index) * 0.15
+            var spur_base: Vector3 = knee.lerp(foot, spur_t)
+            var spur_length: float = 0.022 if spur_index % 2 == 0 else 0.017
+            _pose_gait_bone(spurs[spur_index], spur_base, spur_base + Vector3(side * spur_length, 0.004, -0.010))
         var tarsus_offset := Vector3(side * lerpf(0.085, 0.045, flight_pose_blend), lerpf(-0.014, 0.032, flight_pose_blend), -0.025 if index == 0 else 0.025)
         var tarsus_end := foot + tarsus_offset
         var tarsomeres: Array = foot_tarsi[i]
@@ -2182,7 +2218,8 @@ func _animate_mantis(dt: float) -> void:
     for i in range(antennae.size()):
         var antenna_speed := 5.5 if next_state == "ALERT" else 2.3
         var amplitude := 0.29 if next_state == "ALERT" else 0.16
-        antennae[i].rotation.y = sin(elapsed * antenna_speed + float(i) * 1.5) * amplitude
+        var step_sway: float = sin(walking_phase + float(i) * PI) * 0.045 * movement_blend
+        antennae[i].rotation.y = sin(elapsed * antenna_speed + float(i) * 1.5) * amplitude + step_sway
     for i in range(mandibles.size()):
         var chew_motion: float = sin(animation_clock * 6.2 + float(i) * PI) * 0.12 if next_state == "FEED" else 0.0
         mandibles[i].rotation.y = lerpf(mandibles[i].rotation.y, chew_motion, clampf(dt * 12.0, 0.0, 1.0))
@@ -2197,8 +2234,12 @@ func _animate_mantis(dt: float) -> void:
         elif target_prey != null and is_instance_valid(target_prey):
             var local_target := animal.to_local(target_prey.global_position)
             desired_head_yaw = clampf(atan2(-local_target.x, -local_target.z), -0.60, 0.60)
+        if walking:
+            desired_head_yaw += counter_sway * 0.045
         head_pivot.rotation.y = lerp_angle(head_pivot.rotation.y, desired_head_yaw, clampf(dt * 5.0, 0.0, 1.0))
         var head_pitch := -0.14 if next_state == "HUNT" else -0.22 if next_state == "FEED" else 0.0
+        if walking:
+            head_pitch += sin(walking_phase * 2.0) * 0.018 * movement_blend
         head_pivot.rotation.x = lerpf(head_pivot.rotation.x, head_pitch, clampf(dt * 4.0, 0.0, 1.0))
     if thorax_pivot != null:
         var thorax_target := sin(elapsed * 1.6) * 0.012
@@ -2208,7 +2249,11 @@ func _animate_mantis(dt: float) -> void:
             thorax_target -= 0.16
         elif next_state == "FEED":
             thorax_target -= 0.045
+        if walking:
+            thorax_target += gait_sway * 0.035
         thorax_pivot.rotation.x = lerpf(thorax_pivot.rotation.x, thorax_target, clampf(dt * 5.0, 0.0, 1.0))
+        var thorax_yaw_target: float = gait_sway * 0.030 if walking else 0.0
+        thorax_pivot.rotation.y = lerpf(thorax_pivot.rotation.y, thorax_yaw_target, clampf(dt * 4.0, 0.0, 1.0))
     if abdomen != null:
         var abdomen_target := sin(elapsed * 1.3) * 0.018
         if next_state == "ALERT":
@@ -2219,20 +2264,34 @@ func _animate_mantis(dt: float) -> void:
             abdomen_target += 0.22
         elif next_state == "FEED":
             abdomen_target += sin(animation_clock * 2.6) * 0.012
+        if walking:
+            abdomen_target += counter_sway * 0.028
         abdomen.rotation.x = lerpf(abdomen.rotation.x, abdomen_target, clampf(dt * 4.0, 0.0, 1.0))
+        var abdomen_yaw_target: float = gait_sway * 0.040 if walking else 0.0
+        abdomen.rotation.y = lerpf(abdomen.rotation.y, abdomen_yaw_target, clampf(dt * 3.5, 0.0, 1.0))
     if next_state == "FEED" and feed_demo_prey != null and is_instance_valid(feed_demo_prey):
         feed_demo_prey.position = Vector3(0.0, 0.20 + sin(animation_clock * 2.4) * 0.0015, -0.70)
     for wing_pivot in wing_pivots:
         var wing_side := float(wing_pivot.get_meta("wing_side"))
         var is_hindwing := bool(wing_pivot.get_meta("hindwing"))
-        var desired_spread: float = lerpf(0.36, 1.0, flight_pose_blend) if is_hindwing else 1.0
+        var desired_spread: float = lerpf(0.45, 1.0, flight_pose_blend) if is_hindwing else 1.0
         wing_pivot.scale.x = lerpf(wing_pivot.scale.x, desired_spread, clampf(dt * 5.0, 0.0, 1.0))
         var flap_amplitude: float = (0.70 if is_hindwing else 0.56) * flight_pose_blend
         var target_flap := sin(animation_clock * 36.0 + (0.34 if is_hindwing else 0.0)) * flap_amplitude * wing_side if next_state == "FLY" else sin(elapsed * 1.4 + (PI if is_hindwing else 0.0)) * 0.025 * wing_side
         wing_pivot.rotation.z = lerpf(wing_pivot.rotation.z, target_flap, clampf(dt * 22.0, 0.0, 1.0))
     if not (next_state == "CLIMB" and climb_active):
-        var body_roll_target := sin(elapsed * 5.0) * 0.05 if molting else sin(animation_clock * 0.85) * 0.065 * flight_pose_blend if next_state == "FLY" else 0.0
-        var body_pitch_target := (-0.08 - sin(animation_clock * 1.6) * 0.028) * flight_pose_blend if next_state == "FLY" else -0.035 if next_state == "FEED" else 0.0
+        var body_roll_target := 0.0
+        var body_pitch_target := 0.0
+        if molting:
+            body_roll_target = sin(elapsed * 5.0) * 0.05
+        elif next_state == "FLY":
+            body_roll_target = sin(animation_clock * 0.85) * 0.065 * flight_pose_blend
+            body_pitch_target = (-0.08 - sin(animation_clock * 1.6) * 0.028) * flight_pose_blend
+        elif walking:
+            body_roll_target = gait_sway * 0.070
+            body_pitch_target = sin(walking_phase * 2.0) * 0.018 * movement_blend
+        elif next_state == "FEED":
+            body_pitch_target = -0.035
         animal.rotation.z = lerpf(animal.rotation.z, body_roll_target, clampf(dt * 4.0, 0.0, 1.0))
         animal.rotation.x = lerpf(animal.rotation.x, body_pitch_target, clampf(dt * 3.2, 0.0, 1.0))
     if animation_preview == "STRIKE" and preview_strike_clock <= 0.0:
@@ -2346,3 +2405,4 @@ func _clear_decorations() -> void:
         item.queue_free()
     decorations.clear()
     decoration_data.clear()
+
