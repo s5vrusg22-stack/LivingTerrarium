@@ -81,7 +81,7 @@ func _build_ambient_details() -> void:
         speck.mesh = pebble
         speck.material_override = dark
         speck.scale = Vector3(0.012, 0.004, 0.008)
-        speck.position = Vector3(_rng.randf_range(-1.42, 1.42), -0.541, _rng.randf_range(-1.02, 1.02))
+        speck.position = Vector3(_rng.randf_range(-2.38, 2.38), -0.541, _rng.randf_range(-1.70, 1.70))
         add_child(speck)
         ground_specks.append(speck)
     for i in range(10):
@@ -89,7 +89,7 @@ func _build_ambient_details() -> void:
         drop.mesh = pebble
         drop.material_override = damp
         drop.scale = Vector3(0.009, 0.006, 0.009)
-        drop.position = Vector3(_rng.randf_range(-1.3, 1.3), -0.53, _rng.randf_range(-0.92, 0.92))
+        drop.position = Vector3(_rng.randf_range(-2.30, 2.30), -0.53, _rng.randf_range(-1.64, 1.64))
         add_child(drop)
         water_drops.append(drop)
     for i in range(8):
@@ -97,7 +97,7 @@ func _build_ambient_details() -> void:
         spot.mesh = pebble
         spot.material_override = fungus
         spot.scale = Vector3(0.009, 0.002, 0.012)
-        spot.position = Vector3(_rng.randf_range(-1.3, 1.3), -0.537, _rng.randf_range(-0.92, 0.92))
+        spot.position = Vector3(_rng.randf_range(-2.30, 2.30), -0.537, _rng.randf_range(-1.64, 1.64))
         add_child(spot)
         fungal_spots.append(spot)
 
