@@ -10,7 +10,7 @@ for marker in [
     '_apply_pbr(rock_material, "stone")', 'foot_anchors[i]', 'var frame_color :=',
     'func _create_feeder_insect(', 'three distinct leg pairs', '"hips": leg_hips',
     'func _mantis_wing_profile(', 'var max_width: float = 0.42 if hindwing else 0.215',
-    'const BASE_MANTIS_SCALE := 0.60', 'gait_joints.append([hip_joint, knee_joint, ankle_joint])',
+    'const BASE_MANTIS_SCALE := 0.68', 'gait_joints.append([hip_joint, knee_joint, ankle_joint])',
     'var longitudinal_stations := 28', 'var lateral_stations := 24',
     'var secondary_vein := 0.0', 'sun.shadow_blur = 1.15',
     'env.adjustment_contrast = 1.07', 'leaf_mesh_cache[variant] = mesh',
@@ -19,7 +19,11 @@ for marker in [
     'FLIGHT_TAKEOFF_DURATION := 0.95', 'var launch_ease := launch_t * launch_t * (3.0 - 2.0 * launch_t)',
     'var flight_pose_blend: float', 'Keep all four walking feet on their resting contacts',
     'Cricket tympanum on the fore tibia', 'for tarsomere_index in range(3)',
-    'Two longer discoidal spines', 'Mandible_%d'
+    'Two longer discoidal spines', 'Mandible_%d',
+    'func _mantis_head_mesh()', 'func _mantis_pronotum_mesh()', 'func _mantis_abdomen_mesh()',
+    'thorax_pivot.add_child(head_pivot)', 'thorax_pivot.add_child(abdomen)',
+    'thorax_pivot.add_child(joint)', 'gait_lengths.append(Vector2', 'func _organic_limb_mesh(',
+    'FemoralSpines', 'TibialSpines', 'WingVeins', 'func _append_vein_tube('
 ]:
     assert marker in s, marker
 for kind in ['mantis_cuticle','mantis_eye','bark','substrate','stone']:
