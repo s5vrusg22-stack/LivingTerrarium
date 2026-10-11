@@ -1336,7 +1336,7 @@ func _create_feeder_insect(prey: Node3D, size_factor: float, body_color: Color) 
         model.add_child(wing_root)
         _part(wing_root, Vector3(side * 0.018, 0.0, 0.046), Vector3(0.022, 0.0045, 0.086), shell.lightened(0.10))
         for vein in range(4):
-            var x := side * (0.006 + float(vein) * 0.009)
+            var x: float = side * (0.006 + float(vein) * 0.009)
             _segment(wing_root, Vector3(x, 0.004, 0.006), Vector3(side * (0.018 + float(vein) * 0.004), 0.004, 0.118), 0.0011, shell_dark)
         wing_pivots.append(wing_root)
     # Compound eyes, short mouth palps, and six-piece antennae make the head readable.
