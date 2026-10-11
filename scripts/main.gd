@@ -25,6 +25,7 @@ var orbit_pitch := 0.25
 var orbit_distance := 5.3
 const CAMERA_MIN_DISTANCE := 0.65
 const CAMERA_MAX_DISTANCE := 13.0
+const BASE_MANTIS_SCALE := 0.46
 const WALK_BOUND_X := 2.18
 const WALK_BOUND_Z := 1.42
 const PREY_BOUND_X := 2.36
@@ -569,11 +570,11 @@ func _create_mantis() -> void:
     animal = Node3D.new()
     animal.name = "Mantis_01"
     animal.position = Vector3(0, -0.38, 0)
-    animal.scale = Vector3.ONE * (0.32 * (0.80 + growth * 0.30))
+    animal.scale = Vector3.ONE * (BASE_MANTIS_SCALE * (0.80 + growth * 0.30))
     add_child(animal)
-    var mint := Color(0.42, 0.60, 0.24)
-    var mint_light := Color(0.63, 0.73, 0.38)
-    var mint_shadow := Color(0.24, 0.34, 0.15)
+    var mint := Color(0.43, 0.60, 0.23)
+    var mint_light := Color(0.66, 0.74, 0.38)
+    var mint_shadow := Color(0.25, 0.34, 0.14)
     var eye_color := Color(0.025, 0.045, 0.025)
 
     abdomen = Node3D.new()
@@ -604,13 +605,16 @@ func _create_mantis() -> void:
     thorax_pivot.position = Vector3(0, 0.24, -0.34)
     animal.add_child(thorax_pivot)
     # Long, narrow pronotum with a slightly widened rear shield.
-    _part(thorax_pivot, Vector3(0, 0.012, 0.015), Vector3(0.049, 0.042, 0.36), mint)
+    _part(thorax_pivot, Vector3(0, 0.012, 0.015), Vector3(0.049, 0.042, 0.32), mint)
     _part(thorax_pivot, Vector3(0, -0.003, 0.12), Vector3(0.067, 0.047, 0.11), mint_light)
     _part(thorax_pivot, Vector3(0, 0.031, -0.105), Vector3(0.047, 0.018, 0.075), mint_light)
     for thorax_rib in range(4):
         var rib_z := -0.045 + float(thorax_rib) * 0.074
         _segment(thorax_pivot, Vector3(-0.042, -0.012, rib_z), Vector3(0.042, -0.012, rib_z), 0.0022, mint_shadow)
     _segment(thorax_pivot, Vector3(0, 0.058, 0.15), Vector3(0, 0.058, -0.27), 0.006, mint_light)
+    # Paired lateral carinae define the narrow pronotum against the wing roots.
+    for pronotum_side in [-1.0, 1.0]:
+        _segment(thorax_pivot, Vector3(pronotum_side * 0.043, 0.020, 0.095), Vector3(pronotum_side * 0.039, 0.016, -0.235), 0.0018, mint_shadow)
 
     head_pivot = Node3D.new()
     head_pivot.name = "HeadPivot"
@@ -706,15 +710,15 @@ func _create_mantis() -> void:
         foreleg.add_child(elbow)
         # A broad, flattened femoral blade makes the mantis's capture arm
         # unmistakable; alternating inner spines oppose the tibial teeth.
-        _ellipsoid_limb(foreleg, coxa_end, femur_end, 0.055, mint_light)
-        _ellipsoid_limb(foreleg, coxa_end.lerp(femur_end, 0.08), coxa_end.lerp(femur_end, 0.92), 0.026, mint)
-        _ellipsoid_limb(foreleg, coxa_end.lerp(femur_end, 0.10) + Vector3(0.0, 0.030, 0.0), coxa_end.lerp(femur_end, 0.90) + Vector3(0.0, 0.030, 0.0), 0.010, mint_light)
+        _ellipsoid_limb(foreleg, coxa_end, femur_end, 0.067, mint_light)
+        _ellipsoid_limb(foreleg, coxa_end.lerp(femur_end, 0.08), coxa_end.lerp(femur_end, 0.92), 0.031, mint)
+        _ellipsoid_limb(foreleg, coxa_end.lerp(femur_end, 0.10) + Vector3(0.0, 0.034, 0.0), coxa_end.lerp(femur_end, 0.90) + Vector3(0.0, 0.034, 0.0), 0.012, mint_light)
         _part(foreleg, femur_end, Vector3(0.023, 0.023, 0.025), mint_shadow)
         for spine_index in range(11):
             var t: float = 0.08 + float(spine_index) * 0.083
             var base: Vector3 = coxa_end.lerp(femur_end, t)
-            var spine_tip: Vector3 = base + Vector3(-side * (0.043 if spine_index % 2 == 0 else 0.052), 0.003, -0.016)
-            _segment(foreleg, base, spine_tip, 0.0065 if spine_index % 2 == 0 else 0.0055, mint_shadow)
+            var spine_tip: Vector3 = base + Vector3(-side * (0.052 if spine_index % 2 == 0 else 0.061), 0.003, -0.018)
+            _segment(foreleg, base, spine_tip, 0.0075 if spine_index % 2 == 0 else 0.0065, mint_shadow)
         # Two longer discoidal spines make the prey-facing femur edge distinct
         # from the shorter comb of marginal teeth.
         for spine_index in range(2):
@@ -726,13 +730,13 @@ func _create_mantis() -> void:
         claw.name = "ForelegTibia_%d" % int(side)
         elbow.add_child(claw)
         var tibia_end := Vector3(-side * 0.15, -0.13, -0.115)
-        _ellipsoid_limb(claw, Vector3.ZERO, tibia_end, 0.024, mint)
+        _ellipsoid_limb(claw, Vector3.ZERO, tibia_end, 0.030, mint)
         _part(claw, Vector3.ZERO, Vector3(0.020, 0.020, 0.020), mint_shadow)
         for spine_index in range(11):
             var t: float = 0.08 + float(spine_index) * 0.083
             var base: Vector3 = tibia_end * t
-            var tooth_length: float = 0.041 if spine_index % 3 == 1 else 0.030
-            _segment(claw, base, base + Vector3(side * tooth_length, 0.006, -0.014), 0.0055 if spine_index % 3 else 0.0065, mint_shadow)
+            var tooth_length: float = 0.050 if spine_index % 3 == 1 else 0.036
+            _segment(claw, base, base + Vector3(side * tooth_length, 0.006, -0.014), 0.0060 if spine_index % 3 else 0.0070, mint_shadow)
         var tarsal_palm := tibia_end + Vector3(-side * 0.018, -0.006, -0.035)
         _ellipsoid_limb(claw, tibia_end, tarsal_palm, 0.009, mint_shadow)
         _ellipsoid_limb(claw, tarsal_palm, tarsal_palm + Vector3(-side * 0.028, -0.004, -0.038), 0.0055, mint_light)
@@ -742,12 +746,17 @@ func _create_mantis() -> void:
         foreleg_claws.append(claw)
 
 func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
-    var segments := 32
-    var start_z: float = -0.015 if hindwing else -0.13
-    var end_z: float = 0.57 if hindwing else 0.64
+    # A broad, rounded tegmen follows the real Hierodula silhouette; a folded
+    # translucent hindwing remains tucked beneath it.
+    var segments := 40
+    var lane_count := 8
+    var start_z: float = -0.015 if hindwing else -0.15
+    var end_z: float = 0.68 if hindwing else 0.70
     var y: float = 0.245 if hindwing else 0.272
-    var max_width: float = 0.34 if hindwing else 0.15
-    var hinge := Vector3(side * 0.035, y, start_z)
+    var max_width: float = 0.39 if hindwing else 0.22
+    var total_length: float = end_z - start_z
+    var wing_color: Color = Color(0.82, 0.89, 0.66, 0.62) if hindwing else Color(0.61, 0.72, 0.34, 1.0)
+    var hinge := Vector3(side * (0.024 if hindwing else 0.008), y, start_z)
     var vertices := PackedVector3Array()
     var normals := PackedVector3Array()
     var uvs := PackedVector2Array()
@@ -755,35 +764,53 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     for i in range(segments):
         var t0: float = float(i) / float(segments)
         var t1: float = float(i + 1) / float(segments)
-        var z0: float = lerpf(start_z, end_z, t0)
-        var z1: float = lerpf(start_z, end_z, t1)
-        var profile0 := _mantis_wing_profile(t0, hindwing)
-        var profile1 := _mantis_wing_profile(t1, hindwing)
-        var w0: float = 0.004 + profile0 * max_width
-        var w1: float = 0.004 + profile1 * max_width
-        var edge0: float = 0.006 * sin(t0 * PI * 12.0) * sin(t0 * PI)
-        var edge1: float = 0.006 * sin(t1 * PI * 12.0) * sin(t1 * PI)
         var arch0: float = 0.016 * sin(PI * t0)
         var arch1: float = 0.016 * sin(PI * t1)
-        var row0: Array[Vector3] = [Vector3(0.0, 0.0, z0 - start_z), Vector3(side * w0 * 0.50, arch0 + 0.012, z0 - start_z), Vector3(side * (w0 + edge0), arch0, z0 - start_z)]
-        var row1: Array[Vector3] = [Vector3(0.0, 0.006, z1 - start_z), Vector3(side * w1 * 0.50, arch1 + 0.012, z1 - start_z), Vector3(side * (w1 + edge1), arch1, z1 - start_z)]
-        for lane in range(2):
-            var a: Vector3 = row0[lane]
-            var b: Vector3 = row0[lane + 1]
-            var c: Vector3 = row1[lane + 1]
-            var d: Vector3 = row1[lane]
-            for vertex in [a, b, c, a, c, d]:
-                vertices.append(vertex)
-                normals.append(Vector3.UP)
-                var lateral: float = clampf(absf(vertex.x) / maxf(maxf(w0, w1), 0.001), 0.0, 1.0)
-                var vein_shade: float = 0.96 + 0.025 * (1.0 - lateral)
-                colors.append(Color(vein_shade * 1.02, vein_shade, vein_shade * 0.94, 1.0))
-            uvs.append(Vector2(float(lane) * 0.5, t0))
-            uvs.append(Vector2(float(lane + 1) * 0.5, t0))
-            uvs.append(Vector2(float(lane + 1) * 0.5, t1))
-            uvs.append(Vector2(float(lane) * 0.5, t0))
-            uvs.append(Vector2(float(lane + 1) * 0.5, t1))
-            uvs.append(Vector2(float(lane) * 0.5, t1))
+        var profile0: float = _mantis_wing_profile(t0, hindwing)
+        var profile1: float = _mantis_wing_profile(t1, hindwing)
+        var w0: float = 0.003 + profile0 * max_width
+        var w1: float = 0.003 + profile1 * max_width
+        var edge0: float = 0.0018 * sin(t0 * PI * 4.0) * sin(t0 * PI)
+        var edge1: float = 0.0018 * sin(t1 * PI * 4.0) * sin(t1 * PI)
+        for lane in range(lane_count):
+            var u0: float = float(lane) / float(lane_count)
+            var u1: float = float(lane + 1) / float(lane_count)
+            var p00: Vector3 = _mantis_wing_surface_point(u0, t0, w0, edge0, arch0, total_length, side)
+            var p10: Vector3 = _mantis_wing_surface_point(u1, t0, w0, edge0, arch0, total_length, side)
+            var p11: Vector3 = _mantis_wing_surface_point(u1, t1, w1, edge1, arch1, total_length, side)
+            var p01: Vector3 = _mantis_wing_surface_point(u0, t1, w1, edge1, arch1, total_length, side)
+            var n00: Vector3 = _mantis_wing_surface_normal(u0, t0, w0, total_length, side)
+            var n10: Vector3 = _mantis_wing_surface_normal(u1, t0, w0, total_length, side)
+            var n11: Vector3 = _mantis_wing_surface_normal(u1, t1, w1, total_length, side)
+            var n01: Vector3 = _mantis_wing_surface_normal(u0, t1, w1, total_length, side)
+            var c00: Color = _mantis_wing_tint(wing_color, u0, t0)
+            var c10: Color = _mantis_wing_tint(wing_color, u1, t0)
+            var c11: Color = _mantis_wing_tint(wing_color, u1, t1)
+            var c01: Color = _mantis_wing_tint(wing_color, u0, t1)
+            vertices.append(p00)
+            vertices.append(p10)
+            vertices.append(p11)
+            vertices.append(p00)
+            vertices.append(p11)
+            vertices.append(p01)
+            normals.append(n00)
+            normals.append(n10)
+            normals.append(n11)
+            normals.append(n00)
+            normals.append(n11)
+            normals.append(n01)
+            uvs.append(Vector2(u0, t0))
+            uvs.append(Vector2(u1, t0))
+            uvs.append(Vector2(u1, t1))
+            uvs.append(Vector2(u0, t0))
+            uvs.append(Vector2(u1, t1))
+            uvs.append(Vector2(u0, t1))
+            colors.append(c00)
+            colors.append(c10)
+            colors.append(c11)
+            colors.append(c00)
+            colors.append(c11)
+            colors.append(c01)
     var arrays: Array = []
     arrays.resize(Mesh.ARRAY_MAX)
     arrays[Mesh.ARRAY_VERTEX] = vertices
@@ -798,61 +825,82 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     wing_pivot.set_meta("wing_side", side)
     wing_pivot.set_meta("hindwing", hindwing)
     if hindwing:
-        # The broad membrane stays folded beneath the tegmina while resting.
-        wing_pivot.scale.x = 0.36
+        wing_pivot.scale.x = 0.30
     parent.add_child(wing_pivot)
     var wing_instance := MeshInstance3D.new()
     wing_instance.name = "WingMembrane"
     wing_instance.mesh = wing_mesh
-    var wing_color: Color = Color(0.83, 0.91, 0.68, 0.64) if hindwing else Color(0.62, 0.74, 0.37)
-    var wing_material := _material(wing_color)
+    var wing_material := _material(Color.WHITE)
+    wing_material.vertex_color_use_as_albedo = true
     if body_texture != null:
         wing_material.albedo_texture = body_texture
-        wing_material.vertex_color_use_as_albedo = true
-        if pbr_normal.has("mantis_cuticle"):
-            wing_material.normal_enabled = true
-            wing_material.normal_texture = pbr_normal["mantis_cuticle"]
-            wing_material.normal_scale = 0.24
     wing_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    if pbr_normal.has("mantis_cuticle"):
+        wing_material.normal_enabled = true
+        wing_material.normal_texture = pbr_normal["mantis_cuticle"]
+        wing_material.normal_scale = 0.13 if hindwing else 0.17
+    if pbr_roughness.has("mantis_cuticle"):
+        wing_material.roughness_texture = pbr_roughness["mantis_cuticle"]
+        wing_material.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
     if hindwing:
         wing_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-        wing_material.roughness = 0.38
+        wing_material.roughness = 0.42
     else:
-        wing_material.roughness = 0.56
+        wing_material.roughness = 0.66
     wing_instance.material_override = wing_material
     wing_pivot.add_child(wing_instance)
-    var vein_color: Color = Color(0.43, 0.57, 0.29) if hindwing else Color(0.39, 0.54, 0.25)
-    _segment(wing_pivot, Vector3(0, 0.020, 0.018), Vector3(side * 0.018, 0.021, end_z - start_z - 0.012), 0.0028, vein_color)
-    for vein_index in range(17):
-        var t: float = 0.08 + float(vein_index) * 0.052
-        var z: float = (end_z - start_z) * t
+    var vein_color: Color = Color(0.43, 0.55, 0.29) if hindwing else Color(0.39, 0.52, 0.23)
+    _segment(wing_pivot, Vector3(0, 0.020, 0.012), Vector3(side * 0.020, 0.021, total_length - 0.012), 0.0024, vein_color)
+    for vein_index in range(15):
+        var t: float = 0.08 + float(vein_index) * 0.060
+        var z: float = total_length * t
         var width: float = _mantis_wing_profile(t, hindwing) * max_width
-        var origin := Vector3(side * width * 0.035, 0.018 + 0.016 * sin(PI * t), z * 0.18)
-        var tip := Vector3(side * width * (0.88 if hindwing else 0.91), 0.014 + 0.015 * sin(PI * t), z)
-        _segment(wing_pivot, origin, tip, 0.00145 if hindwing else 0.0019, vein_color)
-    # Repeated cross-veins and a fine perimeter give the flight membrane a
-    # fan of cells while the forewing keeps its long, leathery leaf outline.
-    for cross_index in range(11 if hindwing else 9):
-        var t: float = 0.12 + float(cross_index) * (0.092 if hindwing else 0.105)
-        var z: float = (end_z - start_z) * t
+        var origin := Vector3(side * width * 0.035, 0.018 + 0.011 * sin(PI * t), z * 0.20)
+        var tip := Vector3(side * width * 0.91, 0.014 + 0.012 * sin(PI * t), z)
+        _segment(wing_pivot, origin, tip, 0.00135 if hindwing else 0.00145, vein_color)
+    for cross_index in range(8):
+        var t: float = 0.12 + float(cross_index) * 0.10
+        var z: float = total_length * t
         var width: float = _mantis_wing_profile(t, hindwing) * max_width
-        _segment(wing_pivot, Vector3(side * width * 0.24, 0.018, z - 0.018), Vector3(side * width * 0.80, 0.018, z + 0.026), 0.00105, vein_color)
-        var next_t: float = minf(1.0, t + 0.04)
-        var next_width: float = _mantis_wing_profile(next_t, hindwing) * max_width
-        _segment(wing_pivot, Vector3(side * width, 0.012, z), Vector3(side * next_width, 0.012, minf(end_z - start_z, z + (end_z - start_z) * 0.04)), 0.0015, vein_color)
+        _segment(wing_pivot, Vector3(side * width * 0.24, 0.018, z - 0.012), Vector3(side * width * 0.82, 0.018, z + 0.020), 0.00085, vein_color)
     if not hindwing:
-        # A subtle, elongated stigma sits on each leathery mint forewing.
-        _part(wing_pivot, Vector3(side * 0.102, 0.021, 0.12), Vector3(0.010, 0.003, 0.032), Color(0.78, 0.84, 0.48))
+        # The stigma remains a small pigment mark within the broad forewing.
+        _part(wing_pivot, Vector3(side * 0.128, 0.022, 0.30), Vector3(0.011, 0.003, 0.040), Color(0.76, 0.82, 0.47))
     wing_pivots.append(wing_pivot)
+
+func _mantis_wing_surface_point(u: float, t: float, width: float, edge: float, arch: float, length: float, side: float) -> Vector3:
+    var x: float = width * u + edge * pow(u, 8.0)
+    var y: float = arch + 0.007 * sin(PI * u)
+    return Vector3(side * x, y, length * t)
+
+func _mantis_wing_surface_normal(u: float, t: float, width: float, length: float, side: float) -> Vector3:
+    var dx_du: float = width
+    var dy_du: float = 0.007 * PI * cos(PI * u)
+    var dy_dt: float = 0.016 * PI * cos(PI * t)
+    return Vector3(-side * dy_du * length, maxf(0.001, dx_du) * length, -side * dx_du * dy_dt).normalized()
 
 func _mantis_wing_profile(t: float, hindwing: bool) -> float:
     var safe_t: float = clampf(t, 0.0, 1.0)
     if hindwing:
-        # Broad distal fan with a rounded, slightly scalloped trailing edge.
+        # Hindwings flare beneath the tegmina but taper smoothly at their tip.
         var flare: float = 0.12 + 0.88 * sin(safe_t * PI * 0.5)
         var taper: float = pow(maxf(0.0, 1.0 - safe_t), 0.30)
         return flare * taper
-    return pow(maxf(0.0, sin(PI * safe_t)), 0.72)
+    # A short narrow hinge opens into a long, broad blade with a rounded tip.
+    var root: float = clampf(safe_t / 0.13, 0.0, 1.0)
+    root = root * root * (3.0 - 2.0 * root)
+    var tip: float = clampf((1.0 - safe_t) / 0.24, 0.0, 1.0)
+    tip = tip * tip * (3.0 - 2.0 * tip)
+    return root * tip
+
+func _mantis_wing_tint(base: Color, u: float, t: float) -> Color:
+    var edge_amount: float = clampf((u - 0.72) / 0.28, 0.0, 1.0)
+    var tint: Color = base.lerp(base.darkened(0.085), edge_amount * 0.55)
+    var pigment: float = 0.99 + 0.008 * sin(t * PI * 4.0 + u * 2.0)
+    tint.r *= pigment
+    tint.g *= pigment
+    tint.b *= pigment
+    return tint
 
 func _ellipsoid_limb(parent: Node3D, a: Vector3, b: Vector3, radius: float, tint: Color) -> void:
     var delta := b - a
@@ -861,12 +909,19 @@ func _ellipsoid_limb(parent: Node3D, a: Vector3, b: Vector3, radius: float, tint
         return
     var item := MeshInstance3D.new()
     var mesh := SphereMesh.new()
-    mesh.radial_segments = 28
-    mesh.rings = 16
+    mesh.radial_segments = 32
+    mesh.rings = 20
     item.mesh = mesh
     item.position = (a + b) * 0.5
     item.quaternion = Quaternion(Vector3.BACK, delta.normalized())
-    item.scale = Vector3(radius, radius, length * 0.64)
+    # The oversized raptorial femur reads as a flattened capture blade, while
+    # small leg segments keep their round, jointed insect profile.
+    var broad_femur := radius >= 0.060
+    item.scale = Vector3(
+        radius * (0.70 if broad_femur else 1.0),
+        radius * (0.90 if broad_femur else 1.0),
+        length * (0.74 if broad_femur else 0.64)
+    )
     item.material_override = _cuticle_material(tint)
     parent.add_child(item)
 
