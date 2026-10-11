@@ -840,15 +840,15 @@ func _create_mantis() -> void:
     animal = Node3D.new()
     animal.name = "Mantis_01"
     animal.position = Vector3(0, -0.38, 0)
-    animal.scale = Vector3.ONE * (0.32 * (0.80 + growth * 0.30))
+    animal.scale = Vector3.ONE * (0.36 * (0.80 + growth * 0.30))
     add_child(animal)
     # The reference is a saturated leaf green; reduce the cyan cast and keep
     # highlights within the cuticle instead of washing the model toward white.
     # Saturated yellow-green cuticle closer to the bright leaf-green reference.
-    var mint := Color(0.23, 0.49, 0.10)
-    var mint_light := Color(0.34, 0.62, 0.16)
-    var mint_shadow := Color(0.11, 0.25, 0.045)
-    var eye_color := Color(0.035, 0.095, 0.035)
+    var mint := Color(0.29, 0.56, 0.12)
+    var mint_light := Color(0.43, 0.68, 0.20)
+    var mint_shadow := Color(0.16, 0.31, 0.055)
+    var eye_color := Color(0.13, 0.27, 0.075)
 
     abdomen = Node3D.new()
     abdomen.name = "AbdomenPivot"
@@ -890,7 +890,7 @@ func _create_mantis() -> void:
     animal.add_child(thorax_pivot)
     # A single sculpted pronotum replaces the stacked oval pieces. The swept
     # surface keeps a narrow neck end, broad shoulder, raised keel, and soft edges.
-    _add_mantis_shell(thorax_pivot, "PronotumSurface", -0.245, 0.16, 0.045, 0.027, 0.010, mint_light, "pronotum")
+    _add_mantis_shell(thorax_pivot, "PronotumSurface", -0.260, 0.18, 0.049, 0.031, 0.010, mint_light, "pronotum")
     # Cervical bridge and overlapping cuticle collars keep a separate articulation.
     _part(thorax_pivot, Vector3(0, 0.010, -0.205), Vector3(0.034, 0.027, 0.10), mint)
     neck_pivot = Node3D.new()
@@ -907,12 +907,13 @@ func _create_mantis() -> void:
     head_pivot.name = "HeadPivot"
     head_pivot.position = Vector3(0, 0.036, -0.115)
     neck_pivot.add_child(head_pivot)
+    _part(head_pivot, Vector3(0, 0.014, 0.046), Vector3(0.128, 0.098, 0.054), mint)
     _add_mantis_head_plate(head_pivot, mint_light)
-    _part(head_pivot, Vector3(0, -0.045, -0.087), Vector3(0.084, 0.054, 0.036), mint)
+    _part(head_pivot, Vector3(0, -0.045, -0.044), Vector3(0.064, 0.038, 0.022), mint)
     _part(head_pivot, Vector3(0, -0.078, -0.097), Vector3(0.036, 0.019, 0.025), mint_shadow)
     # Soft cheek plates give the broad, triangular mantis face a defined lower edge.
     for cheek_side in [-1.0, 1.0]:
-        _part(head_pivot, Vector3(cheek_side * 0.076, -0.027, -0.074), Vector3(0.043, 0.047, 0.031), mint)
+        _part(head_pivot, Vector3(cheek_side * 0.080, -0.030, -0.054), Vector3(0.031, 0.036, 0.022), mint)
     for mandible_side in [-1.0, 1.0]:
         var mandible := Node3D.new()
         mandible.name = "Mandible_%d" % int(mandible_side)
@@ -933,7 +934,7 @@ func _create_mantis() -> void:
     for side_index in range(2):
         var side: float = -1.0 if side_index == 0 else 1.0
         # A muted green socket surrounds the darker compound-eye facets.
-        _part(head_pivot, Vector3(side * 0.118, 0.02, -0.024), Vector3(0.078, 0.084, 0.078), mint_shadow)
+        _part(head_pivot, Vector3(side * 0.118, 0.02, -0.024), Vector3(0.078, 0.084, 0.078), mint)
         _part(head_pivot, Vector3(side * 0.118, 0.02, -0.024), Vector3(0.068, 0.074, 0.067), eye_color)
         # Staggered facets wrap around the eye instead of forming a square grid.
         for facet in range(72):
@@ -944,7 +945,7 @@ func _create_mantis() -> void:
             var surface_factor: float = sqrt(maxf(0.04, 1.0 - pow(facet_y / 0.074, 2.0) - pow(facet_z / 0.067, 2.0)))
             var facet_x: float = 0.118 + 0.068 * surface_factor + 0.002
             var facet_shade: float = 0.91 + 0.08 * float((row + column) % 3) / 2.0
-            _part(head_pivot, Vector3(side * facet_x, 0.02 + facet_y, -0.024 + facet_z), Vector3(0.0042, 0.0044, 0.0044), Color(0.19, 0.40, 0.18) * facet_shade)
+            _part(head_pivot, Vector3(side * facet_x, 0.02 + facet_y, -0.024 + facet_z), Vector3(0.0042, 0.0044, 0.0044), Color(0.27, 0.48, 0.17) * facet_shade)
         # Small specular points sit on the outer eye surface.
         _part(head_pivot, Vector3(side * 0.176, 0.049, -0.075), Vector3(0.007, 0.010, 0.005), Color(0.67, 0.82, 0.53))
         var feeler := Node3D.new()
@@ -1115,9 +1116,9 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     var start_z: float = -0.02 if hindwing else -0.15
     var end_z: float = 0.58 if hindwing else 0.68
     var y: float = 0.238 if hindwing else 0.251
-    var max_width: float = 0.34 if hindwing else 0.205
+    var max_width: float = 0.34 if hindwing else 0.228
     var total_length: float = end_z - start_z
-    var wing_color: Color = Color(0.54, 0.68, 0.31, 0.58) if hindwing else Color(0.22, 0.47, 0.09, 1.0)
+    var wing_color: Color = Color(0.58, 0.72, 0.39, 0.52) if hindwing else Color(0.39, 0.64, 0.20, 1.0)
     var hinge := Vector3(side * (0.024 if hindwing else 0.008), y, start_z)
     var vertices := PackedVector3Array()
     var normals := PackedVector3Array()
@@ -1126,8 +1127,8 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     for i in range(segments):
         var t0: float = float(i) / float(segments)
         var t1: float = float(i + 1) / float(segments)
-        var arch0: float = 0.016 * sin(PI * t0)
-        var arch1: float = 0.016 * sin(PI * t1)
+        var arch0: float = 0.024 * sin(PI * t0)
+        var arch1: float = 0.024 * sin(PI * t1)
         var profile0 := _mantis_wing_profile(t0, hindwing)
         var profile1 := _mantis_wing_profile(t1, hindwing)
         var w0: float = 0.004 + profile0 * max_width
@@ -1230,13 +1231,13 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
 
 func _mantis_wing_surface_point(u: float, t: float, width: float, edge: float, arch: float, length: float, side: float) -> Vector3:
     var x: float = width * u + edge * pow(u, 8.0)
-    var y: float = arch + 0.007 * sin(PI * u)
+    var y: float = arch + 0.014 * sin(PI * u) + 0.003 * sin(TAU * t) * sin(PI * u)
     return Vector3(side * x, y, length * t)
 
 func _mantis_wing_surface_normal(u: float, t: float, width: float, length: float, side: float) -> Vector3:
     var dx_du: float = width
-    var dy_du: float = 0.007 * PI * cos(PI * u)
-    var dy_dt: float = 0.012 * PI * cos(PI * t)
+    var dy_du: float = 0.014 * PI * cos(PI * u) + 0.003 * PI * cos(PI * u) * sin(TAU * t)
+    var dy_dt: float = 0.024 * PI * cos(PI * t) + 0.003 * TAU * cos(TAU * t) * sin(PI * u)
     return Vector3(-side * dy_du * length, maxf(0.001, dx_du) * length, -side * dx_du * dy_dt).normalized()
 
 func _mantis_wing_tint(base: Color, u: float, t: float) -> Color:
