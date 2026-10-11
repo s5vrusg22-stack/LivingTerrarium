@@ -24,6 +24,7 @@ var camera_pan_mode := false
 var mouse_pan_active := false
 var pan_center_previous := Vector2.ZERO
 var habitat_root: Node3D
+var habitat_trunks: Array[Dictionary] = []
 var leaf_detail_texture: Texture2D
 var leaf_normal_texture: Texture2D
 var status: Label
@@ -354,6 +355,140 @@ func _load_textures() -> void:
         pbr_normal[kind] = load("res://assets/textures/%s_normal.png" % kind)
         pbr_roughness[kind] = load("res://assets/textures/%s_roughness.png" % kind)
 
+func _create_wood_curve(p0: Vector3, p1: Vector3, p2: Vector3, p3: Vector3, base_radius: float, tip_radius: float, radial_segments: int, mat: StandardMaterial3D, parent: Node3D, buttress := false) -> void:
+    var points: Array[Vector3] = []
+    var radii: Array[float] = []
+    var ring_count := 17
+    for ring in range(ring_count):
+        var t := float(ring) / float(ring_count - 1)
+        var inv := 1.0 - t
+        var center := p0 * (inv * inv * inv) + p1 * (3.0 * inv * inv * t) + p2 * (3.0 * inv * t * t) + p3 * (t * t * t)
+        points.append(center)
+        var radius := lerpf(base_radius, tip_radius, t)
+        if buttress:
+            radius *= 1.0 + 0.58 * pow(inv, 7.0)
+        radius *= 1.0 + 0.025 * sin(float(ring) * 1.63 + 0.4)
+        radii.append(maxf(0.0025, radius))
+    _organic_tube(points, radii, radial_segments, mat, parent)
+
+func _organic_tube(points: Array[Vector3], radii: Array[float], radial_segments: int, mat: StandardMaterial3D, parent: Node3D) -> void:
+    if points.size() < 2 or radii.size() != points.size():
+        return
+    var sides := maxi(6, radial_segments)
+    var vertices := PackedVector3Array()
+    var normals := PackedVector3Array()
+    var uvs := PackedVector2Array()
+    var indices := PackedInt32Array()
+    for ring in range(points.size()):
+        var before := maxi(0, ring - 1)
+        var after := mini(points.size() - 1, ring + 1)
+        var tangent := (points[after] - points[before]).normalized()
+        if tangent.length_squared() < 0.0001:
+            tangent = Vector3.UP
+        var axis_u := tangent.cross(Vector3.FORWARD)
+        if axis_u.length_squared() < 0.0001:
+            axis_u = tangent.cross(Vector3.RIGHT)
+        axis_u = axis_u.normalized()
+        var axis_v := tangent.cross(axis_u).normalized()
+        for side in range(sides):
+            var angle := TAU * float(side) / float(sides)
+            var radial := (axis_u * cos(angle) + axis_v * sin(angle)).normalized()
+            vertices.append(points[ring] + radial * radii[ring])
+            normals.append(radial)
+            uvs.append(Vector2(float(side) / float(sides), float(ring) * 0.20))
+    for ring in range(points.size() - 1):
+        for side in range(sides):
+            var next_side := (side + 1) % sides
+            var a := ring * sides + side
+            var b := ring * sides + next_side
+            var c := (ring + 1) * sides + next_side
+            var d := (ring + 1) * sides + side
+            indices.append(a)
+            indices.append(c)
+            indices.append(b)
+            indices.append(a)
+            indices.append(d)
+            indices.append(c)
+    var arrays := []
+    arrays.resize(Mesh.ARRAY_MAX)
+    arrays[Mesh.ARRAY_VERTEX] = vertices
+    arrays[Mesh.ARRAY_NORMAL] = normals
+    arrays[Mesh.ARRAY_TEX_UV] = uvs
+    arrays[Mesh.ARRAY_INDEX] = indices
+    var tube_mesh := ArrayMesh.new()
+    tube_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+    var item := MeshInstance3D.new()
+    item.mesh = tube_mesh
+    item.material_override = mat
+    item.position = Vector3.ZERO
+    parent.add_child(item)
+
+func _bark_material(tint: Color) -> StandardMaterial3D:
+    var mat := _material(tint)
+    if bark_texture != null:
+        mat.albedo_texture = bark_texture
+        _apply_pbr(mat, "bark")
+    mat.roughness = 0.92
+    mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+    return mat
+
+func _create_bark_moss(trunks: Array[Dictionary], rng: RandomNumberGenerator) -> void:
+    var moss_mesh := SphereMesh.new()
+    moss_mesh.radial_segments = 10
+    moss_mesh.rings = 6
+    var moss_materials: Array[StandardMaterial3D] = []
+    for tint in [Color(0.12, 0.27, 0.075), Color(0.19, 0.36, 0.095), Color(0.28, 0.43, 0.12), Color(0.10, 0.22, 0.08)]:
+        var mat := _material(tint)
+        mat.roughness = 0.98
+        moss_materials.append(mat)
+    var small_leaf_mesh := _leaf_mesh()
+    var leaf_material := _material(Color(0.15, 0.32, 0.085))
+    leaf_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    leaf_material.vertex_color_use_as_albedo = true
+    leaf_material.albedo_texture = leaf_detail_texture
+    leaf_material.normal_enabled = true
+    leaf_material.normal_texture = leaf_normal_texture
+    leaf_material.normal_scale = 0.10
+    for trunk in trunks:
+        var points: Array = trunk["points"]
+        var radii: Array = trunk["radii"]
+        for patch_index in range(rng.randi_range(2, 4)):
+            var ring := rng.randi_range(2, points.size() - 3)
+            var tangent: Vector3 = (points[ring + 1] - points[ring - 1]).normalized()
+            var facing := Vector3(0.0, 0.0, 1.0)
+            facing = (facing - tangent * facing.dot(tangent)).normalized()
+            if facing.length_squared() < 0.001:
+                facing = tangent.cross(Vector3.RIGHT).normalized()
+            facing = Quaternion(tangent, rng.randf_range(-1.25, 1.25)) * facing
+            var patch := Node3D.new()
+            patch.position = points[ring] + facing * (radii[ring] + 0.007)
+            patch.quaternion = Quaternion(Vector3.UP, facing)
+            habitat_root.add_child(patch)
+            var size := rng.randf_range(0.075, 0.15)
+            var base := MeshInstance3D.new()
+            base.mesh = moss_mesh
+            base.scale = Vector3(size, rng.randf_range(0.018, 0.030), size * rng.randf_range(0.62, 0.92))
+            base.material_override = moss_materials[rng.randi_range(0, moss_materials.size() - 1)]
+            base.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+            patch.add_child(base)
+            for lobe_index in range(rng.randi_range(2, 4)):
+                var lobe := MeshInstance3D.new()
+                lobe.mesh = moss_mesh
+                lobe.position = Vector3(rng.randf_range(-size * 0.55, size * 0.55), 0.012, rng.randf_range(-size * 0.34, size * 0.34))
+                lobe.scale = Vector3(size * rng.randf_range(0.30, 0.50), 0.014, size * rng.randf_range(0.26, 0.42))
+                lobe.material_override = moss_materials[rng.randi_range(0, moss_materials.size() - 1)]
+                lobe.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+                patch.add_child(lobe)
+            for leaf_index in range(2):
+                var leaf := MeshInstance3D.new()
+                leaf.mesh = small_leaf_mesh
+                leaf.material_override = leaf_material
+                leaf.position = Vector3(rng.randf_range(-size * 0.35, size * 0.35), 0.024, rng.randf_range(-size * 0.25, size * 0.25))
+                leaf.rotation = Vector3(-0.20, rng.randf_range(-PI, PI), rng.randf_range(-0.50, 0.50))
+                leaf.scale = Vector3(0.22, 0.62, 0.34)
+                leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+                patch.add_child(leaf)
+
 func _create_world() -> void:
     camera = Camera3D.new()
     camera.current = true
@@ -365,12 +500,13 @@ func _create_world() -> void:
     env.background_color = Color(0.065, 0.085, 0.08)
     env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
     env.ambient_light_color = Color(0.7, 0.8, 0.72)
-    env.ambient_light_energy = 0.74
+    env.ambient_light_energy = 0.66
     world.environment = env
     add_child(world)
     var sun := DirectionalLight3D.new()
     sun.rotation_degrees = Vector3(-55, -25, 0)
-    sun.light_energy = 1.12
+    sun.light_energy = 1.08
+    sun.light_color = Color(1.0, 0.95, 0.84)
     sun.shadow_enabled = true
     add_child(sun)
     # Scale the habitat around the walkable floor so the animal and its movement
@@ -384,7 +520,7 @@ func _create_world() -> void:
     # model's transform unchanged while giving it a roomy, layered habitat.
     _box(Vector3(5.2, 0.2, 3.8), Vector3(0, -0.65, 0), Color(0.23, 0.15, 0.09))
     _box(Vector3(5.2, 2.7, 0.06), Vector3(0, 0.80, -1.92), Color(0.13, 0.19, 0.16, 0.42), true)
-    _box(Vector3(5.08, 2.64, 0.035), Vector3(0, 0.80, -1.875), Color(0.66, 0.72, 0.48))
+    _box(Vector3(5.08, 2.64, 0.035), Vector3(0, 0.80, -1.875), Color(0.42, 0.50, 0.34))
     _box(Vector3(0.05, 2.7, 3.8), Vector3(-2.62, 0.80, 0), Color(0.5, 0.7, 0.7, 0.12), true)
     _box(Vector3(0.05, 2.7, 3.8), Vector3(2.62, 0.80, 0), Color(0.5, 0.7, 0.7, 0.12), true)
     var branch_rng := RandomNumberGenerator.new()
@@ -393,26 +529,44 @@ func _create_world() -> void:
     # A crooked, buttressed tree line builds a deep forest edge and canopy;
     # the center stays open enough to watch the mantis move and feed.
     var trunk_sites: Array[Vector2] = [Vector2(-2.28, -1.47), Vector2(-1.70, -1.57), Vector2(-0.95, -1.60), Vector2(0.10, -1.62), Vector2(1.22, -1.58), Vector2(2.18, -1.43), Vector2(-2.30, -0.44), Vector2(-2.25, 0.72), Vector2(-1.88, 1.48), Vector2(1.84, 1.48), Vector2(2.28, 0.69), Vector2(2.25, -0.65)]
+    habitat_trunks.clear()
     for i in range(trunk_sites.size()):
         var site: Vector2 = trunk_sites[i]
         var start := Vector3(site.x + branch_rng.randf_range(-0.13, 0.13), -0.53, site.y + branch_rng.randf_range(-0.12, 0.12))
-        var bend := Vector3(branch_rng.randf_range(-0.28, 0.28), branch_rng.randf_range(0.50, 0.85), branch_rng.randf_range(-0.20, 0.20))
-        var mid := start + bend
-        var top := Vector3(clampf(mid.x + branch_rng.randf_range(-0.34, 0.34), -2.38, 2.38), branch_rng.randf_range(1.25, 1.94), clampf(mid.z + branch_rng.randf_range(-0.30, 0.30), -1.75, 1.72))
-        var trunk_radius := branch_rng.randf_range(0.115, 0.17)
-        _tapered_branch(start, mid, trunk_radius, trunk_radius * 0.70)
-        _tapered_branch(mid, top, trunk_radius * 0.72, branch_rng.randf_range(0.035, 0.060))
-        # Roots flare out at different angles and lengths rather than repeating
-        # a regular row of thin upright poles.
+        var top := Vector3(clampf(start.x + branch_rng.randf_range(-0.42, 0.42), -2.38, 2.38), branch_rng.randf_range(1.50, 2.02), clampf(start.z + branch_rng.randf_range(-0.34, 0.34), -1.75, 1.72))
+        var trunk_radius := branch_rng.randf_range(0.12, 0.18)
+        var control_a := start + Vector3(branch_rng.randf_range(-0.10, 0.10), 0.46, branch_rng.randf_range(-0.08, 0.08))
+        var control_b := top + Vector3(branch_rng.randf_range(-0.14, 0.14), -0.46, branch_rng.randf_range(-0.10, 0.10))
+        var bark_tint := Color(0.32, 0.22, 0.14).lerp(Color(0.47, 0.31, 0.19), branch_rng.randf())
+        var bark_mat := _bark_material(bark_tint)
+        var trunk_points: Array[Vector3] = []
+        var trunk_radii: Array[float] = []
+        for ring in range(17):
+            var t := float(ring) / 16.0
+            var inv := 1.0 - t
+            var center := start * (inv * inv * inv) + control_a * (3.0 * inv * inv * t) + control_b * (3.0 * inv * t * t) + top * (t * t * t)
+            trunk_points.append(center)
+            var radius := lerpf(trunk_radius, trunk_radius * 0.30, t) * (1.0 + 0.60 * pow(inv, 7.0))
+            radius *= 1.0 + 0.025 * sin(float(ring) * 1.63 + float(i))
+            trunk_radii.append(radius)
+        _organic_tube(trunk_points, trunk_radii, 12, bark_mat, habitat_root)
+        habitat_trunks.append({"points": trunk_points, "radii": trunk_radii})
+        # Broad roots taper into the substrate and merge visibly into the trunk.
         for root_index in range(branch_rng.randi_range(3, 5)):
-            var angle := float(root_index) * TAU / 3.0 + branch_rng.randf_range(-0.3, 0.3)
-            var root_end := Vector3(clampf(start.x + cos(angle) * branch_rng.randf_range(0.22, 0.38), -2.46, 2.46), -0.485, clampf(start.z + sin(angle) * branch_rng.randf_range(0.20, 0.37), -1.72, 1.72))
-            _tapered_branch(root_end, start + Vector3(0.0, 0.08, 0.0), 0.025, trunk_radius * 0.48)
-        var fork_count := branch_rng.randi_range(3, 5)
-        for fork_index in range(fork_count):
-            var fork_start := start.lerp(top, branch_rng.randf_range(0.48, 0.90))
-            var fork_end := Vector3(clampf(fork_start.x + branch_rng.randf_range(-0.56, 0.56), -2.43, 2.43), minf(2.04, fork_start.y + branch_rng.randf_range(0.22, 0.55)), clampf(fork_start.z + branch_rng.randf_range(-0.48, 0.48), -1.78, 1.78))
-            _tapered_branch(fork_start, fork_end, branch_rng.randf_range(0.040, 0.070), branch_rng.randf_range(0.012, 0.022))
+            var angle := float(root_index) * TAU / 4.0 + branch_rng.randf_range(-0.38, 0.38)
+            var root_end := Vector3(clampf(start.x + cos(angle) * branch_rng.randf_range(0.22, 0.42), -2.46, 2.46), -0.525, clampf(start.z + sin(angle) * branch_rng.randf_range(0.20, 0.39), -1.72, 1.72))
+            var root_join := start + Vector3(0.0, 0.16, 0.0)
+            var root_c1 := root_end.lerp(root_join, 0.35) + Vector3(0.0, -0.035, 0.0)
+            var root_c2 := root_end.lerp(root_join, 0.78) + Vector3(0.0, 0.035, 0.0)
+            _create_wood_curve(root_end, root_c1, root_c2, root_join, 0.014, trunk_radius * 0.58, 8, bark_mat, habitat_root)
+        # Uneven, upward forks give the crown a branching silhouette.
+        for fork_index in range(branch_rng.randi_range(3, 5)):
+            var fork_start := start.lerp(top, branch_rng.randf_range(0.47, 0.88))
+            var fork_end := Vector3(clampf(fork_start.x + branch_rng.randf_range(-0.62, 0.62), -2.43, 2.43), minf(2.12, fork_start.y + branch_rng.randf_range(0.18, 0.52)), clampf(fork_start.z + branch_rng.randf_range(-0.52, 0.52), -1.78, 1.78))
+            var fork_c1 := fork_start.lerp(fork_end, 0.34) + Vector3(branch_rng.randf_range(-0.12, 0.12), 0.10, branch_rng.randf_range(-0.10, 0.10))
+            var fork_c2 := fork_start.lerp(fork_end, 0.72) + Vector3(branch_rng.randf_range(-0.10, 0.10), 0.08, branch_rng.randf_range(-0.10, 0.10))
+            _create_wood_curve(fork_start, fork_c1, fork_c2, fork_end, branch_rng.randf_range(0.043, 0.072), branch_rng.randf_range(0.010, 0.020), 9, bark_mat, habitat_root, false)
+    _create_bark_moss(habitat_trunks, branch_rng)
     # Fallen wood is scattered among the planted edges and leaf litter.
     for i in range(18):
         var cluster: Vector2 = branch_clusters[branch_rng.randi_range(0, branch_clusters.size() - 1)]
@@ -1292,11 +1446,11 @@ func _build_leaf_detail_textures() -> void:
 
 func _leaf_surface(u: float, t: float) -> Vector3:
     var safe_t: float = clampf(t, 0.0, 1.0)
-    var taper: float = pow(maxf(0.0, sin(PI * safe_t)), 0.78)
-    var edge_wave: float = 0.003 * sin(safe_t * PI * 24.0) * taper * pow(absf(u), 6.0)
-    var width: float = 0.004 + taper * 0.122 + edge_wave
-    var midrib: float = 0.018 * taper
-    var cup: float = 0.010 * taper * (1.0 - absf(u))
+    var taper: float = pow(maxf(0.0, sin(PI * safe_t)), 0.66)
+    var edge_wave: float = 0.0025 * sin(safe_t * PI * 24.0) * taper * pow(absf(u), 6.0)
+    var width: float = 0.004 + taper * 0.154 + edge_wave
+    var midrib: float = 0.020 * taper
+    var cup: float = 0.013 * taper * (1.0 - absf(u))
     var natural_bend: float = 0.008 * sin(safe_t * TAU + 0.35) * taper
     var serration_lift: float = 0.002 * sin(safe_t * PI * 24.0) * taper * pow(absf(u), 6.0)
     return Vector3(u * width, midrib + cup + natural_bend + serration_lift, safe_t * 0.56)
@@ -1398,7 +1552,7 @@ func _create_animated_ecosystem() -> void:
     var plant_clusters: Array[Vector2] = [Vector2(-2.22, -1.46), Vector2(-2.30, -0.55), Vector2(-2.15, 0.55), Vector2(-1.76, 1.48), Vector2(-0.88, 1.53), Vector2(0.20, 1.55), Vector2(1.28, 1.49), Vector2(2.20, 1.20), Vector2(2.25, 0.25), Vector2(2.22, -0.72), Vector2(1.82, -1.48), Vector2(0.70, -1.54), Vector2(-0.65, -1.50)]
     # Dense but irregular plant groups rise from the substrate into the canopy.
     # The center stays more open so the mantis remains readable at the larger scale.
-    for i in range(45):
+    for i in range(56):
         var plant := Node3D.new()
         plant.name = "Plant_%02d" % i
         var plant_cluster: Vector2 = plant_clusters[rng.randi_range(0, plant_clusters.size() - 1)]
@@ -1464,7 +1618,7 @@ func _create_animated_ecosystem() -> void:
                 var leaf := MeshInstance3D.new()
                 leaf.mesh = leaf_mesh
                 leaf.material_override = leaf_materials[rng.randi_range(0, leaf_materials.size() - 1)]
-                leaf.scale = Vector3(rng.randf_range(0.56, 0.90), 0.9, rng.randf_range(0.82, 1.25))
+                leaf.scale = Vector3(rng.randf_range(0.72, 1.04), 0.9, rng.randf_range(0.84, 1.20))
                 leaf.rotation.x = rng.randf_range(-0.24, -0.06)
                 leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
                 leaf_joint.add_child(leaf)
@@ -1483,7 +1637,7 @@ func _create_animated_ecosystem() -> void:
                 var leaf := MeshInstance3D.new()
                 leaf.mesh = leaf_mesh
                 leaf.material_override = leaf_materials[rng.randi_range(0, leaf_materials.size() - 1)]
-                leaf.scale = Vector3(rng.randf_range(0.48, 0.80), 0.84, rng.randf_range(0.70, 1.12))
+                leaf.scale = Vector3(rng.randf_range(0.82, 1.20), 0.86, rng.randf_range(0.82, 1.22))
                 leaf.rotation.x = rng.randf_range(-0.32, -0.05)
                 leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
                 leaf_joint.add_child(leaf)
@@ -1493,24 +1647,65 @@ func _create_animated_ecosystem() -> void:
         plant_pivots.append(plant)
         plant_phases.append(rng.randf_range(0.0, TAU))
         plant_stiffness.append(rng.randf_range(0.35, 0.8))
-    # A few climbing vines hang from the rear branches and connect the layers.
-    for vine_index in range(8):
+    # Climbing stems coil around real trunk surfaces; a smaller number trail down from the canopy.
+    for vine_index in range(14):
+        if habitat_trunks.is_empty():
+            break
+        var trunk: Dictionary = habitat_trunks[vine_index % habitat_trunks.size()]
+        var trunk_points: Array = trunk["points"]
+        var trunk_radii: Array = trunk["radii"]
+        var climbing := vine_index % 3 != 0
+        var anchor_ring := rng.randi_range(2, 5) if climbing else rng.randi_range(10, 14)
+        anchor_ring = mini(anchor_ring, trunk_points.size() - 2)
+        var tangent: Vector3 = (trunk_points[anchor_ring + 1] - trunk_points[anchor_ring - 1]).normalized()
+        var facing := Vector3(0.0, 0.0, 1.0)
+        facing = (facing - tangent * facing.dot(tangent)).normalized()
+        if facing.length_squared() < 0.001:
+            facing = tangent.cross(Vector3.RIGHT).normalized()
+        var start_point: Vector3 = trunk_points[anchor_ring] + facing * (trunk_radii[anchor_ring] + 0.022)
         var vine := Node3D.new()
-        vine.name = "HangingVine_%02d" % vine_index
-        vine.position = Vector3(rng.randf_range(-2.1, 2.1), rng.randf_range(1.10, 1.72), rng.randf_range(-1.62, -1.25))
-        vine.rotation.y = rng.randf_range(-PI, PI)
+        vine.name = "ClimbingVine_%02d" % vine_index
+        vine.position = start_point
         habitat_motion_root.add_child(vine)
-        var vine_length := rng.randf_range(0.65, 1.35)
-        _segment(vine, Vector3.ZERO, Vector3(rng.randf_range(-0.18, 0.18), -vine_length, 0.0), 0.004, Color(0.21, 0.32, 0.16))
-        for leaf_index in range(5):
+        var vine_length := rng.randf_range(0.90, 1.52)
+        var phase := rng.randf_range(0.0, TAU)
+        var path_points: Array[Vector3] = []
+        var path_radii: Array[float] = []
+        for sample in range(17):
+            var t := float(sample) / 16.0
+            var coil := t * TAU * (1.05 if climbing else 0.38) + phase
+            var local_y := vine_length * t * (1.0 if climbing else -1.0)
+            var sway_x := sin(coil) * (0.045 + 0.055 * t) + 0.035 * sin(t * PI)
+            var sway_z := cos(coil) * 0.038
+            path_points.append(Vector3(sway_x, local_y, sway_z))
+            path_radii.append(lerpf(0.008, 0.0032, t))
+        _organic_tube(path_points, path_radii, 7, stem_material, vine)
+        var leaf_count := rng.randi_range(5, 7) if climbing else rng.randi_range(4, 6)
+        for leaf_index in range(leaf_count):
+            var t := 0.12 + 0.135 * float(leaf_index)
+            var ring := clampi(roundi(t * 16.0), 1, 15)
+            var side := -1.0 if leaf_index % 2 == 0 else 1.0
+            var leaf_joint := Node3D.new()
+            leaf_joint.position = path_points[ring] + Vector3(side * 0.026, 0.0, 0.018)
+            leaf_joint.rotation = Vector3(-0.24, phase + float(leaf_index) * 1.65, side * rng.randf_range(0.42, 0.72))
+            vine.add_child(leaf_joint)
             var leaf := MeshInstance3D.new()
             leaf.mesh = leaf_mesh
             leaf.material_override = leaf_materials[rng.randi_range(0, leaf_materials.size() - 1)]
-            leaf.position = Vector3(rng.randf_range(-0.13, 0.13), -vine_length * float(leaf_index + 1) / 6.0, 0.0)
-            leaf.rotation = Vector3(-0.35, rng.randf_range(-PI, PI), rng.randf_range(-0.2, 0.2))
-            leaf.scale = Vector3(0.86, 0.82, rng.randf_range(0.75, 1.2))
+            leaf.scale = Vector3(rng.randf_range(0.82, 1.18), 0.92, rng.randf_range(1.05, 1.42))
+            leaf.rotation.x = rng.randf_range(-0.22, -0.04)
             leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-            vine.add_child(leaf)
+            leaf_joint.add_child(leaf)
+            plant_pivots.append(leaf_joint)
+            plant_phases.append(rng.randf_range(0.0, TAU))
+            plant_stiffness.append(rng.randf_range(0.45, 0.78))
+            if climbing and leaf_index % 2 == 0:
+                var aerial_start: Vector3 = path_points[ring]
+                var aerial_end := aerial_start + Vector3(side * rng.randf_range(0.07, 0.13), -rng.randf_range(0.08, 0.17), -0.025)
+                _segment(vine, aerial_start, aerial_end, 0.0022, Color(0.23, 0.36, 0.17))
+        plant_pivots.append(vine)
+        plant_phases.append(rng.randf_range(0.0, TAU))
+        plant_stiffness.append(rng.randf_range(0.22, 0.45))
     # Ambient motes use shared meshes and stay sparse enough for mobile GPUs.
     var mote_mesh := SphereMesh.new()
     mote_mesh.radial_segments = 5
@@ -1559,7 +1754,7 @@ func _create_habitat_details() -> void:
     stone_mesh.rings = 4
     var leaf_mesh := _leaf_mesh()
     var litter_clusters: Array[Vector2] = [Vector2(-2.17, -1.42), Vector2(-2.27, -0.50), Vector2(-2.12, 0.54), Vector2(-1.67, 1.45), Vector2(-0.66, 1.47), Vector2(0.75, 1.45), Vector2(1.85, 1.38), Vector2(2.17, 0.42), Vector2(2.22, -0.58), Vector2(1.73, -1.43), Vector2(0.55, -1.46), Vector2(-0.72, -1.43)]
-    for i in range(168):
+    for i in range(232):
         var item := MeshInstance3D.new()
         var litter_cluster: Vector2 = litter_clusters[rng.randi_range(0, litter_clusters.size() - 1)]
         var litter_angle: float = rng.randf_range(0.0, TAU)
@@ -1575,6 +1770,30 @@ func _create_habitat_details() -> void:
             item.material_override = litter_materials[rng.randi_range(0, litter_materials.size() - 1)]
             item.scale = Vector3(rng.randf_range(0.36, 0.84), 0.22, rng.randf_range(0.48, 1.18))
         root.add_child(item)
+    # Uneven moss islands break up the bare substrate between leaves and roots.
+    var ground_moss_mesh := SphereMesh.new()
+    ground_moss_mesh.radial_segments = 12
+    ground_moss_mesh.rings = 7
+    var ground_moss_materials: Array[StandardMaterial3D] = []
+    for tint in [Color(0.16, 0.27, 0.10), Color(0.23, 0.34, 0.12), Color(0.31, 0.39, 0.15), Color(0.12, 0.22, 0.09)]:
+        var moss_mat := _material(tint)
+        moss_mat.roughness = 0.98
+        ground_moss_materials.append(moss_mat)
+    for moss_index in range(76):
+        var moss_patch := Node3D.new()
+        var moss_x := rng.randf_range(-2.36, 2.36)
+        var moss_z := rng.randf_range(-1.68, 1.68)
+        moss_patch.position = Vector3(moss_x, -0.524, moss_z)
+        moss_patch.rotation.y = rng.randf_range(-PI, PI)
+        root.add_child(moss_patch)
+        for lobe_index in range(rng.randi_range(2, 4)):
+            var lobe := MeshInstance3D.new()
+            lobe.mesh = ground_moss_mesh
+            lobe.position = Vector3(rng.randf_range(-0.08, 0.08), rng.randf_range(0.004, 0.018), rng.randf_range(-0.06, 0.06))
+            lobe.scale = Vector3(rng.randf_range(0.045, 0.12), rng.randf_range(0.010, 0.022), rng.randf_range(0.035, 0.095))
+            lobe.material_override = ground_moss_materials[rng.randi_range(0, ground_moss_materials.size() - 1)]
+            lobe.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+            moss_patch.add_child(lobe)
     for i in range(20):
         var twig_cluster: Vector2 = litter_clusters[rng.randi_range(0, litter_clusters.size() - 1)]
         var twig_angle: float = rng.randf_range(0.0, TAU)
