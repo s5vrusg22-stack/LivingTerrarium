@@ -37,7 +37,7 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0' 'cmake;3.10.2.4988404' 'ndk;23.2.8568313'
           keytool -genkeypair -noprompt -keystore "$HOME/debug.keystore" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=Android Debug,O=Android,C=US'
           mkdir -p "$HOME/.config/godot"
-          cat > "$HOME/.config/godot/editor_settings-4.tres" <<SETTINGS
+          cat > "$HOME/.config/godot/editor_settings-4.3.tres" <<SETTINGS
           [gd_resource type="EditorSettings" format=3]
           [resource]
           export/android/android_sdk_path = "$ANDROID_HOME"
