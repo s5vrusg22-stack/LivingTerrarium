@@ -573,9 +573,10 @@ func _create_mantis() -> void:
     add_child(animal)
     # The reference is a saturated leaf green; reduce the cyan cast and keep
     # highlights within the cuticle instead of washing the model toward white.
-    var mint := Color(0.36, 0.66, 0.34)
-    var mint_light := Color(0.52, 0.77, 0.46)
-    var mint_shadow := Color(0.18, 0.36, 0.19)
+    # Saturated yellow-green cuticle closer to the bright leaf-green reference.
+    var mint := Color(0.23, 0.49, 0.10)
+    var mint_light := Color(0.34, 0.62, 0.16)
+    var mint_shadow := Color(0.11, 0.25, 0.045)
     var eye_color := Color(0.035, 0.095, 0.035)
 
     abdomen = Node3D.new()
@@ -583,14 +584,14 @@ func _create_mantis() -> void:
     animal.add_child(abdomen)
     # A slim, elongated abdomen sits under the leaf-shaped forewings. The
     # overlapping plates stay visible along its underside and narrow at both ends.
-    _part(abdomen, Vector3(0, 0.18, 0.14), Vector3(0.092, 0.061, 0.35), mint)
+    _part(abdomen, Vector3(0, 0.178, 0.14), Vector3(0.084, 0.054, 0.35), mint)
     for band in range(8):
         var t: float = float(band) / 7.0
         var z: float = -0.12 + t * 0.56
         var taper: float = 0.66 + 0.34 * sin((t * 0.90 + 0.05) * PI)
-        var segment_color: Color = mint_light if band % 2 == 0 else mint
+        var segment_color: Color = mint if band % 2 == 0 else mint.darkened(0.045)
         _part(abdomen, Vector3(0, 0.185, z), Vector3(0.091 * taper, 0.057 * taper, 0.047), segment_color)
-        _segment(abdomen, Vector3(-0.078 * taper, 0.18, z + 0.029), Vector3(0.078 * taper, 0.18, z + 0.029), 0.0025, mint_shadow)
+        _segment(abdomen, Vector3(-0.074 * taper, 0.174, z + 0.029), Vector3(0.074 * taper, 0.174, z + 0.029), 0.0018, mint_shadow)
         for side_index in range(2):
             var side: float = -1.0 if side_index == 0 else 1.0
             _part(abdomen, Vector3(side * 0.094 * taper, 0.178, z), Vector3(0.008, 0.005, 0.012), mint_shadow)
@@ -599,7 +600,7 @@ func _create_mantis() -> void:
         var sternite_t: float = float(sternite) / 6.0
         var sternite_z: float = -0.075 + sternite_t * 0.49
         var sternite_taper: float = 0.70 + 0.30 * sin((sternite_t * 0.90 + 0.05) * PI)
-        var sternite_color: Color = mint if sternite % 2 == 0 else mint_shadow
+        var sternite_color: Color = mint if sternite % 2 == 0 else mint.darkened(0.08)
         _part(abdomen, Vector3(0, 0.132, sternite_z), Vector3(0.056 * sternite_taper, 0.020, 0.035), sternite_color)
         _segment(abdomen, Vector3(-0.047 * sternite_taper, 0.124, sternite_z + 0.022), Vector3(0.047 * sternite_taper, 0.124, sternite_z + 0.022), 0.0015, mint_shadow)
     _part(abdomen, Vector3(0, 0.16, 0.48), Vector3(0.052, 0.038, 0.066), mint_shadow)
@@ -613,18 +614,19 @@ func _create_mantis() -> void:
     thorax_pivot.name = "ThoraxArticulation"
     thorax_pivot.position = Vector3(0, 0.24, -0.34)
     animal.add_child(thorax_pivot)
-    # Long, narrow pronotum with a slightly widened rear shield.
-    _part(thorax_pivot, Vector3(0, 0.012, 0.015), Vector3(0.052, 0.045, 0.33), mint)
-    _part(thorax_pivot, Vector3(0, -0.003, 0.12), Vector3(0.067, 0.047, 0.11), mint_light)
-    _part(thorax_pivot, Vector3(0, 0.031, -0.105), Vector3(0.047, 0.018, 0.075), mint_light)
-    for thorax_rib in range(4):
-        var rib_z := -0.045 + float(thorax_rib) * 0.074
-        _segment(thorax_pivot, Vector3(-0.042, -0.012, rib_z), Vector3(0.042, -0.012, rib_z), 0.0022, mint_shadow)
-    _segment(thorax_pivot, Vector3(0, 0.058, 0.15), Vector3(0, 0.058, -0.27), 0.006, mint_light)
-    # Paired pronotal margins create the narrow, raised shield visible in the reference.
+    # A long, slender pronotum joins the head to the wing roots. Keep the
+    # raised margins restrained so the thorax reads as one continuous shield.
+    _part(thorax_pivot, Vector3(0, 0.010, 0.005), Vector3(0.044, 0.036, 0.39), mint)
+    _part(thorax_pivot, Vector3(0, -0.001, 0.115), Vector3(0.057, 0.038, 0.115), mint_light)
+    _part(thorax_pivot, Vector3(0, 0.027, -0.115), Vector3(0.036, 0.014, 0.095), mint_light)
+    for thorax_rib in range(3):
+        var rib_z := -0.035 + float(thorax_rib) * 0.092
+        _segment(thorax_pivot, Vector3(-0.036, -0.009, rib_z), Vector3(0.036, -0.009, rib_z), 0.0017, mint_shadow)
+    _segment(thorax_pivot, Vector3(0, 0.050, 0.16), Vector3(0, 0.050, -0.245), 0.0042, mint_light)
     for pronotum_side in [-1.0, 1.0]:
-        _segment(thorax_pivot, Vector3(pronotum_side * 0.045, 0.024, 0.13), Vector3(pronotum_side * 0.040, 0.018, -0.23), 0.0027, mint_shadow)
-    _part(thorax_pivot, Vector3(0, 0.014, -0.245), Vector3(0.042, 0.034, 0.078), mint_shadow)
+        _segment(thorax_pivot, Vector3(pronotum_side * 0.038, 0.019, 0.13), Vector3(pronotum_side * 0.034, 0.016, -0.23), 0.0018, mint_shadow)
+    # Narrow cervical bridge overlaps the head and front edge of the shield.
+    _part(thorax_pivot, Vector3(0, 0.010, -0.205), Vector3(0.034, 0.027, 0.10), mint)
 
     head_pivot = Node3D.new()
     head_pivot.name = "HeadPivot"
@@ -764,16 +766,16 @@ func _create_mantis() -> void:
         foreleg_claws.append(claw)
 
 func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
-    # Dense curved strips keep the wing silhouette smooth on a phone close-up.
+    # Smooth leaf-like forewings cover most of the abdomen; pale hindwings stay tucked below.
     var segments := 32
     var lane_count := 8
-    var start_z: float = -0.015 if hindwing else -0.13
-    var end_z: float = 0.57 if hindwing else 0.64
-    var y: float = 0.245 if hindwing else 0.272
-    var max_width: float = 0.34 if hindwing else 0.15
+    var start_z: float = -0.02 if hindwing else -0.15
+    var end_z: float = 0.58 if hindwing else 0.68
+    var y: float = 0.238 if hindwing else 0.251
+    var max_width: float = 0.34 if hindwing else 0.205
     var total_length: float = end_z - start_z
-    var wing_color: Color = Color(0.74, 0.87, 0.62, 0.62) if hindwing else Color(0.46, 0.72, 0.37, 1.0)
-    var hinge := Vector3(side * 0.035, y, start_z)
+    var wing_color: Color = Color(0.54, 0.68, 0.31, 0.58) if hindwing else Color(0.22, 0.47, 0.09, 1.0)
+    var hinge := Vector3(side * (0.024 if hindwing else 0.008), y, start_z)
     var vertices := PackedVector3Array()
     var normals := PackedVector3Array()
     var uvs := PackedVector2Array()
@@ -787,8 +789,8 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
         var profile1 := _mantis_wing_profile(t1, hindwing)
         var w0: float = 0.004 + profile0 * max_width
         var w1: float = 0.004 + profile1 * max_width
-        var edge0: float = 0.006 * sin(t0 * PI * 12.0) * sin(t0 * PI)
-        var edge1: float = 0.006 * sin(t1 * PI * 12.0) * sin(t1 * PI)
+        var edge0: float = 0.0015 * sin(t0 * PI * 4.0) * sin(t0 * PI)
+        var edge1: float = 0.0015 * sin(t1 * PI * 4.0) * sin(t1 * PI)
         for lane in range(lane_count):
             var u0: float = float(lane) / float(lane_count)
             var u1: float = float(lane + 1) / float(lane_count)
@@ -842,7 +844,7 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     wing_pivot.set_meta("wing_side", side)
     wing_pivot.set_meta("hindwing", hindwing)
     if hindwing:
-        wing_pivot.scale.x = 0.36
+        wing_pivot.scale.x = 0.30
     parent.add_child(wing_pivot)
     var wing_instance := MeshInstance3D.new()
     wing_instance.name = "WingMembrane"
@@ -853,7 +855,7 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     if pbr_normal.has("mantis_cuticle"):
         wing_material.normal_enabled = true
         wing_material.normal_texture = pbr_normal["mantis_cuticle"]
-        wing_material.normal_scale = 0.22 if hindwing else 0.34
+        wing_material.normal_scale = 0.14 if hindwing else 0.18
     if pbr_roughness.has("mantis_cuticle"):
         wing_material.roughness_texture = pbr_roughness["mantis_cuticle"]
         wing_material.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
@@ -861,46 +863,42 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
         wing_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
         wing_material.roughness = 0.42
     else:
-        wing_material.roughness = 0.48
+        wing_material.roughness = 0.72
     wing_instance.material_override = wing_material
     wing_pivot.add_child(wing_instance)
-    var vein_color: Color = Color(0.31, 0.49, 0.27) if hindwing else Color(0.24, 0.48, 0.25)
-    _segment(wing_pivot, Vector3(0, 0.020, 0.018), Vector3(side * 0.018, 0.021, total_length - 0.012), 0.0025, vein_color)
-    for vein_index in range(16):
-        var t: float = 0.06 + float(vein_index) * 0.057
+    var vein_color: Color = Color(0.30, 0.42, 0.19) if hindwing else Color(0.15, 0.31, 0.055)
+    _segment(wing_pivot, Vector3(0, 0.015, 0.012), Vector3(side * 0.020, 0.016, total_length - 0.012), 0.0018, vein_color)
+    for vein_index in range(9):
+        var t: float = 0.10 + float(vein_index) * 0.093
         var z: float = total_length * t
         var width: float = _mantis_wing_profile(t, hindwing) * max_width
-        var origin := Vector3(side * width * 0.035, 0.018 + 0.016 * sin(PI * t), z * 0.18)
-        var tip := Vector3(side * width * 0.91, 0.014 + 0.015 * sin(PI * t), z)
-        _segment(wing_pivot, origin, tip, 0.00135 if hindwing else 0.00165, vein_color)
-    # Fine cross-veins define cells while the forewing retains a leathery leaf outline.
-    for cross_index in range(10 if hindwing else 8):
-        var t: float = 0.10 + float(cross_index) * (0.080 if hindwing else 0.092)
+        var origin := Vector3(side * width * 0.035, 0.014 + 0.010 * sin(PI * t), z * 0.20)
+        var tip := Vector3(side * width * 0.91, 0.012 + 0.010 * sin(PI * t), z)
+        _segment(wing_pivot, origin, tip, 0.0009 if hindwing else 0.0010, vein_color)
+    # Sparse cross-veins leave the forewing surface predominantly smooth.
+    for cross_index in range(7 if hindwing else 5):
+        var t: float = 0.13 + float(cross_index) * (0.12 if hindwing else 0.15)
         var z: float = total_length * t
         var width: float = _mantis_wing_profile(t, hindwing) * max_width
-        _segment(wing_pivot, Vector3(side * width * 0.22, 0.018, z - 0.014), Vector3(side * width * 0.80, 0.018, z + 0.022), 0.00095, vein_color)
-        var next_t: float = minf(1.0, t + 0.035)
-        var next_width: float = _mantis_wing_profile(next_t, hindwing) * max_width
-        _segment(wing_pivot, Vector3(side * width * 0.99, 0.012, z), Vector3(side * next_width * 0.99, 0.012, minf(total_length, z + total_length * 0.035)), 0.00125, vein_color)
-    if not hindwing:
-        _part(wing_pivot, Vector3(side * 0.102, 0.021, 0.12), Vector3(0.010, 0.003, 0.032), Color(0.70, 0.80, 0.47))
+        _segment(wing_pivot, Vector3(side * width * 0.22, 0.014, z - 0.010), Vector3(side * width * 0.82, 0.014, z + 0.016), 0.00065, vein_color)
     wing_pivots.append(wing_pivot)
 
 func _mantis_wing_surface_point(u: float, t: float, width: float, edge: float, arch: float, length: float, side: float) -> Vector3:
     var x: float = width * u + edge * pow(u, 8.0)
-    var y: float = arch + 0.012 * sin(PI * u)
+    var y: float = arch + 0.007 * sin(PI * u)
     return Vector3(side * x, y, length * t)
 
 func _mantis_wing_surface_normal(u: float, t: float, width: float, length: float, side: float) -> Vector3:
     var dx_du: float = width
-    var dy_du: float = 0.012 * PI * cos(PI * u)
-    var dy_dt: float = 0.016 * PI * cos(PI * t)
+    var dy_du: float = 0.007 * PI * cos(PI * u)
+    var dy_dt: float = 0.012 * PI * cos(PI * t)
     return Vector3(-side * dy_du * length, maxf(0.001, dx_du) * length, -side * dx_du * dy_dt).normalized()
 
 func _mantis_wing_tint(base: Color, u: float, t: float) -> Color:
-    var edge_amount: float = clampf((u - 0.38) / 0.62, 0.0, 1.0)
-    var tint: Color = base.lerp(base.darkened(0.17), edge_amount * 0.78)
-    var vein_shade: float = 0.97 + 0.03 * sin(t * PI * 20.0 + u * 4.0)
+    # A restrained darker margin and low-amplitude pigment variation retain a leathery cuticle.
+    var edge_amount: float = clampf((u - 0.72) / 0.28, 0.0, 1.0)
+    var tint: Color = base.lerp(base.darkened(0.10), edge_amount * 0.65)
+    var vein_shade: float = 0.985 + 0.015 * sin(t * PI * 4.0 + u * 2.0)
     tint.r *= vein_shade
     tint.g *= vein_shade
     tint.b *= vein_shade
@@ -909,11 +907,16 @@ func _mantis_wing_tint(base: Color, u: float, t: float) -> Color:
 func _mantis_wing_profile(t: float, hindwing: bool) -> float:
     var safe_t: float = clampf(t, 0.0, 1.0)
     if hindwing:
-        # Broad distal fan with a rounded, slightly scalloped trailing edge.
+        # Folded hindwing: narrower and still fanned beneath the forewing.
         var flare: float = 0.12 + 0.88 * sin(safe_t * PI * 0.5)
         var taper: float = pow(maxf(0.0, 1.0 - safe_t), 0.30)
         return flare * taper
-    return pow(maxf(0.0, sin(PI * safe_t)), 0.72)
+    # Forewing has a tapered hinge, broad blade, and rounded distal tip.
+    var root: float = clampf(safe_t / 0.13, 0.0, 1.0)
+    root = root * root * (3.0 - 2.0 * root)
+    var tip: float = clampf((1.0 - safe_t) / 0.24, 0.0, 1.0)
+    tip = tip * tip * (3.0 - 2.0 * tip)
+    return root * tip
 
 func _ellipsoid_limb(parent: Node3D, a: Vector3, b: Vector3, radius: float, tint: Color) -> void:
     var delta := b - a
