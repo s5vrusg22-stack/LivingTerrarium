@@ -141,7 +141,7 @@ var climb_cooldown := 18.0
 var climb_branch_start := Vector3(-0.18, -0.43, 0.60)
 var climb_branch_end := Vector3(-0.02, 0.38, 0.52)
 const CLIMB_SPEED := 0.18
-const CLIMB_BODY_CLEARANCE := 0.115
+const CLIMB_BODY_CLEARANCE := 0.065
 var climb_direction := 1.0
 var climb_pause := 0.0
 var flight_demo_clock := 0.0
@@ -1374,7 +1374,7 @@ func _roam(dt: float) -> void:
         energy = maxf(0.0, energy - dt * 0.3)
 
 func _input(event: InputEvent) -> void:
-    if menu_scroll == null or not ui_panel.visible or editing:
+    if menu_scroll == null or not ui_panel.visible:
         return
     if event is InputEventScreenTouch:
         if event.pressed:
