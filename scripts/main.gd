@@ -51,6 +51,7 @@ var molt_progress := 0.0
 var prey_motion_clock := 0.0
 var walking_phase := 0.0
 var head_pivot: Node3D
+var mandibles: Array[Node3D] = []
 var forelegs: Array[Node3D] = []
 var wing_pivots: Array[Node3D] = []
 var leg_pivots: Array[Node3D] = []
@@ -149,6 +150,9 @@ const CLIMB_BODY_CLEARANCE := 0.065
 var climb_direction := 1.0
 var climb_pause := 0.0
 var flight_demo_clock := 0.0
+var flight_start_position := Vector3.ZERO
+var flight_start_yaw := 0.0
+const FLIGHT_TAKEOFF_DURATION := 0.95
 var feed_demo_prey: Node3D
 
 
@@ -471,11 +475,26 @@ func _advance_climb(dt: float, force_demo: bool = false) -> void:
 
 func _advance_flight(dt: float) -> void:
     flight_demo_clock += dt
-    var t := flight_demo_clock
-    var dx := 0.90 * cos(t * 0.78)
-    var dz := -0.56 * sin(t * 0.56)
-    animal.position = Vector3(1.15 * sin(t * 0.78), 0.40 + sin(t * 2.9) * 0.055, 0.86 * cos(t * 0.56))
-    animal.rotation.y = lerp_angle(animal.rotation.y, atan2(-dx, -dz), clampf(dt * 3.8, 0.0, 1.0))
+    var launch_t := clampf(flight_demo_clock / FLIGHT_TAKEOFF_DURATION, 0.0, 1.0)
+    var launch_ease := launch_t * launch_t * (3.0 - 2.0 * launch_t)
+    var glide_time := maxf(0.0, flight_demo_clock - FLIGHT_TAKEOFF_DURATION)
+    # A short forward-and-up launch avoids the old straight vertical lift.
+    var target := flight_start_position + Vector3(0.0, 0.62 * launch_ease, -0.16 * launch_ease)
+    var x_extent: float = minf(0.42, maxf(0.0, 2.08 - absf(flight_start_position.x)))
+    var z_extent: float = minf(0.58, maxf(0.0, 1.32 - absf(flight_start_position.z)))
+    var dx := 0.0
+    var dz := -0.18 - z_extent * 0.56
+    if glide_time > 0.0:
+        var glide_x := x_extent * (1.0 - cos(glide_time * 0.78))
+        var glide_z := -z_extent * sin(glide_time * 0.56)
+        target.x = flight_start_position.x + glide_x
+        target.z = flight_start_position.z - 0.16 + glide_z
+        target.y = flight_start_position.y + 0.62 + sin(glide_time * 2.9) * 0.045
+        dx = x_extent * 0.78 * sin(glide_time * 0.78)
+        dz = -z_extent * 0.56 * cos(glide_time * 0.56)
+    animal.position = target
+    var desired_yaw := atan2(-dx, -dz)
+    animal.rotation.y = lerp_angle(animal.rotation.y, desired_yaw, clampf(dt * 2.4, 0.0, 1.0))
 
 func _ensure_feed_demo_prey() -> void:
     if feed_demo_prey != null and is_instance_valid(feed_demo_prey):
@@ -484,9 +503,9 @@ func _ensure_feed_demo_prey() -> void:
     feed_demo_prey = Node3D.new()
     feed_demo_prey.name = "FeedDemonstrationPrey"
     animal.add_child(feed_demo_prey)
-    _create_feeder_insect(feed_demo_prey, 0.90, Color(0.48, 0.31, 0.16))
-    # Keep the prey close to the mouth, where the folded capture arms can hold it.
-    feed_demo_prey.position = Vector3(0.0, 0.16, -0.66)
+    _create_feeder_insect(feed_demo_prey, 1.08, Color(0.48, 0.31, 0.16))
+    # Hold the cricket between the capture tibiae directly below the mouth.
+    feed_demo_prey.position = Vector3(0.0, 0.20, -0.70)
 
 func _create_floor_collider() -> void:
     var floor_body := StaticBody3D.new()
@@ -600,6 +619,14 @@ func _create_mantis() -> void:
     _part(head_pivot, Vector3(0, 0.012, -0.012), Vector3(0.15, 0.11, 0.12), mint_light)
     _part(head_pivot, Vector3(0, -0.045, -0.087), Vector3(0.084, 0.054, 0.036), mint)
     _part(head_pivot, Vector3(0, -0.078, -0.097), Vector3(0.036, 0.019, 0.025), mint_shadow)
+    for mandible_side in [-1.0, 1.0]:
+        var mandible := Node3D.new()
+        mandible.name = "Mandible_%d" % int(mandible_side)
+        mandible.position = Vector3(mandible_side * 0.014, -0.062, -0.105)
+        head_pivot.add_child(mandible)
+        _ellipsoid_limb(mandible, Vector3.ZERO, Vector3(mandible_side * 0.012, -0.020, -0.025), 0.006, mint_shadow)
+        _segment(mandible, Vector3(mandible_side * 0.012, -0.020, -0.025), Vector3(mandible_side * 0.004, -0.027, -0.035), 0.003, mint_light)
+        mandibles.append(mandible)
     # Three small ocelli sit between the compound eyes, above the clypeus.
     _part(head_pivot, Vector3(0, 0.092, -0.077), Vector3(0.009, 0.008, 0.008), mint_shadow)
     for ocellus_side in [-1.0, 1.0]:
@@ -672,6 +699,7 @@ func _create_mantis() -> void:
         var femur_end := Vector3(side * 0.19, 0.008, -0.19)
         _ellipsoid_limb(foreleg, Vector3.ZERO, coxa_end, 0.020, mint_shadow)
         _part(foreleg, coxa_end, Vector3(0.023, 0.021, 0.023), mint_light)
+        _part(foreleg, coxa_end.lerp(femur_end, 0.08), Vector3(0.019, 0.014, 0.021), mint_shadow)
         var elbow := Node3D.new()
         elbow.name = "ForelegElbow_%d" % int(side)
         elbow.position = femur_end
@@ -680,22 +708,31 @@ func _create_mantis() -> void:
         # unmistakable; alternating inner spines oppose the tibial teeth.
         _ellipsoid_limb(foreleg, coxa_end, femur_end, 0.055, mint_light)
         _ellipsoid_limb(foreleg, coxa_end.lerp(femur_end, 0.08), coxa_end.lerp(femur_end, 0.92), 0.026, mint)
+        _ellipsoid_limb(foreleg, coxa_end.lerp(femur_end, 0.10) + Vector3(0.0, 0.030, 0.0), coxa_end.lerp(femur_end, 0.90) + Vector3(0.0, 0.030, 0.0), 0.010, mint_light)
         _part(foreleg, femur_end, Vector3(0.023, 0.023, 0.025), mint_shadow)
         for spine_index in range(11):
             var t: float = 0.08 + float(spine_index) * 0.083
             var base: Vector3 = coxa_end.lerp(femur_end, t)
             var spine_tip: Vector3 = base + Vector3(-side * (0.043 if spine_index % 2 == 0 else 0.052), 0.003, -0.016)
             _segment(foreleg, base, spine_tip, 0.0065 if spine_index % 2 == 0 else 0.0055, mint_shadow)
+        # Two longer discoidal spines make the prey-facing femur edge distinct
+        # from the shorter comb of marginal teeth.
+        for spine_index in range(2):
+            var t: float = 0.43 + float(spine_index) * 0.19
+            var base: Vector3 = coxa_end.lerp(femur_end, t)
+            var spine_tip: Vector3 = base + Vector3(-side * 0.069, 0.004, -0.022)
+            _segment(foreleg, base, spine_tip, 0.009, mint_shadow)
         var claw := Node3D.new()
         claw.name = "ForelegTibia_%d" % int(side)
         elbow.add_child(claw)
         var tibia_end := Vector3(-side * 0.15, -0.13, -0.115)
         _ellipsoid_limb(claw, Vector3.ZERO, tibia_end, 0.024, mint)
         _part(claw, Vector3.ZERO, Vector3(0.020, 0.020, 0.020), mint_shadow)
-        for spine_index in range(9):
-            var t: float = 0.10 + float(spine_index) * 0.095
+        for spine_index in range(11):
+            var t: float = 0.08 + float(spine_index) * 0.083
             var base: Vector3 = tibia_end * t
-            _segment(claw, base, base + Vector3(side * 0.037, 0.006, -0.014), 0.0055, mint_shadow)
+            var tooth_length: float = 0.041 if spine_index % 3 == 1 else 0.030
+            _segment(claw, base, base + Vector3(side * tooth_length, 0.006, -0.014), 0.0055 if spine_index % 3 else 0.0065, mint_shadow)
         var tarsal_palm := tibia_end + Vector3(-side * 0.018, -0.006, -0.035)
         _ellipsoid_limb(claw, tibia_end, tarsal_palm, 0.009, mint_shadow)
         _ellipsoid_limb(claw, tarsal_palm, tarsal_palm + Vector3(-side * 0.028, -0.004, -0.038), 0.0055, mint_light)
@@ -705,11 +742,11 @@ func _create_mantis() -> void:
         foreleg_claws.append(claw)
 
 func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
-    var segments := 20
+    var segments := 24
     var start_z: float = -0.015 if hindwing else -0.13
     var end_z: float = 0.57 if hindwing else 0.64
-    var y: float = 0.255 if hindwing else 0.272
-    var max_width: float = 0.177 if hindwing else 0.145
+    var y: float = 0.245 if hindwing else 0.272
+    var max_width: float = 0.34 if hindwing else 0.15
     var hinge := Vector3(side * 0.035, y, start_z)
     var vertices := PackedVector3Array()
     var normals := PackedVector3Array()
@@ -719,12 +756,16 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
         var t1: float = float(i + 1) / float(segments)
         var z0: float = lerpf(start_z, end_z, t0)
         var z1: float = lerpf(start_z, end_z, t1)
-        var w0: float = 0.008 + pow(maxf(0.0, sin(PI * t0)), 0.72) * max_width
-        var w1: float = 0.008 + pow(maxf(0.0, sin(PI * t1)), 0.72) * max_width
+        var profile0 := _mantis_wing_profile(t0, hindwing)
+        var profile1 := _mantis_wing_profile(t1, hindwing)
+        var w0: float = 0.004 + profile0 * max_width
+        var w1: float = 0.004 + profile1 * max_width
+        var edge0: float = 0.006 * sin(t0 * PI * 12.0) * sin(t0 * PI)
+        var edge1: float = 0.006 * sin(t1 * PI * 12.0) * sin(t1 * PI)
         var arch0: float = 0.016 * sin(PI * t0)
         var arch1: float = 0.016 * sin(PI * t1)
-        var row0: Array[Vector3] = [Vector3(0.0, 0.0, z0 - start_z), Vector3(side * w0 * 0.50, arch0 + 0.012, z0 - start_z), Vector3(side * w0, arch0, z0 - start_z)]
-        var row1: Array[Vector3] = [Vector3(0.0, 0.006, z1 - start_z), Vector3(side * w1 * 0.50, arch1 + 0.012, z1 - start_z), Vector3(side * w1, arch1, z1 - start_z)]
+        var row0: Array[Vector3] = [Vector3(0.0, 0.0, z0 - start_z), Vector3(side * w0 * 0.50, arch0 + 0.012, z0 - start_z), Vector3(side * (w0 + edge0), arch0, z0 - start_z)]
+        var row1: Array[Vector3] = [Vector3(0.0, 0.006, z1 - start_z), Vector3(side * w1 * 0.50, arch1 + 0.012, z1 - start_z), Vector3(side * (w1 + edge1), arch1, z1 - start_z)]
         for lane in range(2):
             var a: Vector3 = row0[lane]
             var b: Vector3 = row0[lane + 1]
@@ -751,6 +792,9 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     wing_pivot.position = hinge
     wing_pivot.set_meta("wing_side", side)
     wing_pivot.set_meta("hindwing", hindwing)
+    if hindwing:
+        # The broad membrane stays folded beneath the tegmina while resting.
+        wing_pivot.scale.x = 0.36
     parent.add_child(wing_pivot)
     var wing_instance := MeshInstance3D.new()
     wing_instance.name = "WingMembrane"
@@ -767,24 +811,36 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     wing_pivot.add_child(wing_instance)
     var vein_color: Color = Color(0.35, 0.62, 0.48) if hindwing else Color(0.31, 0.59, 0.43)
     _segment(wing_pivot, Vector3(0, 0.020, 0.018), Vector3(side * 0.018, 0.021, end_z - start_z - 0.012), 0.0028, vein_color)
-    for vein_index in range(11):
-        var t: float = 0.10 + float(vein_index) * 0.078
+    for vein_index in range(13):
+        var t: float = 0.08 + float(vein_index) * 0.069
         var z: float = (end_z - start_z) * t
-        var width: float = 0.008 + pow(maxf(0.0, sin(PI * t)), 0.72) * max_width
-        var origin := Vector3(side * width * 0.18, 0.018 + 0.016 * sin(PI * t), z)
-        var tip := Vector3(side * width * 0.91, 0.014 + 0.015 * sin(PI * t), minf(end_z - start_z - 0.018, z + 0.048))
-        _segment(wing_pivot, origin, tip, 0.00155 if hindwing else 0.0019, vein_color)
-    # Finer cross veins give the broad forewing and translucent hindwing
-    # the reticulated look visible in the photographic reference.
-    for cross_index in range(7):
-        var t: float = 0.18 + float(cross_index) * 0.105
+        var width: float = _mantis_wing_profile(t, hindwing) * max_width
+        var origin := Vector3(side * width * 0.035, 0.018 + 0.016 * sin(PI * t), z * 0.18)
+        var tip := Vector3(side * width * (0.88 if hindwing else 0.91), 0.014 + 0.015 * sin(PI * t), z)
+        _segment(wing_pivot, origin, tip, 0.00145 if hindwing else 0.0019, vein_color)
+    # Repeated cross-veins and a fine perimeter give the flight membrane a
+    # fan of cells while the forewing keeps its long, leathery leaf outline.
+    for cross_index in range(9 if hindwing else 7):
+        var t: float = 0.12 + float(cross_index) * (0.092 if hindwing else 0.105)
         var z: float = (end_z - start_z) * t
-        var width: float = 0.008 + pow(maxf(0.0, sin(PI * t)), 0.72) * max_width
-        _segment(wing_pivot, Vector3(side * width * 0.28, 0.018, z), Vector3(side * width * 0.74, 0.018, z + 0.036), 0.0011, vein_color)
+        var width: float = _mantis_wing_profile(t, hindwing) * max_width
+        _segment(wing_pivot, Vector3(side * width * 0.24, 0.018, z - 0.018), Vector3(side * width * 0.80, 0.018, z + 0.026), 0.00105, vein_color)
+        var next_t: float = minf(1.0, t + 0.04)
+        var next_width: float = _mantis_wing_profile(next_t, hindwing) * max_width
+        _segment(wing_pivot, Vector3(side * width, 0.012, z), Vector3(side * next_width, 0.012, minf(end_z - start_z, z + (end_z - start_z) * 0.04)), 0.0015, vein_color)
     if not hindwing:
         # A subtle, elongated stigma sits on each leathery mint forewing.
         _part(wing_pivot, Vector3(side * 0.102, 0.021, 0.12), Vector3(0.010, 0.003, 0.032), Color(0.74, 0.88, 0.61))
     wing_pivots.append(wing_pivot)
+
+func _mantis_wing_profile(t: float, hindwing: bool) -> float:
+    var safe_t: float = clampf(t, 0.0, 1.0)
+    if hindwing:
+        # Broad distal fan with a rounded, slightly scalloped trailing edge.
+        var flare: float = 0.12 + 0.88 * sin(safe_t * PI * 0.5)
+        var taper: float = pow(maxf(0.0, 1.0 - safe_t), 0.30)
+        return flare * taper
+    return pow(maxf(0.0, sin(PI * safe_t)), 0.72)
 
 func _ellipsoid_limb(parent: Node3D, a: Vector3, b: Vector3, radius: float, tint: Color) -> void:
     var delta := b - a
@@ -1301,8 +1357,8 @@ func _animate_ecosystem(dt: float) -> void:
         mote.position = origin + Vector3(sin(phase) * 0.14 * wind, sin(phase * 0.63) * 0.07, cos(phase * 0.7) * 0.09 * wind)
 
 func _create_feeder_insect(prey: Node3D, size_factor: float, body_color: Color) -> void:
-    # A cricket-like feeder has a real head/thorax/segmented abdomen, paired
-    # tegmina, long feelers, cerci, and six jointed legs with enlarged hind femora.
+    # Cricket-like feeder anatomy: a shielded thorax, plated abdomen, paired
+    # tegmina, long filiform antennae, cerci, and three distinct leg pairs.
     var model := Node3D.new()
     model.name = "CricketAnatomy"
     model.scale = Vector3.ONE * size_factor
@@ -1312,21 +1368,27 @@ func _create_feeder_insect(prey: Node3D, size_factor: float, body_color: Color) 
     var shell_light := body_color.lightened(0.20)
     var shell_dark := body_color.darkened(0.28)
     var underside := body_color.darkened(0.42)
-    _part(model, Vector3(0.0, -0.002, 0.060), Vector3(0.042, 0.027, 0.092), shell)
-    _part(model, Vector3(0.0, 0.001, -0.045), Vector3(0.030, 0.024, 0.053), shell_light)
-    _part(model, Vector3(0.0, 0.009, -0.079), Vector3(0.038, 0.029, 0.041), shell_light)
-    _part(model, Vector3(0.0, -0.025, 0.047), Vector3(0.034, 0.012, 0.085), underside)
-    # Six overlapping abdominal tergites create a tapered, visibly segmented body.
-    for band in range(6):
-        var t := float(band) / 5.0
-        var z := -0.006 + t * 0.139
-        var taper := 0.92 - t * 0.34
-        var plate_color := shell_light if band % 2 == 0 else shell
-        _part(model, Vector3(0.0, 0.006, z), Vector3(0.040 * taper, 0.025 * taper, 0.020), plate_color)
-        _segment(model, Vector3(-0.032 * taper, -0.003, z + 0.014), Vector3(0.032 * taper, -0.003, z + 0.014), 0.0018, shell_dark)
+    _part(model, Vector3(0.0, -0.002, 0.064), Vector3(0.042, 0.027, 0.094), shell)
+    _part(model, Vector3(0.0, 0.003, -0.043), Vector3(0.034, 0.026, 0.052), shell_light)
+    # Broad, shield-like pronotum with a raised rim and a clear head plate.
+    _part(model, Vector3(0.0, 0.014, -0.048), Vector3(0.041, 0.009, 0.044), shell_light)
+    _segment(model, Vector3(-0.034, 0.022, -0.068), Vector3(0.034, 0.022, -0.068), 0.0021, shell_dark)
+    _part(model, Vector3(0.0, 0.009, -0.085), Vector3(0.038, 0.030, 0.040), shell_light)
+    _part(model, Vector3(0.0, -0.025, 0.048), Vector3(0.034, 0.012, 0.086), underside)
+    # Six layered tergites taper toward the rear; paired pleural marks read as
+    # real abdominal side plates rather than a smooth oval under the wings.
+    for band in range(7):
+        var t: float = float(band) / 6.0
+        var z: float = 0.002 + t * 0.137
+        var taper: float = 0.96 - t * 0.38
+        var plate_color: Color = shell_light if band % 2 == 0 else shell
+        _part(model, Vector3(0.0, 0.006, z), Vector3(0.040 * taper, 0.025 * taper, 0.018), plate_color)
+        _segment(model, Vector3(-0.034 * taper, -0.003, z + 0.011), Vector3(0.034 * taper, -0.003, z + 0.011), 0.0018, shell_dark)
         for side in [-1.0, 1.0]:
             _part(model, Vector3(side * 0.036 * taper, -0.004, z + 0.002), Vector3(0.0035, 0.004, 0.004), shell_dark)
-    # Paired leathery wing covers with a center seam and raised longitudinal veins.
+            _part(model, Vector3(side * 0.034 * taper, 0.010, z), Vector3(0.003, 0.003, 0.005), shell_dark)
+    # Paired leathery forewings overlap over the abdomen, with costa, veins,
+    # short crossbars, and a visible center seam.
     var wing_pivots: Array[Node3D] = []
     for side in [-1.0, 1.0]:
         var wing_root := Node3D.new()
@@ -1334,16 +1396,25 @@ func _create_feeder_insect(prey: Node3D, size_factor: float, body_color: Color) 
         wing_root.position = Vector3(side * 0.012, 0.026, 0.016)
         wing_root.set_meta("side", side)
         model.add_child(wing_root)
-        _part(wing_root, Vector3(side * 0.018, 0.0, 0.046), Vector3(0.022, 0.0045, 0.086), shell.lightened(0.10))
-        for vein in range(4):
-            var x: float = side * (0.006 + float(vein) * 0.009)
-            _segment(wing_root, Vector3(x, 0.004, 0.006), Vector3(side * (0.018 + float(vein) * 0.004), 0.004, 0.118), 0.0011, shell_dark)
+        _part(wing_root, Vector3(side * 0.018, 0.0, 0.046), Vector3(0.024, 0.005, 0.090), shell.lightened(0.10))
+        _segment(wing_root, Vector3(side * 0.003, 0.005, 0.004), Vector3(side * 0.028, 0.005, 0.126), 0.0018, shell_light)
+        for vein in range(7):
+            var t: float = float(vein) / 6.0
+            var x: float = side * (0.004 + t * 0.030)
+            _segment(wing_root, Vector3(side * (0.003 + t * 0.009), 0.0055, 0.006), Vector3(x, 0.0055, 0.122 - t * 0.012), 0.0010, shell_dark)
+        for cross_index in range(5):
+            var z: float = 0.030 + float(cross_index) * 0.019
+            _segment(wing_root, Vector3(side * 0.008, 0.0058, z), Vector3(side * 0.024, 0.0058, z + 0.009), 0.0009, shell_dark)
+        if side > 0.0:
+            _segment(wing_root, Vector3(0.0, 0.006, 0.012), Vector3(0.0, 0.006, 0.122), 0.0015, shell_dark)
         wing_pivots.append(wing_root)
-    # Compound eyes, short mouth palps, and six-piece antennae make the head readable.
+    # Faceted eyes, mandibles, and paired palps define the small head.
     for side in [-1.0, 1.0]:
-        _part(model, Vector3(side * 0.032, 0.019, -0.096), Vector3(0.012, 0.014, 0.014), Color(0.045, 0.055, 0.035))
-        _part(model, Vector3(side * 0.014, -0.015, -0.111), Vector3(0.006, 0.005, 0.009), shell_dark)
-        _segment(model, Vector3(side * 0.014, -0.018, -0.112), Vector3(side * 0.020, -0.030, -0.121), 0.0022, underside)
+        _part(model, Vector3(side * 0.032, 0.020, -0.098), Vector3(0.013, 0.015, 0.014), Color(0.045, 0.055, 0.035))
+        _part(model, Vector3(side * 0.036, 0.025, -0.102), Vector3(0.0035, 0.004, 0.004), shell_light)
+        _part(model, Vector3(side * 0.014, -0.015, -0.112), Vector3(0.007, 0.005, 0.009), shell_dark)
+        _segment(model, Vector3(side * 0.014, -0.018, -0.112), Vector3(side * 0.021, -0.031, -0.124), 0.0022, underside)
+        _segment(model, Vector3(side * 0.022, -0.012, -0.111), Vector3(side * 0.031, -0.024, -0.120), 0.0020, shell_dark)
     var antenna_roots: Array[Node3D] = []
     for side in [-1.0, 1.0]:
         var antenna := Node3D.new()
@@ -1351,10 +1422,10 @@ func _create_feeder_insect(prey: Node3D, size_factor: float, body_color: Color) 
         antenna.position = Vector3(side * 0.015, 0.027, -0.106)
         model.add_child(antenna)
         var previous := Vector3.ZERO
-        for segment_index in range(7):
-            var t := float(segment_index + 1) / 7.0
-            var tip := Vector3(side * (0.012 + 0.026 * t + 0.008 * sin(t * PI)), 0.025 * t, -0.19 * t)
-            _segment(antenna, previous, tip, 0.0022 * (1.0 - 0.56 * t), shell_dark)
+        for segment_index in range(14):
+            var t: float = float(segment_index + 1) / 14.0
+            var tip := Vector3(side * (0.020 + 0.052 * t + 0.018 * sin(t * PI)), 0.040 * t, -0.34 * t)
+            _segment(antenna, previous, tip, 0.0024 * (1.0 - 0.62 * t), shell_dark)
             previous = tip
         antenna_roots.append(antenna)
     # A pair of fine rear cerci extends beyond the last abdominal plate.
@@ -1372,26 +1443,52 @@ func _create_feeder_insect(prey: Node3D, size_factor: float, body_color: Color) 
             hip.position = Vector3(side * 0.025, -0.008, -0.058 + float(leg_index) * 0.060)
             model.add_child(hip)
             var hind := leg_index == 2
-            var knee_offset := Vector3(side * (0.076 if hind else 0.061), -0.029, -0.018 if leg_index == 0 else (0.040 if hind else 0.014))
-            var ankle_offset := Vector3(side * (0.115 if hind else 0.074), -0.088, 0.080 if hind else 0.034)
+            var knee_offset := Vector3(side * (0.102 if hind else 0.061), -0.032, -0.018 if leg_index == 0 else (0.043 if hind else 0.014))
+            var ankle_offset := Vector3(side * (0.154 if hind else 0.078), -0.095, 0.096 if hind else 0.036)
             var leg_tint := shell_light if hind else shell
-            _ellipsoid_limb(hip, Vector3.ZERO, knee_offset, 0.017 if hind else 0.010, leg_tint)
-            _part(hip, knee_offset, Vector3(0.008, 0.008, 0.008), shell_dark)
+            var coxa_tip := Vector3(side * 0.022, -0.004, 0.008)
+            _ellipsoid_limb(hip, Vector3.ZERO, coxa_tip, 0.008, shell_dark)
+            _part(hip, coxa_tip, Vector3(0.009, 0.008, 0.009), shell_light)
+            _ellipsoid_limb(hip, coxa_tip, knee_offset, 0.024 if hind else 0.011, leg_tint)
+            if hind:
+                var femur_mid := coxa_tip.lerp(knee_offset, 0.55)
+                _segment(hip, femur_mid + Vector3(0.0, 0.010, -0.004), femur_mid + Vector3(0.0, 0.010, 0.018), 0.0020, shell_dark)
+                _part(hip, femur_mid, Vector3(0.014, 0.013, 0.025), shell_light)
+            _part(hip, knee_offset, Vector3(0.009, 0.009, 0.009), shell_dark)
             var knee := Node3D.new()
             knee.name = "LegKnee_%d_%d" % [int(side), leg_index]
             knee.position = knee_offset
             hip.add_child(knee)
-            _ellipsoid_limb(knee, Vector3.ZERO, ankle_offset - knee_offset, 0.0065 if hind else 0.0055, shell_dark)
+            var tibia_vector := ankle_offset - knee_offset
+            _ellipsoid_limb(knee, Vector3.ZERO, tibia_vector, 0.0072 if hind else 0.0055, shell_dark)
             _part(knee, ankle_offset - knee_offset, Vector3(0.005, 0.005, 0.005), shell_light)
-            var toe_end := ankle_offset + Vector3(side * 0.038, -0.009, 0.044 if hind else 0.022)
-            _ellipsoid_limb(knee, ankle_offset - knee_offset, toe_end - knee_offset, 0.0035, shell_dark)
-            _segment(knee, toe_end - knee_offset, toe_end - knee_offset + Vector3(side * 0.012, -0.002, 0.012), 0.0017, shell_dark)
-            _segment(knee, toe_end - knee_offset, toe_end - knee_offset + Vector3(-side * 0.006, -0.002, 0.015), 0.0015, shell_dark)
-            # Fine spurs on the long tibiae break up the old plain-stick silhouette.
-            for spur_index in range(3 if hind else 2):
-                var t := 0.28 + float(spur_index) * 0.25
-                var point := (ankle_offset - knee_offset) * t
-                _segment(knee, point, point + Vector3(side * 0.010, 0.004, -0.004), 0.0016, shell_light)
+            if leg_index == 0:
+                # Cricket tympanum on the fore tibia, framed by a raised rim.
+                var ear_center := tibia_vector * 0.55 + Vector3(side * 0.005, 0.004, 0.0)
+                _part(knee, ear_center, Vector3(0.0035, 0.0065, 0.013), shell_light)
+                _part(knee, ear_center + Vector3(side * 0.002, 0.0, 0.0), Vector3(0.0016, 0.0042, 0.009), shell_dark)
+            # Tibial spines occur in opposing rows, with larger apical spurs
+            # on the jumping legs and fine paired claws on every foot.
+            for spur_index in range(5 if hind else 3):
+                var t: float = 0.17 + float(spur_index) * (0.14 if hind else 0.22)
+                var point := tibia_vector * t
+                var spur_length: float = 0.017 if hind else 0.009
+                _segment(knee, point, point + Vector3(side * spur_length, 0.004, -0.007), 0.0022 if hind else 0.0015, shell_light)
+                if hind:
+                    _segment(knee, point, point + Vector3(-side * spur_length * 0.72, 0.004, 0.006), 0.0018, shell_dark)
+            if hind:
+                for spur_side in [-1.0, 1.0]:
+                    _segment(knee, tibia_vector * 0.90, tibia_vector * 0.90 + Vector3(side * 0.020, 0.004, spur_side * 0.012), 0.0023, shell_light)
+            var toe_end := ankle_offset + Vector3(side * (0.046 if hind else 0.038), -0.010, 0.048 if hind else 0.024)
+            var ankle_local := ankle_offset - knee_offset
+            var toe_local := toe_end - knee_offset
+            for tarsomere_index in range(3):
+                var t0: float = float(tarsomere_index) / 3.0
+                var t1: float = float(tarsomere_index + 1) / 3.0
+                _ellipsoid_limb(knee, ankle_local.lerp(toe_local, t0), ankle_local.lerp(toe_local, t1), 0.0033 - float(tarsomere_index) * 0.0004, shell_dark)
+                _part(knee, ankle_local.lerp(toe_local, t1), Vector3(0.0028, 0.0028, 0.0028), shell_light)
+            _segment(knee, toe_local, toe_local + Vector3(side * 0.012, -0.002, 0.014), 0.0018, shell_dark)
+            _segment(knee, toe_local, toe_local + Vector3(-side * 0.007, -0.002, 0.015), 0.0016, shell_dark)
             leg_hips.append(hip)
             leg_knees.append(knee)
     prey_appendages[prey.get_instance_id()] = {
@@ -1820,13 +1917,19 @@ func _surface_height_at(world_point: Vector3) -> float:
 func _set_animation_preview(clip: String) -> void:
     if clip != "AUTO" and not ANIMATIONS.has(clip):
         return
+    var previous_clip := animation_preview
     if clip != "FEED" and feed_demo_prey != null and is_instance_valid(feed_demo_prey):
         prey_appendages.erase(feed_demo_prey.get_instance_id())
         feed_demo_prey.queue_free()
         feed_demo_prey = null
+    if previous_clip == "FLY" and clip != "FLY":
+        animal.position = flight_start_position
+        animal.rotation = Vector3(0.0, flight_start_yaw, 0.0)
+        _initialize_foot_anchors()
     if clip in ["FLY", "FEED", "CLIMB"]:
         climb_active = false
-        animal.quaternion = Quaternion.IDENTITY
+        if clip != "FLY":
+            animal.quaternion = Quaternion.IDENTITY
         if clip != "CLIMB":
             animal.position.y = -0.38
     if clip == "CLIMB":
@@ -1836,6 +1939,11 @@ func _set_animation_preview(clip: String) -> void:
         climb_pause = 0.0
     if clip == "FLY":
         flight_demo_clock = 0.0
+        animal.position.y = -0.38
+        animal.rotation.x = 0.0
+        animal.rotation.z = 0.0
+        flight_start_position = animal.position
+        flight_start_yaw = animal.rotation.y
     animation_preview = clip
     animation_clock = 0.0
     if clip == "FEED":
@@ -1894,6 +2002,8 @@ func _animate_mantis(dt: float) -> void:
         animation_weight = 0.0
     animation_weight = move_toward(animation_weight, 1.0, dt * 5.0)
     var walking := next_state in ["WALK", "HUNT", "CLIMB"]
+    var flight_t: float = clampf(flight_demo_clock / FLIGHT_TAKEOFF_DURATION, 0.0, 1.0) if next_state == "FLY" else 0.0
+    var flight_pose_blend: float = flight_t * flight_t * (3.0 - 2.0 * flight_t)
     movement_blend = move_toward(movement_blend, 1.0 if walking else 0.0, dt * 3.0)
     walking_phase += dt * (3.2 if next_state == "CLIMB" else 5.5 if next_state == "HUNT" else 7.0)
     foot_contact_hits = 0
@@ -1906,7 +2016,9 @@ func _animate_mantis(dt: float) -> void:
         var foot := Vector3.ZERO
         var foot_world := Vector3.ZERO
         if next_state == "FLY":
-            foot = Vector3(side * 0.15, -0.12, 0.03 if index == 0 else 0.13)
+            var grounded_foot := Vector3(side * 0.32, -0.27, -0.10 if index == 0 else 0.16)
+            var tucked_foot := Vector3(side * 0.15, -0.12, 0.03 if index == 0 else 0.13)
+            foot = grounded_foot.lerp(tucked_foot, flight_pose_blend)
             foot_anchors[i] = joint.to_global(foot)
             foot_in_swing[i] = false
         elif next_state == "CLIMB" and climb_active:
@@ -1966,7 +2078,8 @@ func _animate_mantis(dt: float) -> void:
         var knee := _solve_leg_knee(Vector3.ZERO, foot, 0.31, 0.49, side)
         _pose_gait_bone(gait_segments[i][0], Vector3.ZERO, knee)
         _pose_gait_bone(gait_segments[i][1], knee, foot)
-        var tarsus_end := foot + Vector3(side * (0.045 if next_state == "FLY" else 0.085), 0.032 if next_state == "FLY" else -0.014, -0.025 if index == 0 else 0.025)
+        var tarsus_offset := Vector3(side * lerpf(0.085, 0.045, flight_pose_blend), lerpf(-0.014, 0.032, flight_pose_blend), -0.025 if index == 0 else 0.025)
+        var tarsus_end := foot + tarsus_offset
         var tarsomeres: Array = foot_tarsi[i]
         for segment_index in range(tarsomeres.size()):
             var t0: float = float(segment_index) / float(tarsomeres.size())
@@ -2000,12 +2113,14 @@ func _animate_mantis(dt: float) -> void:
                 target_pitch = -0.23 + sin(animation_clock * 1.8 + float(i)) * 0.08
                 target_yaw = sin(animation_clock * 1.3) * 0.16
             "FEED":
-                target_pitch = -0.40 + sin(animation_clock * 2.8 + float(i) * PI) * 0.035
+                # Both capture arms cradle one insect together; the paired
+                # forelegs make a small synchronized adjustment while feeding.
+                target_pitch = -0.42 + sin(animation_clock * 2.8) * 0.025
                 target_yaw = (0.09 if i == 0 else -0.09)
             "CLIMB":
                 target_pitch = -0.48 + sin(walking_phase + float(i) * PI) * 0.14
             "FLY":
-                target_pitch = -0.70 + sin(animation_clock * 2.4 + float(i) * PI) * 0.025
+                target_pitch = lerpf(-0.12, -0.64 + sin(animation_clock * 1.9) * 0.035, flight_pose_blend)
             "DEFEND":
                 target_pitch = -0.95 + sin(animation_clock * 3.0) * 0.12
                 target_yaw = (-0.30 if i == 0 else 0.30)
@@ -2020,8 +2135,8 @@ func _animate_mantis(dt: float) -> void:
                 elbow_target = -0.65 + sin(animation_clock * 9.0 + float(i) * PI) * 0.28
                 claw_target = 0.8 + sin(animation_clock * 9.0 + float(i) * PI) * 0.35
             "FEED":
-                elbow_target = -0.62 + sin(animation_clock * 2.7 + float(i) * PI) * 0.045
-                claw_target = 0.86 + sin(animation_clock * 3.1 + float(i) * PI) * 0.07
+                elbow_target = -0.62 + sin(animation_clock * 2.7) * 0.035
+                claw_target = 0.86 + sin(animation_clock * 3.1) * 0.045
             "HUNT", "ALERT":
                 elbow_target = -0.75
                 claw_target = 1.1
@@ -2036,14 +2151,17 @@ func _animate_mantis(dt: float) -> void:
                 elbow_target = -0.78 + sin(walking_phase + float(i) * PI) * 0.28
                 claw_target = 1.0 + sin(walking_phase + float(i) * PI) * 0.20
             "FLY":
-                elbow_target = -0.86
-                claw_target = 1.22
+                elbow_target = lerpf(-0.25, -0.82, flight_pose_blend)
+                claw_target = lerpf(0.38, 1.16, flight_pose_blend)
         foreleg_elbows[i].rotation.x = lerpf(foreleg_elbows[i].rotation.x, elbow_target, clampf(dt * 11.0, 0.0, 1.0))
         foreleg_claws[i].rotation.x = lerpf(foreleg_claws[i].rotation.x, claw_target, clampf(dt * 13.0, 0.0, 1.0))
     for i in range(antennae.size()):
         var antenna_speed := 5.5 if next_state == "ALERT" else 2.3
         var amplitude := 0.29 if next_state == "ALERT" else 0.16
         antennae[i].rotation.y = sin(elapsed * antenna_speed + float(i) * 1.5) * amplitude
+    for i in range(mandibles.size()):
+        var chew_motion: float = sin(animation_clock * 6.2 + float(i) * PI) * 0.12 if next_state == "FEED" else 0.0
+        mandibles[i].rotation.y = lerpf(mandibles[i].rotation.y, chew_motion, clampf(dt * 12.0, 0.0, 1.0))
     if head_pivot != null:
         var desired_head_yaw := sin(elapsed * 0.7) * 0.11
         if next_state == "SCAN":
@@ -2079,15 +2197,18 @@ func _animate_mantis(dt: float) -> void:
             abdomen_target += sin(animation_clock * 2.6) * 0.012
         abdomen.rotation.x = lerpf(abdomen.rotation.x, abdomen_target, clampf(dt * 4.0, 0.0, 1.0))
     if next_state == "FEED" and feed_demo_prey != null and is_instance_valid(feed_demo_prey):
-        feed_demo_prey.position = Vector3(0.0, 0.16 + sin(animation_clock * 2.4) * 0.002, -0.66)
+        feed_demo_prey.position = Vector3(0.0, 0.20 + sin(animation_clock * 2.4) * 0.0015, -0.70)
     for wing_pivot in wing_pivots:
         var wing_side := float(wing_pivot.get_meta("wing_side"))
         var is_hindwing := bool(wing_pivot.get_meta("hindwing"))
-        var target_flap := sin(animation_clock * 18.0 + (PI * 0.14 if is_hindwing else 0.0)) * (0.72 if is_hindwing else 0.60) * wing_side if next_state == "FLY" else sin(elapsed * 1.4 + (PI if is_hindwing else 0.0)) * 0.035 * wing_side
+        var desired_spread: float = lerpf(0.36, 1.0, flight_pose_blend) if is_hindwing else 1.0
+        wing_pivot.scale.x = lerpf(wing_pivot.scale.x, desired_spread, clampf(dt * 5.0, 0.0, 1.0))
+        var flap_amplitude: float = (0.70 if is_hindwing else 0.56) * flight_pose_blend
+        var target_flap := sin(animation_clock * 36.0 + (0.34 if is_hindwing else 0.0)) * flap_amplitude * wing_side if next_state == "FLY" else sin(elapsed * 1.4 + (PI if is_hindwing else 0.0)) * 0.025 * wing_side
         wing_pivot.rotation.z = lerpf(wing_pivot.rotation.z, target_flap, clampf(dt * 22.0, 0.0, 1.0))
     if not (next_state == "CLIMB" and climb_active):
-        var body_roll_target := sin(elapsed * 5.0) * 0.05 if molting else sin(animation_clock * 0.9) * 0.035 if next_state == "FLY" else 0.0
-        var body_pitch_target := -0.16 if next_state == "FLY" else -0.035 if next_state == "FEED" else 0.0
+        var body_roll_target := sin(elapsed * 5.0) * 0.05 if molting else sin(animation_clock * 0.85) * 0.065 * flight_pose_blend if next_state == "FLY" else 0.0
+        var body_pitch_target := (-0.08 - sin(animation_clock * 1.6) * 0.028) * flight_pose_blend if next_state == "FLY" else -0.035 if next_state == "FEED" else 0.0
         animal.rotation.z = lerpf(animal.rotation.z, body_roll_target, clampf(dt * 4.0, 0.0, 1.0))
         animal.rotation.x = lerpf(animal.rotation.x, body_pitch_target, clampf(dt * 3.2, 0.0, 1.0))
     if animation_preview == "STRIKE" and preview_strike_clock <= 0.0:
