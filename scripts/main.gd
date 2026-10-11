@@ -536,7 +536,7 @@ func _create_bromeliad(parent: Node3D, anchor: Vector3, size: float, leaf_mesh: 
         rosette.add_child(leaf_joint)
         var leaf := MeshInstance3D.new()
         leaf.mesh = leaf_mesh
-        var material_index := accents[(leaf_index - 9) % accents.size()] if inner else rng.randi_range(0, 2)
+        var material_index: int = int(accents[(leaf_index - 9) % accents.size()]) if inner else rng.randi_range(0, 2)
         leaf.material_override = materials[material_index]
         leaf.scale = Vector3(rng.randf_range(0.78, 1.14), 0.92, rng.randf_range(1.28, 1.82)) if not inner else Vector3(rng.randf_range(0.68, 0.94), 0.94, rng.randf_range(1.00, 1.38))
         leaf.rotation.x = rng.randf_range(-0.12, 0.06)
@@ -545,8 +545,8 @@ func _create_bromeliad(parent: Node3D, anchor: Vector3, size: float, leaf_mesh: 
         plant_pivots.append(leaf_joint)
         plant_phases.append(rng.randf_range(0.0, TAU))
         plant_stiffness.append(rng.randf_range(0.26, 0.48))
-    var inflorescence_mat: StandardMaterial3D = materials[accents[0]]
-    _segment(rosette, Vector3(0.0, 0.11, 0.0), Vector3(0.0, 0.29, 0.0), 0.008, Color(0.42, 0.16, 0.10))
+    var inflorescence_mat: StandardMaterial3D = materials[int(accents[0])]
+    _segment(rosette, Vector3(0.0, 0.11, 0.0), Vector3(0.0, 0.29, 0.0), 0.008, Color(0.42, 0.16, 0.23))
     for flower_index in range(7):
         var flower := MeshInstance3D.new()
         flower.mesh = center_mesh
@@ -571,6 +571,11 @@ func _create_world() -> void:
     env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
     env.ambient_light_color = Color(0.7, 0.8, 0.72)
     env.ambient_light_energy = 0.66
+    env.ssao_enabled = true
+    env.ssao_radius = 0.38
+    env.ssao_intensity = 1.05
+    env.ssao_power = 1.18
+    env.ssao_detail = 0.42
     world.environment = env
     add_child(world)
     var sun := DirectionalLight3D.new()
@@ -637,6 +642,9 @@ func _create_world() -> void:
             var fork_c1 := fork_start.lerp(fork_end, 0.34) + Vector3(branch_rng.randf_range(-0.12, 0.12), 0.10, branch_rng.randf_range(-0.10, 0.10))
             var fork_c2 := fork_start.lerp(fork_end, 0.72) + Vector3(branch_rng.randf_range(-0.10, 0.10), 0.08, branch_rng.randf_range(-0.10, 0.10))
             _create_wood_curve(fork_start, fork_c1, fork_c2, fork_end, branch_rng.randf_range(0.043, 0.072), branch_rng.randf_range(0.010, 0.020), 9, bark_mat, habitat_root, false)
+    var back_bough_material := _bark_material(Color(0.33, 0.22, 0.14))
+    _create_wood_curve(Vector3(-2.05, 0.16, -1.44), Vector3(-1.35, 1.02, -1.22), Vector3(0.92, 0.40, -1.30), Vector3(2.08, 0.68, -1.50), 0.14, 0.085, 16, back_bough_material, habitat_root)
+    _create_wood_curve(Vector3(0.34, 0.56, -1.31), Vector3(0.22, 0.93, -1.27), Vector3(0.73, 1.03, -1.43), Vector3(0.98, 1.38, -1.54), 0.070, 0.014, 12, back_bough_material, habitat_root)
     _create_bark_moss(habitat_trunks, branch_rng)
     # Fallen wood is scattered among the planted edges and leaf litter.
     for i in range(18):
