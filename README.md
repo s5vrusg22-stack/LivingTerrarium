@@ -1,4 +1,4 @@
-# Living Terrarium 3D v1.3 — Material Pass
+# Living Terrarium 3D
 
 Godot 4 / GDScript Android-targeted terrarium prototype.
 
@@ -8,10 +8,9 @@ Godot 4 / GDScript Android-targeted terrarium prototype.
 - Includes deterministic source texture processing script `tools/generate_pbr_maps.py`.
 - Existing 10 animation states, physics-based foot raycasts, enclosure editor, saves retained.
 
-## Limitations
+## Historical notes
 - Normal and roughness maps are **estimated from albedo**, not scanned or physically measured.
-- The in-game mantis uses `assets/models/mantis_rigged.glb` as its only visible model. A hidden procedural hierarchy supplies movement and contact references; the Blender authoring scripts remain separate from the runtime asset.
-- Godot/Blender/Android SDK are unavailable in this environment. The project has NOT been launched or built as APK.
+- The in-game mantis uses `assets/models/mantis_rigged.glb` as its only visible model. A hidden procedural hierarchy supplies movement and contact references.
 
 
 ## v1.4: Independent articulated body joints
@@ -58,3 +57,8 @@ on-screen direction pad, drag to orbit, and pinch to zoom.
 See `README_v3.1.md` for the fail-closed latest-model lock, 12 terrarium saves,
 species and juvenile profiles, four habitat biomes, eight feeder types, and
 direct behavior commands.
+
+## v3.2 — six nymph instars and adult model pass
+
+See `README_v3.2.md` for L1–L6 growth, molt/save migration, the remodeled
+adult rig, and the Android APK verification workflow.

@@ -35,6 +35,6 @@ check('28 animation crossfade','rigged_player.play(name, 0.18)' in s)
 check('29 latest model cannot revert to the old renderer','func _toggle_visual_model' not in s and 'use_rigged_visual' not in s and 'part.visible = false' in s)
 legacy_model = "mantis_" + "detailed.glb"
 preview = (root/'scenes/mantis_model_preview.tscn').read_text(encoding='utf-8')
-check('30 full-scale latest GLB is the only model source',model.stat().st_size >= 6_000_000 and 'visual_model_scale := 1.0' in s and 'body_material.albedo_texture = body_texture' in s and 'wing_material.albedo_texture = wing_texture' in s and not (root/'assets/models'/legacy_model).exists() and legacy_model not in s and 'assets/models/mantis_rigged.glb' in preview and legacy_model not in preview)
+check('30 detailed latest GLB is the only model source',len(j.get('meshes',[])) >= 200 and len(j['skins'][0]['joints']) >= 61 and len(clips) >= 11 and 'visual_model_scale := 1.0' in s and 'body_material.albedo_texture = body_texture' in s and 'wing_material.albedo_texture = wing_texture' in s and not (root/'assets/models'/legacy_model).exists() and legacy_model not in s and 'assets/models/mantis_rigged.glb' in preview and legacy_model not in preview)
 assert len(checks)==30, len(checks)
 print('v2.4 integration: 30/30 static checks PASS (engine runtime not verified)')

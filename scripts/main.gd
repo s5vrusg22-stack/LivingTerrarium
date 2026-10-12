@@ -17,7 +17,9 @@ const LATEST_MODEL_MIN_MESHES := 30
 const SPECIES_NAMES: Array[String] = ["치앙마이형 (Hierodula sp.)", "왕사마귀", "중국사마귀", "유럽사마귀", "고스트사마귀", "꽃사마귀"]
 const PREY_TYPES: Array[String] = ["귀뚜라미", "두비아바퀴", "초파리", "검정파리", "밀웜", "왁스웜", "풀무치", "나방"]
 const BIOME_NAMES: Array[String] = ["열대 우림", "건조 초원", "사막", "온대림"]
-const LIFE_STAGES: Array[String] = ["약충", "성체"]
+const LIFE_STAGES: Array[String] = ["1령 약충", "2령 약충", "3령 약충", "4령 약충", "5령 약충", "6령 약충", "성체"]
+const NYMPH_SIZE_FACTORS: Array[float] = [0.23, 0.30, 0.40, 0.52, 0.67, 0.84]
+const NYMPH_WING_PAD_FACTORS: Array[float] = [0.34, 0.43, 0.54, 0.68, 0.83, 1.0]
 const LATEST_MODEL_REQUIRED_CLIPS: Array[String] = ["IDLE", "WALK", "ALERT", "GROOM", "HUNT", "STRIKE", "SCAN", "FEED", "CLIMB", "DEFEND"]
 var hunger := 32.0
 var energy := 86.0
@@ -761,6 +763,9 @@ func _command_mantis(command: String) -> void:
     if command == "MOLT":
         if molting:
             notice.text = "이미 탈피 중입니다."
+            return
+        if not _is_juvenile():
+            notice.text = "성충은 마지막 탈피를 마쳤습니다."
             return
         manual_command = ""
         molting = true
@@ -1966,7 +1971,15 @@ func _on_species_selected(index: int) -> void:
     _refresh()
 
 func _on_stage_selected(index: int) -> void:
-    life_stage = "약충" if index == 0 else "성체"
+    if index < 0 or index >= LIFE_STAGES.size():
+        return
+    if molting:
+        if stage_picker != null:
+            stage_picker.select(_life_stage_index())
+        notice.text = "탈피가 끝나면 성장 단계를 바꿀 수 있습니다."
+        return
+    life_stage = LIFE_STAGES[index]
+    molt_count = mini(index, 6)
     _apply_life_stage()
     _refresh()
 
@@ -2001,7 +2014,7 @@ func _sync_profile_selectors() -> void:
     if species_picker != null:
         species_picker.select(maxi(0, SPECIES_NAMES.find(selected_species)))
     if stage_picker != null:
-        stage_picker.select(0 if life_stage == "약충" else 1)
+        stage_picker.select(maxi(0, LIFE_STAGES.find(life_stage)))
     if biome_picker != null:
         biome_picker.select(maxi(0, BIOME_NAMES.find(selected_biome)))
     if prey_picker != null:
@@ -2055,12 +2068,20 @@ func _apply_species_appearance() -> void:
                     bud_material.albedo_color = _species_tint().lightened(0.14)
     _apply_life_stage()
 
+func _is_juvenile() -> bool:
+    return life_stage != "성체"
+
+func _life_stage_index() -> int:
+    var stage_index := LIFE_STAGES.find(life_stage)
+    return clampi(stage_index, 0, LIFE_STAGES.size() - 1)
+
 func _apply_life_stage() -> void:
-    var is_juvenile := life_stage == "약충"
+    var stage_index := _life_stage_index()
+    var is_juvenile := stage_index < 6
     if animal != null:
         var growth_scale := 0.42 * (0.90 + growth * 0.30)
         if is_juvenile:
-            growth_scale = 0.42 * (0.38 + growth * 0.18)
+            growth_scale *= NYMPH_SIZE_FACTORS[stage_index]
         animal.scale = Vector3.ONE * growth_scale * _species_size_factor()
     if rigged_visual != null:
         var wing_parts: Array = rigged_visual.find_children("*", "MeshInstance3D", true, false)
@@ -2072,6 +2093,13 @@ func _apply_life_stage() -> void:
                 part.visible = not is_juvenile
     if juvenile_wing_buds != null:
         juvenile_wing_buds.visible = is_juvenile
+        if is_juvenile:
+            var pad_factor := NYMPH_WING_PAD_FACTORS[stage_index]
+            for child in juvenile_wing_buds.get_children():
+                var bud := child as MeshInstance3D
+                if bud != null:
+                    bud.scale = Vector3(0.12 + 0.14 * pad_factor, 0.045 + 0.035 * pad_factor, 0.19 + 0.18 * pad_factor)
+                    bud.position.z = 0.10 + 0.035 * pad_factor
 
 func _apply_biome_profile() -> void:
     var sky := Color(0.065, 0.085, 0.08)
@@ -2222,7 +2250,8 @@ func _switch_save_slot(slot_number: int) -> void:
 
 func _create_new_slot_profile() -> void:
     _reset_profile_state()
-    life_stage = "약충"
+    life_stage = LIFE_STAGES[0]
+    molt_count = 0
     selected_species = "치앙마이형 (Hierodula sp.)"
     selected_biome = "열대 우림"
     selected_prey_type = "귀뚜라미"
@@ -2806,12 +2835,14 @@ func _process(delta: float) -> void:
             molt_progress = 0.0
             molt_count += 1
             growth = minf(1.0, growth + 0.13)
-            if life_stage == "약충" and molt_count >= 5:
-                life_stage = "성체"
+            if _is_juvenile():
+                var next_stage := mini(_life_stage_index() + 1, 6)
+                life_stage = LIFE_STAGES[next_stage]
+                molt_count = next_stage
             _apply_life_stage()
             hunger = minf(100.0, hunger + 12.0)
             energy = maxf(15.0, energy - 22.0)
-    elif life_age > 150.0 * float(molt_count + 1) and molt_count < 5 and hunger < 65.0 and stress < 40.0:
+    elif _is_juvenile() and life_age > 150.0 * float(molt_count + 1) and molt_count < 6 and hunger < 65.0 and stress < 40.0:
         molting = true
         molt_progress = 0.0
     hunger = minf(100.0, hunger + dt * 0.22)
@@ -3101,15 +3132,19 @@ func _load_state(show_message: bool) -> void:
                     _add_decoration(kind, Vector3(x, -0.50, z))
     var saved_species := str(parsed.get("species", "왕사마귀"))
     selected_species = saved_species if SPECIES_NAMES.has(saved_species) else "왕사마귀"
+    var saved_molt_count := clampi(int(parsed.get("molt_count", 0)), 0, 6)
     var saved_stage := str(parsed.get("life_stage", "성체"))
-    life_stage = saved_stage if saved_stage in ["약충", "성체"] else "성체"
+    if saved_stage == "약충":
+        life_stage = LIFE_STAGES[mini(saved_molt_count, 5)]
+    else:
+        life_stage = saved_stage if LIFE_STAGES.has(saved_stage) else "성체"
     var saved_biome := str(parsed.get("biome", "열대 우림"))
     selected_biome = saved_biome if BIOME_NAMES.has(saved_biome) else "열대 우림"
     var saved_prey_kind := str(parsed.get("selected_prey_type", "귀뚜라미"))
     selected_prey_type = saved_prey_kind if PREY_TYPES.has(saved_prey_kind) else "귀뚜라미"
     mantis_name = str(parsed.get("name", "초록이"))
     life_age = maxf(0.0, float(parsed.get("life_age", 0.0)))
-    molt_count = clampi(int(parsed.get("molt_count", 0)), 0, 5)
+    molt_count = saved_molt_count
     growth = clampf(float(parsed.get("growth", 0.35)), 0.35, 1.0)
     _apply_species_appearance()
     hunger = clampf(float(parsed.get("hunger", 32.0)), 0.0, 100.0)

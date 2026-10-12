@@ -8,7 +8,7 @@ length,typ=struct.unpack_from('<II',data,12)
 assert typ==0x4e4f534a
 j=json.loads(data[20:20+length]);nodes=j['nodes'];names={n.get('name'):i for i,n in enumerate(nodes)}
 parents={c:i for i,n in enumerate(nodes) for c in n.get('children',[])}
-assert len(j['animations'])==10 and len(j['skins'])>=1
+assert len(j['animations'])>=11 and len(j['skins'])>=1
 for side in 'LR':
  for k in range(3):
   a,b,c=[names[f'Rig_{part}_{side}{k}'] for part in ['Coxa','Joint','Tibia']]

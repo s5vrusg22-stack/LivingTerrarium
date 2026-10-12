@@ -12,7 +12,7 @@ for side in 'LR':
   assert parent[ids[f'Rig_Tibia_{side}{k}']]==ids[f'Rig_Joint_{side}{k}']
  assert parent[ids[f'Rig_ForeTibia_{side}']]==ids[f'Rig_ForeFemur_{side}']
 assert parent[ids['Rig_Head']]==ids['Rig_Thorax']
-assert len(j['animations'])==10
+assert len(j['animations'])>=11
 s=(p/'scripts/rigged_pose_driver.gd').read_text()
 for term in ['_solve_leg_ccd','skeleton.to_local(anchors[i])','CCD_ITERATIONS','get_bone_parent','MAX_TARGET_DISTANCE']:
  assert term in s

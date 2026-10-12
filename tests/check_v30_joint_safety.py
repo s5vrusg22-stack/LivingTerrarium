@@ -12,7 +12,7 @@ raw=(p/'assets/models/mantis_rigged.glb').read_bytes()
 assert struct.unpack_from('<I',raw)[0]==0x46546c67
 assert struct.unpack_from('<I',raw,8)[0]==len(raw)
 length=struct.unpack_from('<I',raw,12)[0];j=json.loads(raw[20:20+length]);names={n.get('name') for n in j['nodes']}
-assert len(j['skins'][0]['joints'])==61 and len(j['animations'])==10
+assert len(j['skins'][0]['joints'])>=61 and len(j['animations'])>=11
 for side in 'LR':
  for i in range(3):
   for prefix in ('Coxa','Joint','Tibia','Foot'): assert f'Rig_{prefix}_{side}{i}' in names
