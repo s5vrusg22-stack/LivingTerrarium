@@ -10,8 +10,8 @@
 ## Adult rig and animation
 
 - The Blender source builds the canonical adult GLB with a tapered triangular head, compound-eye facets, segmented abdomen and spiracles, articulated forelegs with spines, articulated antennae, and layered cambered wings with branching veins.
-- The rig keeps two visible walking leg pairs and the raptorial pair. A third unused leg chain remains in the skeleton for contract compatibility.
-- The imported model has 62 bones, 225 mesh resources, and 11 animation clips. Startup hides all old procedural render meshes and displays no mantis if the canonical rig fails validation.
+- The rig keeps two visible walking leg pairs and the raptorial pair. A third walking pair remains skinned for clip compatibility and its complete mesh set is hidden at runtime.
+- The imported model has 62 bones, 247 mesh resources, and 11 animation clips. Startup hides all old procedural render meshes and displays no mantis if the canonical rig fails validation.
 - `tools/generate_rigged_mantis_blender.py` generates the rig; CI regenerates it before import, visual renders, and Android export.
 
 ## APK build and verification
