@@ -327,7 +327,12 @@ func _apply_rigged_materials_recursive(
     for child in root.get_children():
         if child is MeshInstance3D:
             var part := child as MeshInstance3D
-            if part.name.begins_with("Hindwing_"):
+            # Keep the anatomically correct two walking pairs plus the raptorial pair.
+            # The imported asset's third ordinary pair is redundant; retain its bones
+            # for clip compatibility, but hide its six mesh segments.
+            if part.name in ["Coxa_L2", "Joint_L2", "Tibia_L2", "Coxa_R2", "Joint_R2", "Tibia_R2"]:
+                part.visible = false
+            elif part.name.begins_with("Hindwing_"):
                 part.material_override = hindwing_material
             elif part.name.begins_with("Wing_") or part.name.begins_with("WingVeinDetail_"):
                 part.material_override = wing_material

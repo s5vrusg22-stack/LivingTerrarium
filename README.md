@@ -10,7 +10,7 @@ Godot 4 / GDScript Android-targeted terrarium prototype.
 
 ## Limitations
 - Normal and roughness maps are **estimated from albedo**, not scanned or physically measured.
-- The in-game mantis remains procedural geometry; `tools/generate_mantis_blender.py` is a separate Blender base-GLB authoring script and does not automatically replace the in-game model.
+- The in-game mantis uses `assets/models/mantis_rigged.glb` as its only visible model. A hidden procedural hierarchy supplies movement and contact references; the Blender authoring scripts remain separate from the runtime asset.
 - Godot/Blender/Android SDK are unavailable in this environment. The project has NOT been launched or built as APK.
 
 
