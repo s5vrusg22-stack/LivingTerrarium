@@ -11,16 +11,21 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - name: Generate and validate mantis textures
+      - name: Generate textures and run regression checks
         run: |
           python -m pip install --disable-pip-version-check numpy pillow
           python tools/generate_mantis_cuticle_texture.py
-          python tests/check_reference_model_quality.py
-          python tests/check_project.py
+          for test_script in tests/check_*.py; do
+            if [[ "$test_script" == "tests/check_apk_readiness.py" ]]; then
+              continue
+            fi
+            echo "Running ${test_script}"
+            python "$test_script"
+          done
       - name: Install Godot 4.3
         shell: bash
         run: |
@@ -55,7 +60,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --audio-driver Dummy --rendering-method gl_compatibility --rendering-driver opengl3 --quit-after 180 2>&1 | tee /tmp/godot-startup.log
+          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --audio-driver Dummy --rendering-method gl_compatibility --rendering-driver opengl3 --disable-vsync --quit-after 180 2>&1 | tee /tmp/godot-startup.log
           if grep -E 'SCRIPT ERROR:|Parse Error:|Failed to load script|Invalid call|Invalid set index|Node not found|^ERROR:' /tmp/godot-startup.log; then
             echo 'Godot reported an application startup error.' >&2
             exit 1
@@ -67,11 +72,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build/model-renders
-          xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --audio-driver Dummy --rendering-method gl_compatibility --rendering-driver opengl3 --script res://tests/render_reference_model.gd
+          xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --audio-driver Dummy --rendering-method gl_compatibility --rendering-driver opengl3 --disable-vsync --script res://tests/render_reference_model.gd
           test "$(find build/model-renders -maxdepth 1 -name '*.png' | wc -l)" -eq 4
       - name: Upload four-angle mantis renders
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: LivingTerrarium3D-reference-model-renders
           path: build/model-renders/*.png
