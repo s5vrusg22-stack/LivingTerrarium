@@ -265,24 +265,66 @@ func _initialize_rigged_visual() -> void:
         _play_rigged_clip("IDLE")
 
 func _style_rigged_materials(root: Node) -> void:
-    # GLB vertex colors carry the model's species palette. Explicit materials
-    # keep those colors visible and make the thin wings render from both sides.
+    # Use the imported vertex palette with the repository's cuticle, wing, and
+    # eye maps. GLB surfaces have no embedded materials, so set them explicitly.
     var body_material := StandardMaterial3D.new()
     body_material.vertex_color_use_as_albedo = true
     body_material.albedo_color = Color.WHITE
-    body_material.metallic = 0.0
-    body_material.roughness = 0.78
+    body_material.albedo_texture = body_texture
+    body_material.uv1_triplanar = true
+    body_material.uv1_triplanar_sharpness = 8.0
+    body_material.uv1_scale = Vector3(18.0, 18.0, 18.0)
+    body_material.roughness = 0.72
+    _apply_pbr(body_material, "mantis_cuticle")
+    body_material.roughness = 0.72
 
-    var wing_material := body_material.duplicate() as StandardMaterial3D
+    var wing_material := StandardMaterial3D.new()
+    wing_material.vertex_color_use_as_albedo = true
+    wing_material.albedo_color = Color.WHITE
+    wing_material.albedo_texture = wing_texture
+    wing_material.roughness = 0.82
     wing_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    _apply_pbr(wing_material, "mantis_wing")
+    wing_material.roughness = 0.82
+    wing_material.normal_scale = 0.24
 
     var hindwing_material := wing_material.duplicate() as StandardMaterial3D
     hindwing_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
     hindwing_material.albedo_color.a = 0.82
 
-    _apply_rigged_materials_recursive(root, body_material, wing_material, hindwing_material)
+    var eye_material := StandardMaterial3D.new()
+    eye_material.albedo_texture = eye_texture
+    eye_material.albedo_color = Color(0.82, 0.87, 0.60)
+    eye_material.roughness = 0.34
+    _apply_pbr(eye_material, "mantis_eye")
 
-func _apply_rigged_materials_recursive(root: Node, body_material: StandardMaterial3D, wing_material: StandardMaterial3D, hindwing_material: StandardMaterial3D) -> void:
+    var pupil_material := StandardMaterial3D.new()
+    pupil_material.albedo_color = Color(0.10, 0.16, 0.045)
+    pupil_material.roughness = 0.34
+
+    var glint_material := StandardMaterial3D.new()
+    glint_material.albedo_color = Color(0.76, 0.84, 0.58)
+    glint_material.roughness = 0.22
+
+    _apply_rigged_materials_recursive(
+        root,
+        body_material,
+        wing_material,
+        hindwing_material,
+        eye_material,
+        pupil_material,
+        glint_material
+    )
+
+func _apply_rigged_materials_recursive(
+    root: Node,
+    body_material: StandardMaterial3D,
+    wing_material: StandardMaterial3D,
+    hindwing_material: StandardMaterial3D,
+    eye_material: StandardMaterial3D,
+    pupil_material: StandardMaterial3D,
+    glint_material: StandardMaterial3D
+) -> void:
     for child in root.get_children():
         if child is MeshInstance3D:
             var part := child as MeshInstance3D
@@ -290,9 +332,23 @@ func _apply_rigged_materials_recursive(root: Node, body_material: StandardMateri
                 part.material_override = hindwing_material
             elif part.name.begins_with("Wing_") or part.name.begins_with("WingVeinDetail_"):
                 part.material_override = wing_material
+            elif part.name.begins_with("EyePupil_"):
+                part.material_override = pupil_material
+            elif part.name.begins_with("EyeGlint_"):
+                part.material_override = glint_material
+            elif part.name.begins_with("Eye_"):
+                part.material_override = eye_material
             else:
                 part.material_override = body_material
-        _apply_rigged_materials_recursive(child, body_material, wing_material, hindwing_material)
+        _apply_rigged_materials_recursive(
+            child,
+            body_material,
+            wing_material,
+            hindwing_material,
+            eye_material,
+            pupil_material,
+            glint_material
+        )
 
 func _collect_procedural_meshes(root: Node) -> void:
     for child in root.get_children():
