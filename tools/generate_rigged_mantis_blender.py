@@ -1,5 +1,5 @@
 """Blender 4.x: blender -b --python tools/generate_rigged_mantis_blender.py
-Generate editable mantis rig .blend + animated GLB; Blender is required.
+Generate an editable Blender source file and animated GLB; Blender is required.
 Adult Hierodula-style mint mantis; the Chiang Mai trade name is not a formal
 species diagnosis. Anatomically inspired, hand-procedural, not a scan.
 Coordinates: Blender Z up, head toward -Y; 1 Blender unit ~= 1 m in game.
@@ -9,7 +9,9 @@ from pathlib import Path
 from mathutils import Vector
 
 OUT = Path(__file__).resolve().parents[1] / 'assets' / 'models'
+BLEND_OUT = Path(__file__).resolve().parent / 'blender_source'
 OUT.mkdir(parents=True, exist_ok=True)
+BLEND_OUT.mkdir(parents=True, exist_ok=True)
 bpy.ops.object.select_all(action='SELECT')
 bpy.ops.object.delete(use_global=False)
 
@@ -321,8 +323,11 @@ for name,period,amp in [
 bpy.context.scene.frame_set(0)
 for obj in bpy.context.selected_objects: obj.select_set(False)
 arm.select_set(True); bpy.context.view_layer.objects.active=arm
-bpy.ops.wm.save_as_mainfile(filepath=str(OUT/'mantis_rigged.blend'))
+bpy.ops.wm.save_as_mainfile(filepath=str(BLEND_OUT/'mantis_rigged.blend'))
 bpy.ops.export_scene.gltf(filepath=str(OUT/'mantis_rigged.glb'),export_format='GLB',
                           export_animations=True,export_animation_mode='NLA_TRACKS',
                           export_skins=True,export_materials='EXPORT')
-print('Created mantis_rigged.blend and mantis_rigged.glb in',OUT)
+stale_blend = OUT/'mantis_rigged.blend'
+if stale_blend.exists():
+    stale_blend.unlink()
+print('Created editable Blender source in',BLEND_OUT,'and mantis_rigged.glb in',OUT)
