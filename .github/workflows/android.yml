@@ -1,4 +1,4 @@
-name: Validate Godot 4.3 project
+name: Validate and export Godot 4.3 project
 on:
   workflow_dispatch:
   push:
@@ -6,8 +6,11 @@ on:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     permissions:
       contents: read
     steps:
@@ -20,9 +23,6 @@ jobs:
           python -m pip install --disable-pip-version-check numpy pillow
           python tools/generate_mantis_cuticle_texture.py
           for test_script in tests/check_*.py; do
-            if [[ "$test_script" == "tests/check_apk_readiness.py" ]]; then
-              continue
-            fi
             echo "Running ${test_script}"
             python "$test_script"
           done
@@ -74,6 +74,54 @@ jobs:
           mkdir -p build/model-renders
           xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --audio-driver Dummy --rendering-method gl_compatibility --rendering-driver opengl3 --disable-vsync --script res://tests/render_reference_model.gd
           test "$(find build/model-renders -maxdepth 1 -name '*.png' | wc -l)" -eq 6
+      - name: Set up Java 17 for Android export
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+          log-accepted-android-sdk-licenses: 'false'
+      - name: Install Godot 4.3 Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "cmake;3.10.2.4988404" \
+            "ndk;23.2.8568313"
+      - name: Install Godot 4.3 Android export template
+        shell: bash
+        run: |
+          set -euo pipefail
+          template_dir="$HOME/.local/share/godot/export_templates/4.3.stable"
+          mkdir -p "$template_dir"
+          curl -fL --retry 3 -o /tmp/godot-android-templates.tpz https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz
+          mkdir -p /tmp/godot-android-templates
+          unzip -q /tmp/godot-android-templates.tpz -d /tmp/godot-android-templates
+          install -m 644 /tmp/godot-android-templates/templates/android_debug.apk "$template_dir/android_debug.apk"
+      - name: Export and verify installable Android APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          godot --headless --path . --export-debug "Android" build/LivingTerrarium3D-debug.apk 2>&1 | tee /tmp/godot-android-export.log
+          apk="build/LivingTerrarium3D-debug.apk"
+          test -s "$apk"
+          unzip -tq "$apk"
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$apk" | tee /tmp/livingterrarium-apk-info.txt
+          grep -F "package: name='org.livingterrarium.simulator'" /tmp/livingterrarium-apk-info.txt
+          unzip -Z1 "$apk" | grep -q '^lib/arm64-v8a/'
+      - name: Upload installable Android APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: LivingTerrarium3D-Android-debug-APK
+          path: build/LivingTerrarium3D-debug.apk
+          if-no-files-found: error
       - name: Upload six-angle mantis renders
         if: always()
         uses: actions/upload-artifact@v7
