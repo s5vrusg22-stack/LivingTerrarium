@@ -34,6 +34,9 @@ jobs:
           python tools/generate_mantis_cuticle_texture.py
           blender_pythonpath="$(python -c 'import pathlib, numpy; print(pathlib.Path(numpy.__file__).parent.parent)')"
           env -u LD_LIBRARY_PATH PATH=/usr/bin:/bin PYTHONPATH="$blender_pythonpath" blender --background --python tools/generate_rigged_mantis_blender.py > /tmp/mantis-rig-generation.log 2>&1
+          mkdir -p tools/blender_source
+          touch tools/blender_source/.gdignore
+          rm -f assets/models/mantis_rigged.blend
           if rg -n 'Traceback|ModuleNotFoundError|Error: Python' /tmp/mantis-rig-generation.log; then
             tail -80 /tmp/mantis-rig-generation.log
             exit 1
