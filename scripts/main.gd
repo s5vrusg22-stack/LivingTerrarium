@@ -134,12 +134,12 @@ const RIGGED_MANTIS_SCENE: PackedScene = preload("res://assets/models/mantis_rig
 var rigged_visual: Node3D
 var rigged_player: AnimationPlayer
 var rigged_clip := ""
-var use_rigged_visual := false
+var use_rigged_visual := true
 var rigged_available := false
 var rigged_clips: Dictionary = {}
 var procedural_meshes: Array[MeshInstance3D] = []
 var rigged_import_warnings: Array[String] = []
-var visual_model_scale := 0.26
+var visual_model_scale := 1.0
 # v2.5: runtime rig pose adaptation, applied after the GLB animation player.
 var rigged_pose_driver: RiggedPoseDriver
 var rigged_skeleton: Skeleton3D
@@ -211,8 +211,8 @@ func _ready() -> void:
     _refresh()
 
 func _initialize_rigged_visual() -> void:
-    # The runtime's corrected mint Hierodula model is procedural. Keep the
-    # older imported GLB out of the shipped view until it is regenerated.
+    # Use the photo-guided 61-bone mantis as the default view. Procedural meshes
+    # remain available as a graceful fallback if GLB import or clips fail.
     if not use_rigged_visual:
         return
     # Keep procedural geometry available if GLB import or clip discovery fails.
@@ -225,6 +225,7 @@ func _initialize_rigged_visual() -> void:
     rigged_visual = imported as Node3D
     rigged_visual.name = "RiggedMantisVisual"
     animal.add_child(rigged_visual)
+    _style_rigged_materials(rigged_visual)
     # Both models share the animal-local origin and move with the same AI root.
     rigged_visual.position = Vector3.ZERO
     rigged_visual.rotation = Vector3.ZERO
@@ -262,6 +263,36 @@ func _initialize_rigged_visual() -> void:
             rigged_pose_status = "Skeleton3D missing; clip playback only"
             rigged_import_warnings.append(rigged_pose_status)
         _play_rigged_clip("IDLE")
+
+func _style_rigged_materials(root: Node) -> void:
+    # GLB vertex colors carry the model's species palette. Explicit materials
+    # keep those colors visible and make the thin wings render from both sides.
+    var body_material := StandardMaterial3D.new()
+    body_material.vertex_color_use_as_albedo = true
+    body_material.albedo_color = Color.WHITE
+    body_material.metallic = 0.0
+    body_material.roughness = 0.78
+
+    var wing_material := body_material.duplicate() as StandardMaterial3D
+    wing_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+
+    var hindwing_material := wing_material.duplicate() as StandardMaterial3D
+    hindwing_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    hindwing_material.albedo_color.a = 0.82
+
+    _apply_rigged_materials_recursive(root, body_material, wing_material, hindwing_material)
+
+func _apply_rigged_materials_recursive(root: Node, body_material: StandardMaterial3D, wing_material: StandardMaterial3D, hindwing_material: StandardMaterial3D) -> void:
+    for child in root.get_children():
+        if child is MeshInstance3D:
+            var part := child as MeshInstance3D
+            if part.name.begins_with("Hindwing_"):
+                part.material_override = hindwing_material
+            elif part.name.begins_with("Wing_") or part.name.begins_with("WingVeinDetail_"):
+                part.material_override = wing_material
+            else:
+                part.material_override = body_material
+        _apply_rigged_materials_recursive(child, body_material, wing_material, hindwing_material)
 
 func _collect_procedural_meshes(root: Node) -> void:
     for child in root.get_children():
@@ -608,8 +639,8 @@ func _raycast_foot_height(point: Vector3) -> float:
     return -0.45
 
 func _create_mantis() -> void:
-    # Adult Hierodula-style mantis. This corrected procedural mesh is the
-    # Android default so the shipped app displays the same model as the source.
+    # Procedural Hierodula-style fallback. The photo-guided rigged GLB is the
+    # Android default; these meshes remain for physics and safe import fallback.
     animal = Node3D.new()
     animal.name = "Mantis_01"
     animal.position = Vector3(0, -0.38, 0)
