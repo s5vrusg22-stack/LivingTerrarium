@@ -9,9 +9,11 @@ assert 'zoom_in.text = "+"' in main and 'zoom_out.text = "−"' in main
 assert "func _set_camera_zoom(" in main and "InputEventScreenDrag" in main
 assert all(key in main for key in ["KEY_LEFT", "KEY_RIGHT", "KEY_UP", "KEY_DOWN", "KEY_W", "KEY_A", "KEY_S", "KEY_D"])
 assert "CAMERA_MIN_DISTANCE" in main and "CAMERA_MAX_DISTANCE" in main
-assert "Vector3(6.4, 0.2, 4.8)" in main and "Vector3(6.4, 3.8, 0.06)" in main, "Enclosure should be wide and tall"
+assert "Vector3(7.2, 0.2, 5.2)" in main and "Vector3(7.2, 5.8, 0.06)" in main, "Enclosure should be wide and tall"
+assert "box_shape.size = Vector3(7.2, 0.2, 5.2)" in main
+assert "for y in [-0.53, 5.20]" in main
 assert "animal.scale = Vector3.ONE * (0.42 * (0.90 + growth * 0.30))" in main
-assert "orbit_distance := 6.4" in main and "CAMERA_MAX_DISTANCE := 17.0" in main
+assert "orbit_distance := 9.4" in main and "CAMERA_MAX_DISTANCE := 22.0" in main
 
 assert "for i in range(2):" in main
 assert 'joint.name = "WalkingLeg_%d_%d"' in main
@@ -33,11 +35,14 @@ assert "branch_clusters[branch_rng.randi_range" in main
 assert "litter_clusters[rng.randi_range" in main
 assert "for i in range(56):" in main and "FernFrond_%d" in main
 assert "for i in range(168):" in main
-assert "for vine_index in range(12):" in main
-assert "CLIMB_BODY_CLEARANCE := 0.190" in main and "_walkable_wood(self, climb_branch_start, climb_branch_end, 0.132)" in main
-assert "var roam_pause_time := 1.6" in main and "roam_pause_time = randf_range(1.8, 4.0)" in main
+assert "for vine_index in range(18):" in main
+assert "CLIMB_BODY_CLEARANCE := 0.205" in main and "_walkable_wood(self, climb_branch_start, climb_branch_end, 0.145)" in main
+assert "var roam_pause_time := 2.4" in main and "roam_pause_time = randf_range(2.4, 5.6)" in main
 assert "Vector2(-2.22, -1.46)" in main
 assert "var stations := 24" in main and "for vein_index in range(25):" in main
+assert "func _create_triangular_head_volume(" in main
+assert "climb_midpoint_pause_used" in main
+assert "CLIMB_SPEED := 0.14" in main
 
 assert (root / "scenes/main.tscn").exists()
 assert len(list((root / "assets/textures").glob("*.png"))) >= 15

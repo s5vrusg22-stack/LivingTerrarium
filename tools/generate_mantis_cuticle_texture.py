@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw, ImageFilter
 
 
 ROOT = Path(__file__).resolve().parents[1] / "assets" / "textures"
-SIZE = 512
+SIZE = 1024
 
 
 def periodic_band_noise(size: int, low: float, high: float, seed: int) -> np.ndarray:

@@ -34,3 +34,21 @@ See README_v1.9.md for prey-to-leaf collision approximation, event throttling, a
 
 ## v2.4
 See `README_v2.4.md` for main-scene rigged GLB integration, 30 validation steps, and known limitations.
+
+## Taller habitat and reference mantis detail pass
+
+The adult mantis uses volumetric body meshes with PBR cuticle and wing maps,
+guided by the supplied green mantis photographs. Its tapered triangular head
+has a raised compound-eye line. The abdomen uses a 64 by 48 shell grid, the
+pronotum a 40 by 32 grid, and each wing a 48 by 18 double surface with modeled
+veins. Generated cuticle and wing maps are 1024 px; smaller habitat maps stay
+512 px for mobile memory use.
+
+The enclosure measures 7.2 by 5.8 by 5.2 scene units. A tall climbing trunk
+reaches into the upper canopy, with five branch tiers and 18 curved vines with
+leaves. Roaming uses a slower gait and longer pauses; climbing pauses midway.
+
+Camera controls: drag to orbit, use the mouse wheel to zoom, arrow keys to
+orbit, WASD to pan, Q/E to raise or lower the view, Page Up/Page Down to zoom,
+F to follow the mantis, and Home to reset. On touch screens, drag to orbit and
+pinch to zoom.
