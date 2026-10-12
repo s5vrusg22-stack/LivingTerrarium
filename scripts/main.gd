@@ -1,5 +1,6 @@
 extends Node3D
 
+const CRAYFISH_HABITAT_SCRIPT = preload("res://scripts/blue_crayfish_habitat.gd")
 const SAVE_PATH := "user://terrarium_save_v6.json"
 const BACKUP_PATH := "user://terrarium_save_v6_backup.json"
 const V5_SAVE_PATH := "user://terrarium_save_v5.json"
@@ -17,6 +18,12 @@ var food_count := 0
 var simulation_paused := false
 var behavior := "휴식"
 var animal: Node3D
+var active_species := "mantis"
+var mantis_habitat_root: Node3D
+var blue_crayfish_habitat: BlueCrayfishHabitat
+var world_environment: WorldEnvironment
+var mantis_environment: Environment
+var aquarium_environment: Environment
 var camera: Camera3D
 var status: Label
 var notice: Label
@@ -81,6 +88,10 @@ var prey_alert_radius := 0.43
 var step_height := 0.085
 var stats_visible := true
 var ui_panel: PanelContainer
+var species_picker: OptionButton
+var crayfish_panel: PanelContainer
+var crayfish_status: Label
+var mantis_interactions_enabled := true
 var menu_scroll: ScrollContainer
 var menu_touch_index := -1
 var menu_touch_start := Vector2.ZERO
@@ -200,6 +211,11 @@ func _ready() -> void:
     _create_ui()
     _create_habitat_details()
     _create_animated_ecosystem()
+    _group_mantis_habitat()
+    blue_crayfish_habitat = CRAYFISH_HABITAT_SCRIPT.new()
+    blue_crayfish_habitat.name = "BlueCrayfishHabitat"
+    blue_crayfish_habitat.visible = false
+    add_child(blue_crayfish_habitat)
     habitat_interactions = HabitatInteractions.new()
     habitat_interactions.name = "HabitatInteractions"
     add_child(habitat_interactions)
@@ -208,6 +224,57 @@ func _ready() -> void:
     _sync_prey()
     _update_camera()
     _refresh()
+
+func _group_mantis_habitat() -> void:
+    mantis_habitat_root = Node3D.new()
+    mantis_habitat_root.name = "MantisHabitat"
+    add_child(mantis_habitat_root)
+    for child in get_children():
+        if child is Node3D and child != camera and child != mantis_habitat_root:
+            child.reparent(mantis_habitat_root, true)
+
+
+func _toggle_animal_menu() -> void:
+    stats_visible = not stats_visible
+    _sync_animal_menu()
+
+
+func _sync_animal_menu() -> void:
+    if ui_panel != null:
+        ui_panel.visible = stats_visible and active_species == "mantis"
+    if crayfish_panel != null:
+        crayfish_panel.visible = stats_visible and active_species == "crayfish"
+
+
+func _select_species(index: int) -> void:
+    var use_crayfish := index == 1
+    active_species = "crayfish" if use_crayfish else "mantis"
+    if mantis_habitat_root != null:
+        mantis_habitat_root.visible = not use_crayfish
+    if blue_crayfish_habitat != null:
+        blue_crayfish_habitat.visible = use_crayfish
+    if world_environment != null:
+        world_environment.environment = aquarium_environment if use_crayfish else mantis_environment
+    if habitat_interactions != null:
+        if use_crayfish:
+            mantis_interactions_enabled = habitat_interactions.active
+            habitat_interactions.active = false
+        else:
+            habitat_interactions.active = mantis_interactions_enabled
+    follow_animal = false
+    camera_pan = Vector3.ZERO
+    if use_crayfish:
+        orbit_yaw = 0.58
+        orbit_pitch = 0.34
+        orbit_distance = 7.2
+    else:
+        orbit_yaw = 0.0
+        orbit_pitch = 0.25
+        orbit_distance = 9.4
+    _sync_animal_menu()
+    _update_camera()
+    _refresh()
+
 
 func _initialize_rigged_visual() -> void:
     # The latest photo-guided rig is the only visible mantis model.
@@ -443,15 +510,22 @@ func _create_world() -> void:
     camera.current = true
     camera.fov = 48.0
     add_child(camera)
-    var world := WorldEnvironment.new()
+    world_environment = WorldEnvironment.new()
     var env := Environment.new()
     env.background_mode = Environment.BG_COLOR
     env.background_color = Color(0.065, 0.085, 0.08)
     env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
     env.ambient_light_color = Color(0.7, 0.8, 0.72)
     env.ambient_light_energy = 0.98
-    world.environment = env
-    add_child(world)
+    world_environment.environment = env
+    mantis_environment = env
+    add_child(world_environment)
+    aquarium_environment = Environment.new()
+    aquarium_environment.background_mode = Environment.BG_COLOR
+    aquarium_environment.background_color = Color(0.008, 0.026, 0.037)
+    aquarium_environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+    aquarium_environment.ambient_light_color = Color(0.26, 0.48, 0.56)
+    aquarium_environment.ambient_light_energy = 0.78
     var sun := DirectionalLight3D.new()
     sun.rotation_degrees = Vector3(-55, -25, 0)
     sun.light_energy = 1.48
@@ -1454,13 +1528,39 @@ func _create_ui() -> void:
     toggle.text = "☰ 관리 메뉴"
     toggle.position = Vector2(16, 16)
     toggle.custom_minimum_size = Vector2(160, 52)
-    toggle.pressed.connect(func(): stats_visible = not stats_visible; ui_panel.visible = stats_visible)
+    toggle.pressed.connect(_toggle_animal_menu)
     root_ui.add_child(toggle)
+    species_picker = OptionButton.new()
+    species_picker.position = Vector2(188, 16)
+    species_picker.custom_minimum_size = Vector2(340, 52)
+    species_picker.add_item("사마귀 · 기본 사육장", 0)
+    species_picker.add_item("파란가재 · 바위 틈 굴 수조", 1)
+    species_picker.item_selected.connect(_select_species)
+    root_ui.add_child(species_picker)
     ui_panel = PanelContainer.new()
     ui_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
     ui_panel.position = Vector2(16, 74)
     ui_panel.custom_minimum_size = Vector2(280, 0)
     root_ui.add_child(ui_panel)
+    crayfish_panel = PanelContainer.new()
+    crayfish_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
+    crayfish_panel.position = Vector2(16, 74)
+    crayfish_panel.visible = false
+    root_ui.add_child(crayfish_panel)
+    var crayfish_column := VBoxContainer.new()
+    crayfish_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    crayfish_panel.add_child(crayfish_column)
+    var crayfish_title := Label.new()
+    crayfish_title.text = "LIVING AQUARIUM 3D"
+    crayfish_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    crayfish_column.add_child(crayfish_title)
+    crayfish_status = Label.new()
+    crayfish_status.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    crayfish_column.add_child(crayfish_status)
+    _button(crayfish_column, "먹이로 가재 유도", func(): blue_crayfish_habitat.lure_out(); _refresh())
+    _button(crayfish_column, "바위 틈 굴로 보내기", func(): blue_crayfish_habitat.return_to_burrow(); _refresh())
+    _button(crayfish_column, "여과기 켜기/끄기", func(): blue_crayfish_habitat.toggle_filter(); _refresh())
+    _button(crayfish_column, "일시정지 / 재개", func(): blue_crayfish_habitat.toggle_paused(); _refresh())
     menu_scroll = ScrollContainer.new()
     menu_scroll.custom_minimum_size = Vector2(300, 0)
     menu_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -1511,7 +1611,7 @@ func _create_ui() -> void:
     _button(column, "유목 배치 모드", func(): _set_edit_mode("wood"))
     _button(column, "장식 지우기 모드", func(): _set_edit_mode("erase"))
     _button(column, "편집 종료", func(): editing = false; edit_hint.text = "관찰 모드")
-    _button(column, "UI 숨김/표시", func(): stats_visible = not stats_visible; ui_panel.visible = stats_visible)
+    _button(column, "UI 숨김/표시", func(): _toggle_animal_menu())
     _button(column, "저장", func(): _save_state())
     _button(column, "불러오기", func(): _load_state(true))
     edit_hint = Label.new()
@@ -1558,6 +1658,12 @@ func _resize_ui() -> void:
     var screen := get_viewport().get_visible_rect().size
     ui_panel.position = Vector2(16, 74)
     ui_panel.size = Vector2(minf(320.0, screen.x * 0.68), maxf(100.0, screen.y - 94.0))
+    if crayfish_panel != null:
+        crayfish_panel.position = ui_panel.position
+        crayfish_panel.size = ui_panel.size
+    if species_picker != null:
+        species_picker.position = Vector2(188, 16)
+        species_picker.size = Vector2(maxf(150.0, minf(360.0, screen.x - 204.0)), 52.0)
 
 
 # Reusable simple leaf mesh: six triangles with a raised midrib and pointed tip.
@@ -2260,7 +2366,7 @@ func _set_camera_zoom(distance_delta: float) -> void:
 func _update_camera() -> void:
     if camera == null:
         return
-    var center_base := animal.position + Vector3(0, 0.35, 0) if follow_animal and animal != null else Vector3(0, 2.10, 0)
+    var center_base := Vector3(0.0, 0.86, 0.0) if active_species == "crayfish" else (animal.position + Vector3(0, 0.35, 0) if follow_animal and animal != null else Vector3(0, 2.10, 0))
     var center := center_base + camera_pan
     camera.position = center + Vector3(sin(orbit_yaw) * cos(orbit_pitch), sin(orbit_pitch), cos(orbit_yaw) * cos(orbit_pitch)) * orbit_distance
     camera.look_at(center, Vector3.UP)
@@ -2269,6 +2375,8 @@ func _refresh() -> void:
     if status == null:
         return
     status.text = "온도: %.1f°C | 습도: %.1f%%\n배고픔: %.0f | 체력: %.0f\n스트레스: %.0f | 먹이: %d\n탈피: %d회 | 성장: %.0f%%\n행동: %s%s" % [temperature, humidity, hunger, energy, stress, food_count, molt_count, growth * 100.0, behavior, " (정지)" if simulation_paused else ""]
+    if crayfish_status != null and blue_crayfish_habitat != null:
+        crayfish_status.text = blue_crayfish_habitat.status_text()
 
 func _save_state(show_message: bool = true) -> void:
     var data := {"version": 6, "decorations": decoration_data, "life_age": life_age, "molt_count": molt_count, "growth": growth, "hunger": hunger, "energy": energy, "stress": stress, "humidity": humidity, "temperature": temperature, "food_count": food_count, "prey_positions": _prey_positions(), "animal_position": [animal.position.x, animal.position.y, animal.position.z]}
