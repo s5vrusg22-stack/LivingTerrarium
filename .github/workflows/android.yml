@@ -65,7 +65,7 @@ jobs:
             echo 'Godot reported an application startup error.' >&2
             exit 1
           fi
-      - name: Capture four-angle mantis renders
+      - name: Capture six-angle mantis renders
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
         shell: bash
@@ -73,11 +73,11 @@ jobs:
           set -euo pipefail
           mkdir -p build/model-renders
           xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --audio-driver Dummy --rendering-method gl_compatibility --rendering-driver opengl3 --disable-vsync --script res://tests/render_reference_model.gd
-          test "$(find build/model-renders -maxdepth 1 -name '*.png' | wc -l)" -eq 4
-      - name: Upload four-angle mantis renders
+          test "$(find build/model-renders -maxdepth 1 -name '*.png' | wc -l)" -eq 6
+      - name: Upload six-angle mantis renders
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: LivingTerrarium3D-reference-model-renders
+          name: LivingTerrarium3D-mantis-six-angle-reference-renders
           path: build/model-renders/*.png
           if-no-files-found: warn
