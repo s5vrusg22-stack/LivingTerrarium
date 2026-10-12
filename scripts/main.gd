@@ -106,6 +106,7 @@ var preview_strike_clock := 0.0
 var animation_label: Label
 var model_details: Array[Node3D] = []
 var body_texture: Texture2D
+var wing_texture: Texture2D
 var eye_texture: Texture2D
 var bark_texture: Texture2D
 var substrate_texture: Texture2D
@@ -342,11 +343,12 @@ func _update_rigged_visual(_dt: float) -> void:
 
 func _load_textures() -> void:
     body_texture = load("res://assets/textures/mantis_cuticle_albedo.png")
+    wing_texture = load("res://assets/textures/mantis_wing_albedo.png")
     eye_texture = load("res://assets/textures/mantis_eye_albedo.png")
     bark_texture = load("res://assets/textures/bark_albedo.png")
     substrate_texture = load("res://assets/textures/substrate_albedo.png")
     stone_texture = load("res://assets/textures/stone_albedo.png")
-    for kind in ["mantis_cuticle", "mantis_eye", "bark", "substrate", "stone"]:
+    for kind in ["mantis_cuticle", "mantis_wing", "mantis_eye", "bark", "substrate", "stone"]:
         pbr_normal[kind] = load("res://assets/textures/%s_normal.png" % kind)
         pbr_roughness[kind] = load("res://assets/textures/%s_roughness.png" % kind)
 
@@ -608,9 +610,9 @@ func _create_mantis() -> void:
     animal.position = Vector3(0, -0.38, 0)
     animal.scale = Vector3.ONE * (0.42 * (0.90 + growth * 0.30))
     add_child(animal)
-    var mint := Color(0.42, 0.60, 0.24)
-    var mint_light := Color(0.63, 0.73, 0.38)
-    var mint_shadow := Color(0.24, 0.34, 0.15)
+    var mint := Color(0.48, 0.69, 0.43)
+    var mint_light := Color(0.66, 0.80, 0.57)
+    var mint_shadow := Color(0.28, 0.45, 0.29)
     var eye_color := Color(0.065, 0.12, 0.038)
 
     abdomen = Node3D.new()
@@ -950,15 +952,16 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     var wing_instance := MeshInstance3D.new()
     wing_instance.name = "WingMembrane"
     wing_instance.mesh = wing_mesh
-    var wing_color: Color = Color(0.83, 0.91, 0.68, 0.64) if hindwing else Color(0.62, 0.74, 0.37)
+    var wing_color: Color = Color(0.88, 0.94, 0.78, 0.58) if hindwing else Color(0.67, 0.82, 0.53)
     var wing_material := _material(wing_color)
-    if body_texture != null:
+    if wing_texture != null:
+        wing_material.albedo_texture = wing_texture
+        wing_material.vertex_color_use_as_albedo = true
+        _apply_pbr(wing_material, "mantis_wing")
+    elif body_texture != null:
         wing_material.albedo_texture = body_texture
         wing_material.vertex_color_use_as_albedo = true
-        if pbr_normal.has("mantis_cuticle"):
-            wing_material.normal_enabled = true
-            wing_material.normal_texture = pbr_normal["mantis_cuticle"]
-            wing_material.normal_scale = 0.38
+        _apply_pbr(wing_material, "mantis_cuticle")
     wing_material.cull_mode = BaseMaterial3D.CULL_DISABLED
     if hindwing:
         wing_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -1163,13 +1166,16 @@ func _apply_pbr(mat: StandardMaterial3D, kind: String) -> void:
     if pbr_normal.has(kind):
         mat.normal_enabled = true
         mat.normal_texture = pbr_normal[kind]
-        mat.normal_scale = 0.55 if kind == "mantis_eye" else 0.65
+        mat.normal_scale = 0.55 if kind == "mantis_eye" else (0.38 if kind == "mantis_wing" else 0.65)
     if pbr_roughness.has(kind):
         mat.roughness_texture = pbr_roughness[kind]
         mat.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
     if kind == "mantis_eye":
         mat.metallic = 0.02
         mat.roughness = 0.25
+    elif kind == "mantis_wing":
+        mat.metallic = 0.0
+        mat.roughness = 0.70
     elif kind == "mantis_cuticle":
         mat.metallic = 0.04
         mat.roughness = 0.54
