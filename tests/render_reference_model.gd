@@ -1,10 +1,12 @@
 extends SceneTree
 
 const VIEWS := [
-    {"name": "front", "yaw": PI},
-    {"name": "left", "yaw": PI * 0.5},
-    {"name": "rear", "yaw": 0.0},
-    {"name": "right", "yaw": PI * 1.5},
+    {"name": "front", "dx": 0.0, "dy": 0.0, "dz": -1.0, "ux": 0.0, "uy": 1.0, "uz": 0.0},
+    {"name": "left", "dx": 1.0, "dy": 0.0, "dz": 0.0, "ux": 0.0, "uy": 1.0, "uz": 0.0},
+    {"name": "rear", "dx": 0.0, "dy": 0.0, "dz": 1.0, "ux": 0.0, "uy": 1.0, "uz": 0.0},
+    {"name": "right", "dx": -1.0, "dy": 0.0, "dz": 0.0, "ux": 0.0, "uy": 1.0, "uz": 0.0},
+    {"name": "top", "dx": 0.0, "dy": 1.0, "dz": 0.0, "ux": 0.0, "uy": 0.0, "uz": -1.0},
+    {"name": "bottom", "dx": 0.0, "dy": -1.0, "dz": 0.0, "ux": 0.0, "uy": 0.0, "uz": -1.0},
 ]
 const CAPTURE_WIDTH := 1280.0
 const CAPTURE_HEIGHT := 720.0
@@ -59,8 +61,7 @@ func _capture_reference_views() -> void:
         quit(1)
         return
 
-    # Reference shots isolate the insect so plants, trunks, prey, and glass
-    # cannot obscure the anatomy or distort the camera framing.
+    # Reference shots isolate the insect so habitat geometry cannot obscure anatomy.
     for child in app.get_children():
         if child == app.animal or child == app.camera or child is WorldEnvironment or child is Light3D:
             continue
@@ -80,16 +81,16 @@ func _capture_reference_views() -> void:
         quit(1)
         return
     world_environment.environment.background_mode = Environment.BG_COLOR
-    world_environment.environment.background_color = Color(0.075, 0.090, 0.085)
+    world_environment.environment.background_color = Color(0.12, 0.14, 0.13)
     world_environment.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
     world_environment.environment.ambient_light_color = Color(0.78, 0.80, 0.76)
-    world_environment.environment.ambient_light_energy = 0.72
+    world_environment.environment.ambient_light_energy = 0.55
 
     var key_found := false
     for child in app.get_children():
         if child is DirectionalLight3D:
             var key := child as DirectionalLight3D
-            key.light_energy = 1.12
+            key.light_energy = 0.90
             key.rotation_degrees = Vector3(-42.0, -28.0, 0.0)
             key.shadow_enabled = true
             key_found = true
@@ -101,7 +102,7 @@ func _capture_reference_views() -> void:
     var fill := DirectionalLight3D.new()
     fill.name = "ReferenceFillLight"
     fill.rotation_degrees = Vector3(-28.0, 148.0, 0.0)
-    fill.light_energy = 0.42
+    fill.light_energy = 0.28
     fill.shadow_enabled = false
     app.add_child(fill)
 
@@ -109,23 +110,24 @@ func _capture_reference_views() -> void:
     var floor := MeshInstance3D.new()
     floor.name = "ReferenceStudioFloor"
     var floor_mesh := PlaneMesh.new()
-    floor_mesh.size = Vector2(10.0, 10.0)
+    floor_mesh.size = Vector2(200.0, 200.0)
     floor.mesh = floor_mesh
     floor.position = Vector3(center.x, bounds.position.y - 0.025, center.z)
     var floor_material := StandardMaterial3D.new()
-    floor_material.albedo_color = Color(0.16, 0.18, 0.17)
-    floor_material.roughness = 0.92
+    floor_material.albedo_color = Color(0.20, 0.22, 0.20)
+    floor_material.roughness = 0.96
     floor.material_override = floor_material
     floor.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
     app.add_child(floor)
 
-    app.camera.fov = 35.0
+    app.camera.projection = Camera3D.PROJECTION_ORTHOGONAL
     app.camera.near = 0.02
-    app.camera.far = 40.0
+    app.camera.far = maxf(40.0, bounds.size.length() * 4.0)
     app.camera.current = true
-    var half_vertical_fov := deg_to_rad(app.camera.fov) * 0.5
-    var half_horizontal_fov := atan(tan(half_vertical_fov) * CAPTURE_WIDTH / CAPTURE_HEIGHT)
-    var framing_fill := 0.80
+
+    var center_to_camera := maxf(bounds.size.length() * 1.8, 1.0)
+    var aspect := CAPTURE_WIDTH / CAPTURE_HEIGHT
+    var framing_fill := 0.82
 
     var output_dir := OS.get_environment("GITHUB_WORKSPACE").path_join("build/model-renders")
     if OS.get_environment("GITHUB_WORKSPACE").is_empty():
@@ -137,16 +139,16 @@ func _capture_reference_views() -> void:
         return
 
     for view in VIEWS:
-        var yaw := float(view["yaw"])
-        var pitch := 0.10
-        var horizontal_right := Vector3(cos(yaw), 0.0, -sin(yaw))
-        var horizontal_extent := absf(horizontal_right.x) * bounds.size.x + absf(horizontal_right.z) * bounds.size.z
-        var vertical_distance := bounds.size.y / (2.0 * tan(half_vertical_fov) * framing_fill)
-        var horizontal_distance := horizontal_extent / (2.0 * tan(half_horizontal_fov) * framing_fill)
-        var distance := maxf(maxf(vertical_distance, horizontal_distance), 0.36)
-        var direction := Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch))
-        app.camera.position = center + direction * distance
-        app.camera.look_at(center, Vector3.UP)
+        var camera_direction := Vector3(float(view["dx"]), float(view["dy"]), float(view["dz"])).normalized()
+        var up_hint := Vector3(float(view["ux"]), float(view["uy"]), float(view["uz"])).normalized()
+        var forward := -camera_direction
+        var right_axis := forward.cross(up_hint).normalized()
+        var screen_up := right_axis.cross(forward).normalized()
+        var projected_width := absf(right_axis.x) * bounds.size.x + absf(right_axis.y) * bounds.size.y + absf(right_axis.z) * bounds.size.z
+        var projected_height := absf(screen_up.x) * bounds.size.x + absf(screen_up.y) * bounds.size.y + absf(screen_up.z) * bounds.size.z
+        app.camera.size = maxf(projected_height, projected_width / aspect) / framing_fill
+        app.camera.position = center + camera_direction * center_to_camera
+        app.camera.look_at(center, up_hint)
         for _frame in range(6):
             await process_frame
 
