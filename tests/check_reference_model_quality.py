@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from PIL import Image
+
 root = Path(__file__).resolve().parents[1]
 main = (root / "scripts/main.gd").read_text()
 project = (root / "project.godot").read_text()
@@ -15,6 +17,10 @@ assert "var surface_size: int = (longitudinal_steps + 1) * row_width" in main
 assert "indices.append_array(PackedInt32Array([a, d, b, d, c, b]))" in main
 assert "func _create_wing_veins(" in main
 assert "material.vertex_color_use_as_albedo = true" in main
+assert 'wing_texture = load("res://assets/textures/mantis_wing_albedo.png")' in main
+assert '_apply_pbr(wing_material, "mantis_wing")' in main
+assert '"mantis_wing"' in main
+assert "Color(0.67, 0.82, 0.53)" in main
 assert "CLIMB_BODY_CLEARANCE := 0.190" in main
 assert "_walkable_wood(self, climb_branch_start, climb_branch_end, 0.132)" in main
 assert "var roam_pause_time := 1.6" in main
@@ -34,4 +40,12 @@ wing_vertices = 2 * (32 + 1) * (12 + 1)
 assert wing_vertices == 858
 prothorax_vertices = (32 + 1) * (24 + 1)
 assert prothorax_vertices == 825
-print(f"Reference model source checks passed: {abdomen_vertices} abdomen vertices, {prothorax_vertices} pronotum vertices, and {wing_vertices} vertices per wing.")
+
+texture_dir = root / "assets/textures"
+for map_name in ["albedo", "normal", "roughness"]:
+    texture_path = texture_dir / f"mantis_wing_{map_name}.png"
+    with Image.open(texture_path) as texture:
+        assert texture.size == (512, 512)
+        assert texture.mode in ("RGB", "L")
+assert "build_wing_maps()" in (root / "tools/generate_mantis_cuticle_texture.py").read_text()
+print(f"Reference model checks passed: {abdomen_vertices} abdomen vertices, {prothorax_vertices} pronotum vertices, {wing_vertices} vertices per wing, and three 512px wing maps.")
