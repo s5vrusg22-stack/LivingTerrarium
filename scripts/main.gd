@@ -273,6 +273,7 @@ func _initialize_rigged_visual() -> void:
     var imported := LATEST_MANTIS_SCENE.instantiate()
     if not imported is Node3D:
         rigged_import_warnings.append("GLB root is not Node3D")
+        print("Mantis rig initialization failed: ", rigged_import_warnings.back())
         return
     rigged_visual = imported as Node3D
     rigged_visual.name = "RiggedMantisVisual"
@@ -285,6 +286,7 @@ func _initialize_rigged_visual() -> void:
     rigged_player = _find_rigged_player(rigged_visual)
     if rigged_player == null:
         rigged_import_warnings.append("No AnimationPlayer found in imported GLB")
+        print("Mantis rig initialization failed: ", rigged_import_warnings.back())
         rigged_visual.visible = false
         return
     for library_name in rigged_player.get_animation_library_list():
@@ -304,8 +306,9 @@ func _initialize_rigged_visual() -> void:
             required_clips_present = false
             break
     var required_bones_present := _has_latest_model_bones(rigged_skeleton)
+    var model_path_matches := LATEST_MANTIS_SCENE.resource_path == LATEST_MODEL_LOCK
     rigged_available = (
-        LATEST_MANTIS_SCENE.resource_path == LATEST_MODEL_LOCK
+        model_path_matches
         and rigged_clips.size() >= LATEST_MODEL_MIN_CLIPS
         and required_clips_present
         and rigged_skeleton != null
@@ -314,7 +317,8 @@ func _initialize_rigged_visual() -> void:
         and model_mesh_count >= LATEST_MODEL_MIN_MESHES
     )
     if not rigged_available:
-        rigged_import_warnings.append("Latest model contract failed: meshes=%d bones=%d clips=%d required_clips=%s required_bones=%s" % [model_mesh_count, rigged_skeleton.get_bone_count() if rigged_skeleton != null else 0, rigged_clips.size(), str(required_clips_present), str(required_bones_present)])
+        rigged_import_warnings.append("Latest model contract failed: path_matches=%s meshes=%d bones=%d clips=%d required_clips=%s required_bones=%s" % [str(model_path_matches), model_mesh_count, rigged_skeleton.get_bone_count() if rigged_skeleton != null else 0, rigged_clips.size(), str(required_clips_present), str(required_bones_present)])
+        print("Mantis rig initialization failed: ", rigged_import_warnings.back())
         rigged_visual.visible = false
     _apply_visual_mode()
     if rigged_available:
