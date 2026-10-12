@@ -160,23 +160,21 @@ for side,letter in [(-1,'L'),(1,'R')]:
         bone(joint_bone,coxa,knee,coxa_bone)
         bone(tibia_bone,knee,ankle,joint_bone)
         bone(foot_bone,ankle,toe,tibia_bone)
-        # Keep the legacy third walking chain for rig-contract compatibility;
-        # mantises have two walking pairs plus the raptorial pair, so L2/R2
-        # intentionally carry no visible leg meshes.
-        if index == 2:
-            continue
-        rod(prefix+' coxa',hip,coxa,.021,.016,shell,coxa_bone)
-        rod(prefix+' femur',coxa,knee,.023,.012,light,joint_bone)
-        rod(prefix+' tibia',knee,ankle,.011,.005,shell,tibia_bone)
+        # Name the canonical leg segments explicitly so Godot's visual check
+        # can confirm both retained pairs and the hidden redundant third pair.
+        rod(f'Coxa_{letter}{index}',hip,coxa,.021,.016,shell,coxa_bone)
+        rod(f'Joint_{letter}{index}',coxa,knee,.023,.012,light,joint_bone)
+        rod(f'Tibia_{letter}{index}',knee,ankle,.011,.005,shell,tibia_bone)
         for tarsomere in range(5):
             t0=tarsomere/5; t1=(tarsomere+1)/5
             start=Vector(ankle).lerp(Vector(toe),t0)
             end=Vector(ankle).lerp(Vector(toe),t1)
-            rod(prefix+' tarsomere %02d'%tarsomere,start,end,.005-tarsomere*.00045,.003,olive,foot_bone)
-        for claw_side in (-1,1):
+            name = f'Foot_{letter}{index}' if tarsomere == 0 else f'Tarsomere_{letter}{index}_{tarsomere:02d}'
+            rod(name,start,end,.005-tarsomere*.00045,.003,olive,foot_bone)
+        for claw_index, claw_side in enumerate((-1,1)):
             claw_end=(toe[0]+side*.018+claw_side*.006,toe[1]+.012,toe[2]+.006)
-            rod(prefix+' paired claw',toe,claw_end,.0028,.0007,light,foot_bone)
-        ellipsoid(prefix+' knee',(knee),(.019,.019,.019),olive,joint_bone)
+            rod(f'TarsalClaw_{letter}{index}_{claw_index}',toe,claw_end,.0028,.0007,light,foot_bone)
+        ellipsoid(f'Knee_{letter}{index}',(knee),(.019,.019,.019),olive,joint_bone)
     # Raptorial foreleg with movable coxa, spined femur, folding tibia.
     prefix='Rig_Fore_'+letter
     a=(side*.052,-.46,.31); b=(side*.16,-.53,.37)
@@ -187,10 +185,10 @@ for side,letter in [(-1,'L'),(1,'R')]:
     bone(femur_bone,b,c,coxa_bone)
     bone(tibia_bone,c,d,femur_bone)
     bone(foot_bone,d,e,tibia_bone)
-    rod(prefix+' coxa',a,b,.022,.018,shell,coxa_bone)
-    rod(prefix+' femur',b,c,.044,.023,light,femur_bone)
-    rod(prefix+' tibia',c,d,.024,.006,shell,tibia_bone)
-    rod(prefix+' tarsus',d,e,.007,.001,olive,foot_bone)
+    rod('ForeCoxa_'+letter,a,b,.022,.018,shell,coxa_bone)
+    rod('ForeFemur_'+letter,b,c,.044,.023,light,femur_bone)
+    rod('ForeTibia_'+letter,c,d,.024,.006,shell,tibia_bone)
+    rod('ForeFoot_'+letter,d,e,.007,.001,olive,foot_bone)
     for j in range(9):
         t=(j+1)/10
         base=Vector(b).lerp(Vector(c),t)
