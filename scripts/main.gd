@@ -2120,8 +2120,8 @@ func _button(parent: VBoxContainer, label_text: String, callback: Callable) -> v
 
 func _process(delta: float) -> void:
     if rigged_player != null and rigged_available:
-        rigged_player.speed_scale = 0.0 if simulation_paused else 1.0
-    if simulation_paused:
+        rigged_player.speed_scale = 0.0 if simulation_paused or active_species == "crayfish" else 1.0
+    if simulation_paused or active_species == "crayfish":
         return
     var dt := minf(delta, 0.1)
     elapsed += dt
