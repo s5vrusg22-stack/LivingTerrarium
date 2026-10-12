@@ -1,13 +1,13 @@
-name: Build Android APK
+name: Validate Godot 4.3 project
 on:
   workflow_dispatch:
   push:
     branches: [main]
 
 jobs:
-  build:
+  validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 25
     permissions:
       contents: read
     steps:
@@ -15,51 +15,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Generate mantis cuticle PBR maps
+      - name: Generate and validate mantis textures
         run: |
           python -m pip install --disable-pip-version-check numpy pillow
           python tools/generate_mantis_cuticle_texture.py
-      - name: Run photo-reference model and texture checks
-        run: python tests/check_reference_model_quality.py
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - name: Install Godot 4.3 and export templates
+          python tests/check_reference_model_quality.py
+          python tests/check_project.py
+      - name: Install Godot 4.3
         shell: bash
         run: |
           set -euo pipefail
           curl -fL --retry 3 -o /tmp/godot.zip https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
           unzip -q /tmp/godot.zip -d /tmp
           sudo install -m 755 /tmp/Godot_v4.3-stable_linux.x86_64 /usr/local/bin/godot
-          curl -fL --retry 3 -o /tmp/templates.tpz https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz
-          mkdir -p /tmp/godot_templates "$HOME/.local/share/godot/export_templates/4.3.stable"
-          unzip -q /tmp/templates.tpz -d /tmp/godot_templates
-          cp -a /tmp/godot_templates/templates/. "$HOME/.local/share/godot/export_templates/4.3.stable/"
           godot --headless --version
-      - name: Configure Android SDK and debug keystore
-        shell: bash
-        run: |
-          set -euo pipefail
-          : "${ANDROID_HOME:?Android SDK not present on runner}"
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0' 'cmake;3.10.2.4988404' 'ndk;23.2.8568313'
-          keytool -genkeypair -noprompt -keystore "$HOME/debug.keystore" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=Android Debug,O=Android,C=US'
-          mkdir -p "$HOME/.config/godot"
-          cat > "$HOME/.config/godot/editor_settings-4.3.tres" <<SETTINGS
-          [gd_resource type="EditorSettings" format=3]
-          [resource]
-          export/android/android_sdk_path = "$ANDROID_HOME"
-          export/android/java_sdk_path = "$JAVA_HOME"
-          export/android/debug_keystore = "$HOME/debug.keystore"
-          export/android/debug_keystore_user = "androiddebugkey"
-          export/android/debug_keystore_pass = "android"
-          SETTINGS
-          test -x "$JAVA_HOME/bin/java"
-          test -x "$ANDROID_HOME/platform-tools/adb"
-          test -x "$ANDROID_HOME/build-tools/34.0.0/apksigner"
-          test -f "$HOME/debug.keystore"
-          test -f "$HOME/.local/share/godot/export_templates/4.3.stable/android_debug.apk"
       - name: Import project and reject script parse errors
         shell: bash
         run: |
@@ -69,6 +38,15 @@ jobs:
             echo 'Godot reported a script import or parse error.' >&2
             exit 1
           fi
+      - name: Compile every GDScript file
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' script; do
+            relative_path=${script#./}
+            echo "Checking ${relative_path}"
+            godot --headless --path . --check-only --script "res://${relative_path}"
+          done < <(find . -type f -name '*.gd' -not -path './.godot/*' -print0 | sort -z)
       - name: Smoke test the startup scene
         shell: bash
         run: |
@@ -95,21 +73,4 @@ jobs:
         with:
           name: LivingTerrarium3D-reference-model-renders
           path: build/model-renders/*.png
-          if-no-files-found: warn
-      - name: Export Android debug APK
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p build
-          godot --headless --verbose --path . --export-debug Android build/LivingTerrarium3D-debug.apk
-          test -s build/LivingTerrarium3D-debug.apk
-          sha256sum build/LivingTerrarium3D-debug.apk > build/SHA256SUMS.txt
-      - name: Upload APK and checksum
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: LivingTerrarium3D-debug-apk
-          path: |
-            build/LivingTerrarium3D-debug.apk
-            build/SHA256SUMS.txt
           if-no-files-found: warn
