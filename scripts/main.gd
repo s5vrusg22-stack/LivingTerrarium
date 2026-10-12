@@ -22,19 +22,23 @@ var status: Label
 var notice: Label
 var orbit_yaw := 0.0
 var orbit_pitch := 0.25
-var orbit_distance := 5.3
+var orbit_distance := 6.4
+var camera_pan := Vector3.ZERO
 const CAMERA_MIN_DISTANCE := 0.65
-const CAMERA_MAX_DISTANCE := 13.0
-const WALK_BOUND_X := 2.18
-const WALK_BOUND_Z := 1.42
-const PREY_BOUND_X := 2.36
-const PREY_BOUND_Z := 1.68
+const CAMERA_MAX_DISTANCE := 17.0
+const WALK_BOUND_X := 2.82
+const WALK_BOUND_Z := 1.96
+const PREY_BOUND_X := 3.02
+const PREY_BOUND_Z := 2.20
 var pointer_last := Vector2.ZERO
 var touching := false
 var touch_points: Dictionary = {}
 var pinch_previous := 0.0
 var roam_target := Vector3.ZERO
 var roam_time := 0.0
+var roam_target_valid := false
+var roam_pause_time := 1.6
+var roam_speed := 0.0
 var elapsed := 0.0
 var legs: Array[Node3D] = []
 var antennae: Array[Node3D] = []
@@ -59,6 +63,7 @@ var gait_segments: Array = []
 var gait_feet: Array[Vector3] = []
 var abdomen: Node3D
 var prey_velocities: Dictionary = {}
+var prey_pause_timers: Dictionary = {}
 var molting := false
 var decorations: Array[Node3D] = []
 var decoration_data: Array = []
@@ -145,8 +150,8 @@ var climb_progress := 0.0
 var climb_cooldown := 18.0
 var climb_branch_start := Vector3(-0.48, -0.48, 0.62)
 var climb_branch_end := Vector3(-0.18, 0.92, 0.38)
-const CLIMB_SPEED := 0.18
-const CLIMB_BODY_CLEARANCE := 0.065
+const CLIMB_SPEED := 0.21
+const CLIMB_BODY_CLEARANCE := 0.190
 var climb_direction := 1.0
 var climb_pause := 0.0
 var flight_demo_clock := 0.0
@@ -364,25 +369,24 @@ func _create_world() -> void:
     sun.light_energy = 1.48
     sun.shadow_enabled = true
     add_child(sun)
-    # The enclosure grows around the existing animal scale. Keep the mantis
-    # model's transform unchanged while giving it a roomy, layered habitat.
-    _box(Vector3(5.2, 0.2, 3.8), Vector3(0, -0.65, 0), Color(0.23, 0.15, 0.09))
-    _box(Vector3(5.2, 2.7, 0.06), Vector3(0, 0.80, -1.92), Color(0.13, 0.19, 0.16, 0.42), true)
-    _box(Vector3(5.08, 2.64, 0.035), Vector3(0, 0.80, -1.875), Color(0.66, 0.72, 0.48))
-    _box(Vector3(0.05, 2.7, 3.8), Vector3(-2.62, 0.80, 0), Color(0.5, 0.7, 0.7, 0.12), true)
-    _box(Vector3(0.05, 2.7, 3.8), Vector3(2.62, 0.80, 0), Color(0.5, 0.7, 0.7, 0.12), true)
+    # Tall, wide enclosure gives adult mantids room to climb and hold a high perch.
+    _box(Vector3(6.4, 0.2, 4.8), Vector3(0, -0.65, 0), Color(0.23, 0.15, 0.09))
+    _box(Vector3(6.4, 3.8, 0.06), Vector3(0, 1.35, -2.42), Color(0.13, 0.19, 0.16, 0.42), true)
+    _box(Vector3(6.24, 3.70, 0.035), Vector3(0, 1.35, -2.375), Color(0.66, 0.72, 0.48))
+    _box(Vector3(0.05, 3.8, 4.8), Vector3(-3.22, 1.35, 0), Color(0.5, 0.7, 0.7, 0.12), true)
+    _box(Vector3(0.05, 3.8, 4.8), Vector3(3.22, 1.35, 0), Color(0.5, 0.7, 0.7, 0.12), true)
     var branch_rng := RandomNumberGenerator.new()
     branch_rng.seed = 9182026
     var branch_clusters: Array[Vector2] = [Vector2(-2.22, -1.42), Vector2(-2.30, -0.60), Vector2(-2.16, 0.42), Vector2(-1.82, 1.48), Vector2(-0.92, 1.48), Vector2(0.88, 1.48), Vector2(1.88, 1.40), Vector2(2.24, 0.63), Vector2(2.28, -0.42), Vector2(1.92, -1.42), Vector2(0.74, -1.48), Vector2(-0.84, -1.45)]
     # A crooked, buttressed tree line builds a deep forest edge and canopy;
     # the center stays open enough to watch the mantis move and feed.
-    var trunk_sites: Array[Vector2] = [Vector2(-2.28, -1.47), Vector2(-1.70, -1.57), Vector2(-0.95, -1.60), Vector2(0.10, -1.62), Vector2(1.22, -1.58), Vector2(2.18, -1.43), Vector2(-2.30, -0.44), Vector2(-2.25, 0.72), Vector2(-1.88, 1.48), Vector2(1.84, 1.48), Vector2(2.28, 0.69), Vector2(2.25, -0.65)]
+    var trunk_sites: Array[Vector2] = [Vector2(-2.28, -1.47), Vector2(-1.70, -1.57), Vector2(-0.95, -1.60), Vector2(0.10, -1.62), Vector2(1.22, -1.58), Vector2(2.18, -1.43), Vector2(-2.30, -0.44), Vector2(-2.25, 0.72), Vector2(-1.88, 1.48), Vector2(1.84, 1.48), Vector2(2.28, 0.69), Vector2(2.25, -0.65), Vector2(-2.84, -1.83), Vector2(-2.86, -0.24), Vector2(-2.82, 1.58), Vector2(2.83, -1.80), Vector2(2.88, -0.26), Vector2(2.82, 1.72)]
     for i in range(trunk_sites.size()):
         var site: Vector2 = trunk_sites[i]
         var start := Vector3(site.x + branch_rng.randf_range(-0.13, 0.13), -0.53, site.y + branch_rng.randf_range(-0.12, 0.12))
         var bend := Vector3(branch_rng.randf_range(-0.28, 0.28), branch_rng.randf_range(0.50, 0.85), branch_rng.randf_range(-0.20, 0.20))
         var mid := start + bend
-        var top := Vector3(clampf(mid.x + branch_rng.randf_range(-0.34, 0.34), -2.38, 2.38), branch_rng.randf_range(1.25, 1.94), clampf(mid.z + branch_rng.randf_range(-0.30, 0.30), -1.75, 1.72))
+        var top := Vector3(clampf(mid.x + branch_rng.randf_range(-0.34, 0.34), -2.98, 2.98), branch_rng.randf_range(2.15, 2.82), clampf(mid.z + branch_rng.randf_range(-0.30, 0.30), -2.22, 2.22))
         var trunk_radius := branch_rng.randf_range(0.115, 0.17)
         _tapered_branch(start, mid, trunk_radius, trunk_radius * 0.70)
         _tapered_branch(mid, top, trunk_radius * 0.72, branch_rng.randf_range(0.035, 0.060))
@@ -390,38 +394,69 @@ func _create_world() -> void:
         # a regular row of thin upright poles.
         for root_index in range(branch_rng.randi_range(3, 5)):
             var angle := float(root_index) * TAU / 3.0 + branch_rng.randf_range(-0.3, 0.3)
-            var root_end := Vector3(clampf(start.x + cos(angle) * branch_rng.randf_range(0.22, 0.38), -2.46, 2.46), -0.485, clampf(start.z + sin(angle) * branch_rng.randf_range(0.20, 0.37), -1.72, 1.72))
+            var root_end := Vector3(clampf(start.x + cos(angle) * branch_rng.randf_range(0.22, 0.38), -3.0, 3.0), -0.485, clampf(start.z + sin(angle) * branch_rng.randf_range(0.20, 0.37), -2.25, 2.25))
             _tapered_branch(root_end, start + Vector3(0.0, 0.08, 0.0), 0.025, trunk_radius * 0.48)
         var fork_count := branch_rng.randi_range(3, 5)
         for fork_index in range(fork_count):
             var fork_start := start.lerp(top, branch_rng.randf_range(0.48, 0.90))
-            var fork_end := Vector3(clampf(fork_start.x + branch_rng.randf_range(-0.56, 0.56), -2.43, 2.43), minf(2.04, fork_start.y + branch_rng.randf_range(0.22, 0.55)), clampf(fork_start.z + branch_rng.randf_range(-0.48, 0.48), -1.78, 1.78))
+            var fork_end := Vector3(clampf(fork_start.x + branch_rng.randf_range(-0.56, 0.56), -3.0, 3.0), minf(3.12, fork_start.y + branch_rng.randf_range(0.32, 0.76)), clampf(fork_start.z + branch_rng.randf_range(-0.48, 0.48), -2.25, 2.25))
             _tapered_branch(fork_start, fork_end, branch_rng.randf_range(0.040, 0.070), branch_rng.randf_range(0.012, 0.022))
     # Fallen wood is scattered among the planted edges and leaf litter.
     for i in range(18):
         var cluster: Vector2 = branch_clusters[branch_rng.randi_range(0, branch_clusters.size() - 1)]
         var start := Vector3(cluster.x + branch_rng.randf_range(-0.24, 0.24), -0.49, cluster.y + branch_rng.randf_range(-0.22, 0.22))
-        var end := Vector3(clampf(start.x + branch_rng.randf_range(-0.56, 0.56), -2.46, 2.46), start.y + branch_rng.randf_range(0.04, 0.26), clampf(start.z + branch_rng.randf_range(-0.48, 0.48), -1.72, 1.72))
+        var end := Vector3(clampf(start.x + branch_rng.randf_range(-0.56, 0.56), -3.0, 3.0), start.y + branch_rng.randf_range(0.04, 0.26), clampf(start.z + branch_rng.randf_range(-0.48, 0.48), -2.25, 2.25))
         _tapered_branch(start, end, branch_rng.randf_range(0.050, 0.085), branch_rng.randf_range(0.016, 0.030))
     for i in range(88):
         var rock_cluster: Vector2 = branch_clusters[branch_rng.randi_range(0, branch_clusters.size() - 1)]
-        var p := Vector3(clampf(rock_cluster.x + branch_rng.randf_range(-0.38, 0.38), -2.46, 2.46), -0.49, clampf(rock_cluster.y + branch_rng.randf_range(-0.34, 0.34), -1.72, 1.72))
+        var p := Vector3(clampf(rock_cluster.x + branch_rng.randf_range(-0.38, 0.38), -3.0, 3.0), -0.49, clampf(rock_cluster.y + branch_rng.randf_range(-0.34, 0.34), -2.25, 2.25))
         var pebble_size: Vector3 = Vector3(branch_rng.randf_range(0.040, 0.105), branch_rng.randf_range(0.014, 0.039), branch_rng.randf_range(0.035, 0.095))
         var pebble_color: Color = Color(0.19, 0.23, 0.18).lerp(Color(0.39, 0.34, 0.25), branch_rng.randf())
         _ellipsoid(p, pebble_size, pebble_color)
     for i in range(24):
         var cluster: Vector2 = branch_clusters[branch_rng.randi_range(0, branch_clusters.size() - 1)]
-        var rock_pos := Vector3(clampf(cluster.x + branch_rng.randf_range(-0.30, 0.30), -2.46, 2.46), -0.49, clampf(cluster.y + branch_rng.randf_range(-0.28, 0.28), -1.72, 1.72))
+        var rock_pos := Vector3(clampf(cluster.x + branch_rng.randf_range(-0.30, 0.30), -3.0, 3.0), -0.49, clampf(cluster.y + branch_rng.randf_range(-0.28, 0.28), -2.25, 2.25))
         var rock_size := Vector3(branch_rng.randf_range(0.12, 0.24), branch_rng.randf_range(0.045, 0.12), branch_rng.randf_range(0.10, 0.22))
         _ellipsoid(rock_pos, rock_size, Color(0.19, 0.25, 0.19).lerp(Color(0.42, 0.36, 0.27), branch_rng.randf()))
 
 func _create_climbable_branch() -> void:
-    # A substantial inclined trunk branch gives the feet a real surface to grip.
-    # Its matching collider keeps the climb pose attached to the wood.
-    _tapered_branch(climb_branch_start, climb_branch_end, 0.074, 0.048)
-    var fork_start := climb_branch_start.lerp(climb_branch_end, 0.61)
-    _tapered_branch(fork_start, fork_start + Vector3(0.34, 0.38, -0.16), 0.034, 0.012)
-    _walkable_wood(self, climb_branch_start, climb_branch_end, 0.068)
+    # A tall, slightly leaning trunk has a continuous collider so the animal
+    # can grip the bark all the way into the upper canopy.
+    climb_branch_start = Vector3(-0.72, -0.48, -0.54)
+    climb_branch_end = Vector3(-0.38, 2.92, -0.22)
+    _tapered_branch(climb_branch_start, climb_branch_end, 0.145, 0.078)
+    var fork_levels := [0.34, 0.57, 0.79]
+    for i in range(fork_levels.size()):
+        var t: float = fork_levels[i]
+        var fork_start := climb_branch_start.lerp(climb_branch_end, t)
+        var side: float = -1.0 if i % 2 == 0 else 1.0
+        var fork_end := fork_start + Vector3(side * (0.52 + 0.11 * float(i)), 0.42 + 0.10 * float(i), -0.22)
+        _tapered_branch(fork_start, fork_end, 0.058 - float(i) * 0.006, 0.014)
+        var twig_start := fork_start.lerp(fork_end, 0.58)
+        _tapered_branch(twig_start, twig_start + Vector3(side * 0.31, 0.23, 0.08), 0.026, 0.008)
+    _walkable_wood(self, climb_branch_start, climb_branch_end, 0.132)
+    var canopy_leaf_mesh := _leaf_mesh()
+    var canopy_leaf_material := _material(Color(0.28, 0.48, 0.20))
+    canopy_leaf_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    canopy_leaf_material.vertex_color_use_as_albedo = true
+    canopy_leaf_material.roughness = 0.82
+    for i in range(12):
+        var t: float = 0.26 + float(floori(float(i) / 2.0)) * 0.115
+        var side: float = -1.0 if i % 2 == 0 else 1.0
+        var leaf_joint := Node3D.new()
+        leaf_joint.name = "HighPerchLeaf_%02d" % i
+        leaf_joint.position = climb_branch_start.lerp(climb_branch_end, minf(t, 0.92)) + Vector3(side * 0.10, 0.015, 0.0)
+        leaf_joint.rotation = Vector3(-0.30, side * (0.55 + float(i % 3) * 0.40), side * 0.10)
+        var leaf := MeshInstance3D.new()
+        leaf.mesh = canopy_leaf_mesh
+        leaf.material_override = canopy_leaf_material
+        leaf.scale = Vector3(1.15, 0.90, 1.75)
+        leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        leaf_joint.add_child(leaf)
+        add_child(leaf_joint)
+        plant_pivots.append(leaf_joint)
+        plant_phases.append(float(i) * 0.71)
+        plant_stiffness.append(0.62)
 
 func _advance_climb(dt: float, force_demo: bool = false) -> void:
     if not climb_active:
@@ -460,13 +495,15 @@ func _advance_climb(dt: float, force_demo: bool = false) -> void:
     behavior = "가지에 매달림" if climb_pause > 0.0 else "나뭇가지 등반"
     if climb_direction > 0.0 and climb_progress >= 1.0 and animal.position.distance_to(target) < 0.035:
         climb_direction = -1.0
-        climb_pause = 0.8
+        climb_pause = randf_range(2.0, 3.6)
     elif climb_direction < 0.0 and climb_progress <= 0.0 and animal.position.distance_to(target) < 0.045:
         climb_active = false
         climb_cooldown = 38.0
         animal.position = Vector3(climb_branch_start.x, -0.38, climb_branch_start.z)
         animal.quaternion = Quaternion.IDENTITY
         roam_target = Vector3(climb_branch_start.x, -0.38, climb_branch_start.z)
+        roam_target_valid = false
+        roam_pause_time = 1.2
         roam_time = 0.0
         if animation_preview == "CLIMB":
             animation_preview = "AUTO"
@@ -480,8 +517,8 @@ func _advance_flight(dt: float) -> void:
     var glide_time := maxf(0.0, flight_demo_clock - FLIGHT_TAKEOFF_DURATION)
     # A short forward-and-up launch avoids the old straight vertical lift.
     var target := flight_start_position + Vector3(0.0, 0.62 * launch_ease, -0.16 * launch_ease)
-    var x_extent: float = minf(0.42, maxf(0.0, 2.08 - absf(flight_start_position.x)))
-    var z_extent: float = minf(0.58, maxf(0.0, 1.32 - absf(flight_start_position.z)))
+    var x_extent: float = minf(0.56, maxf(0.0, 2.78 - absf(flight_start_position.x)))
+    var z_extent: float = minf(0.76, maxf(0.0, 1.92 - absf(flight_start_position.z)))
     var dx := 0.0
     var dz := -0.18 - z_extent * 0.56
     if glide_time > 0.0:
@@ -515,7 +552,7 @@ func _create_floor_collider() -> void:
     floor_body.position = Vector3(0, -0.55, 0)
     var shape := CollisionShape3D.new()
     var box_shape := BoxShape3D.new()
-    box_shape.size = Vector3(5.2, 0.2, 3.8)
+    box_shape.size = Vector3(6.4, 0.2, 4.8)
     shape.shape = box_shape
     floor_body.add_child(shape)
     add_child(floor_body)
@@ -569,29 +606,25 @@ func _create_mantis() -> void:
     animal = Node3D.new()
     animal.name = "Mantis_01"
     animal.position = Vector3(0, -0.38, 0)
-    animal.scale = Vector3.ONE * (0.32 * (0.80 + growth * 0.30))
+    animal.scale = Vector3.ONE * (0.42 * (0.90 + growth * 0.30))
     add_child(animal)
     var mint := Color(0.42, 0.60, 0.24)
     var mint_light := Color(0.63, 0.73, 0.38)
     var mint_shadow := Color(0.24, 0.34, 0.15)
-    var eye_color := Color(0.025, 0.045, 0.025)
+    var eye_color := Color(0.065, 0.12, 0.038)
 
     abdomen = Node3D.new()
     abdomen.name = "AbdomenPivot"
     animal.add_child(abdomen)
-    # A broad, tapered abdomen stays largely covered by paired leaf-shaped wings.
-    # Fine ventral plates and side spiracles define its insect segmentation.
-    _part(abdomen, Vector3(0, 0.18, 0.14), Vector3(0.110, 0.073, 0.32), mint)
-    for band in range(8):
-        var t: float = float(band) / 7.0
-        var z: float = -0.12 + t * 0.56
-        var taper: float = 0.66 + 0.34 * sin((t * 0.90 + 0.05) * PI)
-        var segment_color: Color = mint_light if band % 2 == 0 else mint
-        _part(abdomen, Vector3(0, 0.185, z), Vector3(0.105 * taper, 0.067 * taper, 0.046), segment_color)
-        _segment(abdomen, Vector3(-0.096 * taper, 0.18, z + 0.029), Vector3(0.096 * taper, 0.18, z + 0.029), 0.0025, mint_shadow)
-        for side_index in range(2):
-            var side: float = -1.0 if side_index == 0 else 1.0
-            _part(abdomen, Vector3(side * 0.105 * taper, 0.175, z), Vector3(0.005, 0.005, 0.008), mint_shadow)
+    # A continuous high-density shell gives the abdomen real side, underside,
+    # and dorsal volume; pigment bands sit in the mesh instead of stacked balls.
+    _create_abdomen_volume(abdomen, mint, mint_light, mint_shadow)
+    for spiracle_index in range(9):
+        var t: float = float(spiracle_index) / 8.0
+        var z: float = -0.13 + t * 0.68
+        var taper: float = 0.72 + 0.28 * sin(t * PI)
+        for side in [-1.0, 1.0]:
+            _part(abdomen, Vector3(side * 0.151 * taper, 0.145, z), Vector3(0.0048, 0.0035, 0.007), mint_shadow)
     _part(abdomen, Vector3(0, 0.16, 0.48), Vector3(0.052, 0.038, 0.066), mint_shadow)
     for side_index in range(2):
         var side: float = -1.0 if side_index == 0 else 1.0
@@ -604,7 +637,7 @@ func _create_mantis() -> void:
     thorax_pivot.position = Vector3(0, 0.24, -0.34)
     animal.add_child(thorax_pivot)
     # Long, narrow pronotum with a slightly widened rear shield.
-    _part(thorax_pivot, Vector3(0, 0.012, 0.015), Vector3(0.049, 0.042, 0.36), mint)
+    _create_prothorax_volume(thorax_pivot, mint, mint_light, mint_shadow)
     _part(thorax_pivot, Vector3(0, -0.003, 0.12), Vector3(0.067, 0.047, 0.11), mint_light)
     _part(thorax_pivot, Vector3(0, 0.031, -0.105), Vector3(0.047, 0.018, 0.075), mint_light)
     for thorax_rib in range(4):
@@ -639,14 +672,15 @@ func _create_mantis() -> void:
     for side_index in range(2):
         var side: float = -1.0 if side_index == 0 else 1.0
         _part(head_pivot, Vector3(side * 0.102, 0.02, -0.024), Vector3(0.059, 0.066, 0.061), eye_color)
-        for facet in range(14):
-            var row: int = int(facet / 4)
-            var column: int = facet % 4
-            var facet_y: float = -0.027 + float(row) * 0.018
-            var facet_z: float = -0.039 + float(column) * 0.026
+        for facet in range(42):
+            var row: int = int(facet / 7)
+            var column: int = facet % 7
+            var facet_y: float = -0.038 + float(row) * 0.0152
+            var facet_z: float = -0.050 + float(column) * 0.0167
             var surface_factor: float = sqrt(maxf(0.05, 1.0 - pow(facet_y / 0.066, 2.0) - pow(facet_z / 0.061, 2.0)))
             var facet_x: float = 0.102 + 0.059 * surface_factor + 0.003
-            _part(head_pivot, Vector3(side * facet_x, 0.02 + facet_y, -0.024 + facet_z), Vector3(0.0065, 0.007, 0.007), Color(0.16, 0.28, 0.12))
+            var facet_color := Color(0.19, 0.34, 0.085).lerp(Color(0.37, 0.52, 0.16), float((row + column) % 4) / 8.0)
+            _part(head_pivot, Vector3(side * facet_x, 0.02 + facet_y, -0.024 + facet_z), Vector3(0.0045, 0.0052, 0.0052), facet_color)
         # A small catchlight defines the rounded compound-eye surface at phone scale.
         _part(head_pivot, Vector3(side * 0.151, 0.049, -0.075), Vector3(0.009, 0.012, 0.006), Color(0.71, 0.82, 0.44))
         var feeler := Node3D.new()
@@ -741,6 +775,161 @@ func _create_mantis() -> void:
         foreleg_elbows.append(elbow)
         foreleg_claws.append(claw)
 
+func _create_prothorax_volume(parent: Node3D, base_color: Color, dorsal_color: Color, seam_color: Color) -> void:
+    const AXIAL_STEPS := 32
+    const RADIAL_STEPS := 24
+    var vertices := PackedVector3Array()
+    var normals := PackedVector3Array()
+    var uv := PackedVector2Array()
+    var colors := PackedColorArray()
+    var indices := PackedInt32Array()
+    for axial in range(AXIAL_STEPS + 1):
+        var t: float = float(axial) / float(AXIAL_STEPS)
+        var shape: float = pow(maxf(0.0, sin(PI * t)), 0.62)
+        var rx: float = 0.020 + shape * (0.018 + 0.013 * sin(PI * t))
+        var ry: float = 0.017 + shape * (0.012 + 0.010 * sin(PI * t))
+        var center_y: float = 0.012 + 0.009 * sin(PI * t)
+        var z: float = 0.325 - t * 0.635
+        var dt: float = 1.0 / float(AXIAL_STEPS)
+        var ta: float = clampf(t - dt, 0.0, 1.0)
+        var tb: float = clampf(t + dt, 0.0, 1.0)
+        for radial in range(RADIAL_STEPS + 1):
+            var angle: float = TAU * float(radial) / float(RADIAL_STEPS)
+            var c: float = cos(angle)
+            var s: float = sin(angle)
+            var p := Vector3(rx * c, center_y + ry * s, z)
+            var shape_a: float = pow(maxf(0.0, sin(PI * ta)), 0.62)
+            var shape_b: float = pow(maxf(0.0, sin(PI * tb)), 0.62)
+            var rx_a: float = 0.020 + shape_a * (0.018 + 0.013 * sin(PI * ta))
+            var rx_b: float = 0.020 + shape_b * (0.018 + 0.013 * sin(PI * tb))
+            var ry_a: float = 0.017 + shape_a * (0.012 + 0.010 * sin(PI * ta))
+            var ry_b: float = 0.017 + shape_b * (0.012 + 0.010 * sin(PI * tb))
+            var y_a: float = 0.012 + 0.009 * sin(PI * ta)
+            var y_b: float = 0.012 + 0.009 * sin(PI * tb)
+            var point_a := Vector3(rx_a * c, y_a + ry_a * s, 0.325 - ta * 0.635)
+            var point_b := Vector3(rx_b * c, y_b + ry_b * s, 0.325 - tb * 0.635)
+            var around := Vector3(-rx * s, ry * c, 0.0)
+            normals.append((point_b - point_a).cross(around).normalized())
+            vertices.append(p)
+            uv.append(Vector2(float(radial) / float(RADIAL_STEPS), t))
+            var dorsal: float = clampf((s + 0.05) * 0.82, 0.0, 1.0)
+            var band: float = pow(maxf(0.0, 1.0 - absf(sin(t * TAU * 5.0))), 13.0)
+            colors.append(base_color.lerp(dorsal_color, 0.16 + dorsal * 0.48).lerp(seam_color, band * 0.10))
+    var stride: int = RADIAL_STEPS + 1
+    for axial in range(AXIAL_STEPS):
+        for radial in range(RADIAL_STEPS):
+            var a: int = axial * stride + radial
+            var b: int = (axial + 1) * stride + radial
+            var c: int = b + 1
+            var d: int = a + 1
+            indices.append_array(PackedInt32Array([a, b, d, b, c, d]))
+    var arrays: Array = []
+    arrays.resize(Mesh.ARRAY_MAX)
+    arrays[Mesh.ARRAY_VERTEX] = vertices
+    arrays[Mesh.ARRAY_NORMAL] = normals
+    arrays[Mesh.ARRAY_TEX_UV] = uv
+    arrays[Mesh.ARRAY_COLOR] = colors
+    arrays[Mesh.ARRAY_INDEX] = indices
+    var mesh := ArrayMesh.new()
+    mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+    var shell := MeshInstance3D.new()
+    shell.name = "LongProthoraxShell"
+    shell.mesh = mesh
+    var material := _material(Color.WHITE)
+    material.vertex_color_use_as_albedo = true
+    material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    if body_texture != null:
+        material.albedo_texture = body_texture
+        _apply_pbr(material, "mantis_cuticle")
+    shell.material_override = material
+    parent.add_child(shell)
+
+func _create_abdomen_volume(parent: Node3D, base_color: Color, dorsal_color: Color, seam_color: Color) -> void:
+    const AXIAL_STEPS := 48
+    const RADIAL_STEPS := 36
+    var vertices := PackedVector3Array()
+    var normals := PackedVector3Array()
+    var uv := PackedVector2Array()
+    var colors := PackedColorArray()
+    var indices := PackedInt32Array()
+    for axial in range(AXIAL_STEPS + 1):
+        var t: float = float(axial) / float(AXIAL_STEPS)
+        var profile: float = pow(maxf(0.0, sin(PI * pow(t, 0.78))), 0.72)
+        var rx: float = 0.010 + profile * (0.115 + 0.043 * sin(PI * t))
+        var ry: float = 0.010 + profile * (0.067 + 0.025 * sin(PI * t))
+        var center_y: float = 0.164 + 0.018 * sin(PI * t) - 0.012 * t
+        var z: float = -0.175 + t * 0.805
+        var dt: float = 1.0 / float(AXIAL_STEPS)
+        var ta: float = clampf(t - dt, 0.0, 1.0)
+        var tb: float = clampf(t + dt, 0.0, 1.0)
+        for radial in range(RADIAL_STEPS + 1):
+            var angle: float = TAU * float(radial) / float(RADIAL_STEPS)
+            var c: float = cos(angle)
+            var s: float = sin(angle)
+            var p := Vector3(rx * c, center_y + ry * s, z)
+            var profile_a: float = pow(maxf(0.0, sin(PI * pow(ta, 0.78))), 0.72)
+            var profile_b: float = pow(maxf(0.0, sin(PI * pow(tb, 0.78))), 0.72)
+            var rx_a: float = 0.010 + profile_a * (0.115 + 0.043 * sin(PI * ta))
+            var rx_b: float = 0.010 + profile_b * (0.115 + 0.043 * sin(PI * tb))
+            var ry_a: float = 0.010 + profile_a * (0.067 + 0.025 * sin(PI * ta))
+            var ry_b: float = 0.010 + profile_b * (0.067 + 0.025 * sin(PI * tb))
+            var center_a: float = 0.164 + 0.018 * sin(PI * ta) - 0.012 * ta
+            var center_b: float = 0.164 + 0.018 * sin(PI * tb) - 0.012 * tb
+            var point_a := Vector3(rx_a * c, center_a + ry_a * s, -0.175 + ta * 0.805)
+            var point_b := Vector3(rx_b * c, center_b + ry_b * s, -0.175 + tb * 0.805)
+            var around := Vector3(-rx * s, ry * c, 0.0)
+            normals.append(around.cross(point_b - point_a).normalized())
+            vertices.append(p)
+            uv.append(Vector2(float(radial) / float(RADIAL_STEPS), t))
+            var ventral: float = clampf((-s + 0.16) * 0.79, 0.0, 1.0)
+            var band_edge: float = pow(maxf(0.0, 1.0 - absf(sin(t * TAU * 9.0))), 15.0)
+            var pigment: Color = base_color.lerp(dorsal_color, 0.12 + (1.0 - ventral) * 0.28)
+            pigment = pigment.lerp(dorsal_color.lightened(0.12), (1.0 - ventral) * 0.10)
+            pigment = pigment.lerp(seam_color, band_edge * 0.17 + ventral * 0.10)
+            var mottling: float = sin(t * 47.0 + angle * 5.0) * 0.025 + sin(t * 83.0 - angle * 11.0) * 0.012
+            colors.append(Color(clampf(pigment.r + mottling, 0.0, 1.0), clampf(pigment.g + mottling, 0.0, 1.0), clampf(pigment.b + mottling * 0.55, 0.0, 1.0), 1.0))
+    var stride: int = RADIAL_STEPS + 1
+    for axial in range(AXIAL_STEPS):
+        for radial in range(RADIAL_STEPS):
+            var a: int = axial * stride + radial
+            var b: int = (axial + 1) * stride + radial
+            var c: int = b + 1
+            var d: int = a + 1
+            indices.append_array(PackedInt32Array([a, d, b, d, c, b]))
+    var first_cap: int = vertices.size()
+    vertices.append(Vector3(0.0, 0.164, -0.175))
+    normals.append(Vector3(0.0, 0.0, -1.0))
+    uv.append(Vector2(0.5, 0.0))
+    colors.append(dorsal_color)
+    var last_cap: int = vertices.size()
+    vertices.append(Vector3(0.0, 0.152, 0.630))
+    normals.append(Vector3(0.0, 0.0, 1.0))
+    uv.append(Vector2(0.5, 1.0))
+    colors.append(base_color)
+    for radial in range(RADIAL_STEPS):
+        indices.append_array(PackedInt32Array([first_cap, radial + 1, radial]))
+        var last_ring: int = AXIAL_STEPS * stride
+        indices.append_array(PackedInt32Array([last_cap, last_ring + radial, last_ring + radial + 1]))
+    var arrays: Array = []
+    arrays.resize(Mesh.ARRAY_MAX)
+    arrays[Mesh.ARRAY_VERTEX] = vertices
+    arrays[Mesh.ARRAY_NORMAL] = normals
+    arrays[Mesh.ARRAY_TEX_UV] = uv
+    arrays[Mesh.ARRAY_COLOR] = colors
+    arrays[Mesh.ARRAY_INDEX] = indices
+    var mesh := ArrayMesh.new()
+    mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+    var item := MeshInstance3D.new()
+    item.name = "VolumetricSegmentedAbdomen"
+    item.mesh = mesh
+    var material := _material(Color.WHITE)
+    material.vertex_color_use_as_albedo = true
+    if body_texture != null:
+        material.albedo_texture = body_texture
+        _apply_pbr(material, "mantis_cuticle")
+    item.material_override = material
+    parent.add_child(item)
+
 func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     var segments := 32
     var start_z: float = -0.015 if hindwing else -0.13
@@ -748,50 +937,7 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     var y: float = 0.245 if hindwing else 0.272
     var max_width: float = 0.34 if hindwing else 0.15
     var hinge := Vector3(side * 0.035, y, start_z)
-    var vertices := PackedVector3Array()
-    var normals := PackedVector3Array()
-    var uvs := PackedVector2Array()
-    var colors := PackedColorArray()
-    for i in range(segments):
-        var t0: float = float(i) / float(segments)
-        var t1: float = float(i + 1) / float(segments)
-        var z0: float = lerpf(start_z, end_z, t0)
-        var z1: float = lerpf(start_z, end_z, t1)
-        var profile0 := _mantis_wing_profile(t0, hindwing)
-        var profile1 := _mantis_wing_profile(t1, hindwing)
-        var w0: float = 0.004 + profile0 * max_width
-        var w1: float = 0.004 + profile1 * max_width
-        var edge0: float = 0.006 * sin(t0 * PI * 12.0) * sin(t0 * PI)
-        var edge1: float = 0.006 * sin(t1 * PI * 12.0) * sin(t1 * PI)
-        var arch0: float = 0.016 * sin(PI * t0)
-        var arch1: float = 0.016 * sin(PI * t1)
-        var row0: Array[Vector3] = [Vector3(0.0, 0.0, z0 - start_z), Vector3(side * w0 * 0.50, arch0 + 0.012, z0 - start_z), Vector3(side * (w0 + edge0), arch0, z0 - start_z)]
-        var row1: Array[Vector3] = [Vector3(0.0, 0.006, z1 - start_z), Vector3(side * w1 * 0.50, arch1 + 0.012, z1 - start_z), Vector3(side * (w1 + edge1), arch1, z1 - start_z)]
-        for lane in range(2):
-            var a: Vector3 = row0[lane]
-            var b: Vector3 = row0[lane + 1]
-            var c: Vector3 = row1[lane + 1]
-            var d: Vector3 = row1[lane]
-            for vertex in [a, b, c, a, c, d]:
-                vertices.append(vertex)
-                normals.append(Vector3.UP)
-                var lateral: float = clampf(absf(vertex.x) / maxf(maxf(w0, w1), 0.001), 0.0, 1.0)
-                var vein_shade: float = 0.96 + 0.025 * (1.0 - lateral)
-                colors.append(Color(vein_shade * 1.02, vein_shade, vein_shade * 0.94, 1.0))
-            uvs.append(Vector2(float(lane) * 0.5, t0))
-            uvs.append(Vector2(float(lane + 1) * 0.5, t0))
-            uvs.append(Vector2(float(lane + 1) * 0.5, t1))
-            uvs.append(Vector2(float(lane) * 0.5, t0))
-            uvs.append(Vector2(float(lane + 1) * 0.5, t1))
-            uvs.append(Vector2(float(lane) * 0.5, t1))
-    var arrays: Array = []
-    arrays.resize(Mesh.ARRAY_MAX)
-    arrays[Mesh.ARRAY_VERTEX] = vertices
-    arrays[Mesh.ARRAY_NORMAL] = normals
-    arrays[Mesh.ARRAY_TEX_UV] = uvs
-    arrays[Mesh.ARRAY_COLOR] = colors
-    var wing_mesh := ArrayMesh.new()
-    wing_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+    var wing_mesh := _make_volumetric_wing_mesh(segments, 12, side, end_z - start_z, max_width, hindwing)
     var wing_pivot := Node3D.new()
     wing_pivot.name = ("HindwingPivot" if hindwing else "ForewingPivot") + ("_L" if side < 0.0 else "_R")
     wing_pivot.position = hinge
@@ -812,7 +958,7 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
         if pbr_normal.has("mantis_cuticle"):
             wing_material.normal_enabled = true
             wing_material.normal_texture = pbr_normal["mantis_cuticle"]
-            wing_material.normal_scale = 0.24
+            wing_material.normal_scale = 0.38
     wing_material.cull_mode = BaseMaterial3D.CULL_DISABLED
     if hindwing:
         wing_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -822,28 +968,168 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     wing_instance.material_override = wing_material
     wing_pivot.add_child(wing_instance)
     var vein_color: Color = Color(0.43, 0.57, 0.29) if hindwing else Color(0.39, 0.54, 0.25)
-    _segment(wing_pivot, Vector3(0, 0.020, 0.018), Vector3(side * 0.018, 0.021, end_z - start_z - 0.012), 0.0028, vein_color)
-    for vein_index in range(17):
-        var t: float = 0.08 + float(vein_index) * 0.052
+    var vein_points := PackedVector3Array()
+    var vein_radii := PackedFloat32Array()
+    vein_points.append_array(PackedVector3Array([Vector3(0, 0.020, 0.018), Vector3(side * 0.018, 0.021, end_z - start_z - 0.012)]))
+    vein_radii.append(0.0028)
+    for vein_index in range(25):
+        var t: float = 0.045 + float(vein_index) * 0.038
         var z: float = (end_z - start_z) * t
         var width: float = _mantis_wing_profile(t, hindwing) * max_width
         var origin := Vector3(side * width * 0.035, 0.018 + 0.016 * sin(PI * t), z * 0.18)
         var tip := Vector3(side * width * (0.88 if hindwing else 0.91), 0.014 + 0.015 * sin(PI * t), z)
-        _segment(wing_pivot, origin, tip, 0.00145 if hindwing else 0.0019, vein_color)
+        vein_points.append_array(PackedVector3Array([origin, tip]))
+        vein_radii.append(0.00145 if hindwing else 0.0019)
     # Repeated cross-veins and a fine perimeter give the flight membrane a
     # fan of cells while the forewing keeps its long, leathery leaf outline.
-    for cross_index in range(11 if hindwing else 9):
-        var t: float = 0.12 + float(cross_index) * (0.092 if hindwing else 0.105)
+    for cross_index in range(17 if hindwing else 15):
+        var t: float = 0.08 + float(cross_index) * (0.052 if hindwing else 0.057)
         var z: float = (end_z - start_z) * t
         var width: float = _mantis_wing_profile(t, hindwing) * max_width
-        _segment(wing_pivot, Vector3(side * width * 0.24, 0.018, z - 0.018), Vector3(side * width * 0.80, 0.018, z + 0.026), 0.00105, vein_color)
+        var cross_start := Vector3(side * width * 0.24, 0.018, z - 0.018)
+        var cross_end := Vector3(side * width * 0.80, 0.018, z + 0.026)
+        vein_points.append_array(PackedVector3Array([cross_start, cross_end]))
+        vein_radii.append(0.00105)
         var next_t: float = minf(1.0, t + 0.04)
         var next_width: float = _mantis_wing_profile(next_t, hindwing) * max_width
-        _segment(wing_pivot, Vector3(side * width, 0.012, z), Vector3(side * next_width, 0.012, minf(end_z - start_z, z + (end_z - start_z) * 0.04)), 0.0015, vein_color)
+        var edge_start := Vector3(side * width, 0.012, z)
+        var edge_end := Vector3(side * next_width, 0.012, minf(end_z - start_z, z + (end_z - start_z) * 0.04))
+        vein_points.append_array(PackedVector3Array([edge_start, edge_end]))
+        vein_radii.append(0.0015)
     if not hindwing:
         # A subtle, elongated stigma sits on each leathery mint forewing.
         _part(wing_pivot, Vector3(side * 0.102, 0.021, 0.12), Vector3(0.010, 0.003, 0.032), Color(0.78, 0.84, 0.48))
+    _create_wing_veins(wing_pivot, vein_points, vein_radii, vein_color)
     wing_pivots.append(wing_pivot)
+
+func _create_wing_veins(parent: Node3D, points: PackedVector3Array, radii: PackedFloat32Array, tint: Color) -> void:
+    const RADIAL_STEPS := 6
+    var vertices := PackedVector3Array()
+    var normals := PackedVector3Array()
+    var uvs := PackedVector2Array()
+    var indices := PackedInt32Array()
+    for tube in range(radii.size()):
+        var a: Vector3 = points[tube * 2]
+        var b: Vector3 = points[tube * 2 + 1]
+        var axis: Vector3 = (b - a).normalized()
+        var tangent: Vector3 = axis.cross(Vector3.UP)
+        if tangent.length_squared() < 0.0001:
+            tangent = axis.cross(Vector3.RIGHT)
+        tangent = tangent.normalized()
+        var bitangent: Vector3 = axis.cross(tangent).normalized()
+        var start_index: int = vertices.size()
+        for end_index in range(2):
+            var center: Vector3 = a if end_index == 0 else b
+            var radius_scale: float = 1.12 if end_index == 0 else 0.82
+            for radial in range(RADIAL_STEPS):
+                var angle: float = TAU * float(radial) / float(RADIAL_STEPS)
+                var normal: Vector3 = (tangent * cos(angle) + bitangent * sin(angle)).normalized()
+                vertices.append(center + normal * radii[tube] * radius_scale)
+                normals.append(normal)
+                uvs.append(Vector2(float(radial) / float(RADIAL_STEPS), float(end_index)))
+        for radial in range(RADIAL_STEPS):
+            var next: int = (radial + 1) % RADIAL_STEPS
+            var a0: int = start_index + radial
+            var a1: int = start_index + next
+            var b0: int = start_index + RADIAL_STEPS + radial
+            var b1: int = start_index + RADIAL_STEPS + next
+            indices.append_array(PackedInt32Array([a0, a1, b0, a1, b1, b0]))
+    var arrays: Array = []
+    arrays.resize(Mesh.ARRAY_MAX)
+    arrays[Mesh.ARRAY_VERTEX] = vertices
+    arrays[Mesh.ARRAY_NORMAL] = normals
+    arrays[Mesh.ARRAY_TEX_UV] = uvs
+    arrays[Mesh.ARRAY_INDEX] = indices
+    var mesh := ArrayMesh.new()
+    mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+    var detail := MeshInstance3D.new()
+    detail.name = "RaisedWingVeins"
+    detail.mesh = mesh
+    detail.material_override = _material(tint)
+    parent.add_child(detail)
+
+func _make_volumetric_wing_mesh(longitudinal_steps: int, chord_steps: int, side: float, length: float, max_width: float, hindwing: bool) -> ArrayMesh:
+    var vertices := PackedVector3Array()
+    var normals := PackedVector3Array()
+    var uvs := PackedVector2Array()
+    var colors := PackedColorArray()
+    var indices := PackedInt32Array()
+    var row_width: int = chord_steps + 1
+    var surface_size: int = (longitudinal_steps + 1) * row_width
+    for surface in range(2):
+        var underside: bool = surface == 1
+        var vertex_offset: int = surface * surface_size
+        for i in range(longitudinal_steps + 1):
+            var t: float = float(i) / float(longitudinal_steps)
+            var t0: float = maxf(0.0, t - 1.0 / float(longitudinal_steps))
+            var t1: float = minf(1.0, t + 1.0 / float(longitudinal_steps))
+            for j in range(chord_steps + 1):
+                var u: float = float(j) / float(chord_steps)
+                var p := _volumetric_wing_point(t, u, side, length, max_width, hindwing, underside)
+                var along := _volumetric_wing_point(t1, u, side, length, max_width, hindwing) - _volumetric_wing_point(t0, u, side, length, max_width, hindwing)
+                var u0: float = maxf(0.0, u - 0.02)
+                var u1: float = minf(1.0, u + 0.02)
+                var across := _volumetric_wing_point(t, u1, side, length, max_width, hindwing) - _volumetric_wing_point(t, u0, side, length, max_width, hindwing)
+                var normal := along.cross(across).normalized() * side
+                if underside:
+                    normal = -normal
+                vertices.append(p)
+                normals.append(normal)
+                uvs.append(Vector2(u, t))
+                var edge_glow: float = 0.94 + 0.06 * (1.0 - absf(2.0 * u - 1.0))
+                var vein_tone: float = 1.0 + 0.025 * cos(t * TAU * 24.0) * sin(u * PI)
+                colors.append(Color(edge_glow * vein_tone, edge_glow * vein_tone, edge_glow * (0.98 + (1.0 - u) * 0.025), 1.0))
+        for i in range(longitudinal_steps):
+            for j in range(chord_steps):
+                var a: int = vertex_offset + i * row_width + j
+                var b: int = a + row_width
+                var c: int = b + 1
+                var d: int = a + 1
+                if underside:
+                    indices.append_array(PackedInt32Array([a, b, d, b, c, d]))
+                else:
+                    indices.append_array(PackedInt32Array([a, d, b, d, c, b]))
+    # Seal the rounded outer edge and the tapered tip so the wing keeps visible
+    # thickness when seen edge-on or from underneath.
+    for i in range(longitudinal_steps):
+        var top_a: int = i * row_width + chord_steps
+        var top_b: int = top_a + row_width
+        var bottom_a: int = surface_size + top_a
+        var bottom_b: int = surface_size + top_b
+        indices.append_array(PackedInt32Array([top_a, bottom_a, top_b, bottom_a, bottom_b, top_b]))
+        var inner_top_a: int = i * row_width
+        var inner_top_b: int = inner_top_a + row_width
+        var inner_bottom_a: int = surface_size + inner_top_a
+        var inner_bottom_b: int = surface_size + inner_top_b
+        indices.append_array(PackedInt32Array([inner_top_a, inner_top_b, inner_bottom_a, inner_top_b, inner_bottom_b, inner_bottom_a]))
+    for j in range(chord_steps):
+        var root_top: int = j
+        var root_next: int = j + 1
+        var root_bottom: int = surface_size + j
+        indices.append_array(PackedInt32Array([root_top, root_next, root_bottom, root_next, surface_size + j + 1, root_bottom]))
+        var tip_row: int = longitudinal_steps * row_width + j
+        var tip_next: int = tip_row + 1
+        var tip_bottom: int = surface_size + tip_row
+        indices.append_array(PackedInt32Array([tip_row, tip_bottom, tip_next, tip_next, tip_bottom, surface_size + tip_row + 1]))
+    var arrays: Array = []
+    arrays.resize(Mesh.ARRAY_MAX)
+    arrays[Mesh.ARRAY_VERTEX] = vertices
+    arrays[Mesh.ARRAY_NORMAL] = normals
+    arrays[Mesh.ARRAY_TEX_UV] = uvs
+    arrays[Mesh.ARRAY_COLOR] = colors
+    arrays[Mesh.ARRAY_INDEX] = indices
+    var mesh := ArrayMesh.new()
+    mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+    return mesh
+
+func _volumetric_wing_point(t: float, u: float, side: float, length: float, max_width: float, hindwing: bool, underside: bool = false) -> Vector3:
+    var profile: float = _mantis_wing_profile(t, hindwing)
+    var width: float = 0.004 + profile * max_width
+    var edge_ripple: float = 0.0035 * sin(t * PI * (18.0 if hindwing else 14.0)) * sin(PI * t)
+    var cupped_surface: float = (0.021 if hindwing else 0.029) * sin(PI * t) * sin(PI * u)
+    var camber: float = 0.013 * sin(PI * t) + cupped_surface + edge_ripple * u
+    var thickness: float = (0.010 if hindwing else 0.014) * sin(PI * t) * (0.42 + 0.58 * sin(PI * u))
+    return Vector3(side * (width * u + edge_ripple * u * u), camber - (thickness if underside else 0.0), length * t)
 
 func _mantis_wing_profile(t: float, hindwing: bool) -> float:
     var safe_t: float = clampf(t, 0.0, 1.0)
@@ -964,7 +1250,7 @@ func _tapered_branch(a: Vector3, b: Vector3, base_radius: float, tip_radius: flo
     mesh.top_radius = maxf(0.004, tip_radius)
     mesh.bottom_radius = maxf(0.006, base_radius)
     mesh.height = a.distance_to(b)
-    mesh.radial_segments = 9
+    mesh.radial_segments = 18
     item.mesh = mesh
     item.position = (a + b) * 0.5
     item.quaternion = Quaternion(Vector3.UP, (b - a).normalized())
@@ -1106,7 +1392,7 @@ func _create_ui() -> void:
     var zoom_reset := Button.new()
     zoom_reset.text = "맞춤"
     zoom_reset.custom_minimum_size = Vector2(68, 42)
-    zoom_reset.pressed.connect(func(): orbit_distance = 5.3; _update_camera())
+    zoom_reset.pressed.connect(func(): orbit_distance = 6.4; orbit_pitch = 0.25; camera_pan = Vector3.ZERO; _update_camera())
     zoom_controls.add_child(zoom_reset)
 
 func _resize_ui() -> void:
@@ -1125,7 +1411,7 @@ func _leaf_mesh() -> ArrayMesh:
     var colors := PackedColorArray()
     var normals := PackedVector3Array()
     var uv := PackedVector2Array()
-    var stations := 9
+    var stations := 24
     for i in range(stations - 1):
         var t0: float = float(i) / float(stations - 1)
         var t1: float = float(i + 1) / float(stations - 1)
@@ -1179,15 +1465,15 @@ func _create_animated_ecosystem() -> void:
     var plant_clusters: Array[Vector2] = [Vector2(-2.22, -1.46), Vector2(-2.30, -0.55), Vector2(-2.15, 0.55), Vector2(-1.76, 1.48), Vector2(-0.88, 1.53), Vector2(0.20, 1.55), Vector2(1.28, 1.49), Vector2(2.20, 1.20), Vector2(2.25, 0.25), Vector2(2.22, -0.72), Vector2(1.82, -1.48), Vector2(0.70, -1.54), Vector2(-0.65, -1.50)]
     # Dense but irregular plant groups rise from the substrate into the canopy.
     # The center stays more open so the mantis remains readable at the larger scale.
-    for i in range(45):
+    for i in range(56):
         var plant := Node3D.new()
         plant.name = "Plant_%02d" % i
         var plant_cluster: Vector2 = plant_clusters[rng.randi_range(0, plant_clusters.size() - 1)]
         var plant_angle: float = rng.randf_range(0.0, TAU)
         var plant_radius: float = rng.randf_range(0.04, 0.53)
         plant.position = Vector3(plant_cluster.x + cos(plant_angle) * plant_radius, -0.53, plant_cluster.y + sin(plant_angle) * plant_radius)
-        plant.position.x = clampf(plant.position.x, -2.45, 2.45)
-        plant.position.z = clampf(plant.position.z, -1.74, 1.74)
+        plant.position.x = clampf(plant.position.x, -2.95, 2.95)
+        plant.position.z = clampf(plant.position.z, -2.18, 2.18)
         plant.rotation.y = rng.randf_range(-PI, PI)
         habitat_motion_root.add_child(plant)
         var plant_type := i % 3
@@ -1275,21 +1561,21 @@ func _create_animated_ecosystem() -> void:
         plant_phases.append(rng.randf_range(0.0, TAU))
         plant_stiffness.append(rng.randf_range(0.35, 0.8))
     # A few climbing vines hang from the rear branches and connect the layers.
-    for vine_index in range(8):
+    for vine_index in range(12):
         var vine := Node3D.new()
         vine.name = "HangingVine_%02d" % vine_index
-        vine.position = Vector3(rng.randf_range(-2.1, 2.1), rng.randf_range(1.10, 1.72), rng.randf_range(-1.62, -1.25))
+        vine.position = Vector3(rng.randf_range(-2.65, 2.65), rng.randf_range(2.05, 2.92), rng.randf_range(-2.08, -1.74))
         vine.rotation.y = rng.randf_range(-PI, PI)
         habitat_motion_root.add_child(vine)
-        var vine_length := rng.randf_range(0.65, 1.35)
+        var vine_length := rng.randf_range(1.05, 2.05)
         _segment(vine, Vector3.ZERO, Vector3(rng.randf_range(-0.18, 0.18), -vine_length, 0.0), 0.004, Color(0.21, 0.32, 0.16))
-        for leaf_index in range(5):
+        for leaf_index in range(7):
             var leaf := MeshInstance3D.new()
             leaf.mesh = leaf_mesh
             leaf.material_override = leaf_materials[rng.randi_range(0, leaf_materials.size() - 1)]
             leaf.position = Vector3(rng.randf_range(-0.13, 0.13), -vine_length * float(leaf_index + 1) / 6.0, 0.0)
             leaf.rotation = Vector3(-0.35, rng.randf_range(-PI, PI), rng.randf_range(-0.2, 0.2))
-            leaf.scale = Vector3(0.86, 0.82, rng.randf_range(0.75, 1.2))
+            leaf.scale = Vector3(rng.randf_range(0.92, 1.22), 0.88, rng.randf_range(0.95, 1.42))
             leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
             vine.add_child(leaf)
     # Ambient motes use shared meshes and stay sparse enough for mobile GPUs.
@@ -1305,7 +1591,7 @@ func _create_animated_ecosystem() -> void:
         visual.scale = Vector3.ONE * rng.randf_range(0.003, 0.008)
         visual.material_override = mote_mat
         mote.add_child(visual)
-        mote.position = Vector3(rng.randf_range(-2.35, 2.35), rng.randf_range(-0.3, 1.85), rng.randf_range(-1.68, 1.68))
+        mote.position = Vector3(rng.randf_range(-2.90, 2.90), rng.randf_range(-0.3, 2.95), rng.randf_range(-2.18, 2.18))
         habitat_motion_root.add_child(mote)
         drifting_particles.append(mote)
         particle_origins.append(mote.position)
@@ -1313,14 +1599,14 @@ func _create_animated_ecosystem() -> void:
 func _create_habitat_details() -> void:
     # Slim dark frame bars mark the much larger enclosure without blocking it.
     var frame_color := Color(0.14, 0.18, 0.16)
-    for x in [-2.57, 2.57]:
-        for z in [-1.87, 1.87]:
-            _segment(self, Vector3(x, -0.53, z), Vector3(x, 2.14, z), 0.014, frame_color)
-    for y in [-0.53, 2.14]:
-        for z in [-1.87, 1.87]:
-            _segment(self, Vector3(-2.57, y, z), Vector3(2.57, y, z), 0.014, frame_color)
-        for x in [-2.57, 2.57]:
-            _segment(self, Vector3(x, y, -1.87), Vector3(x, y, 1.87), 0.014, frame_color)
+    for x in [-3.17, 3.17]:
+        for z in [-2.37, 2.37]:
+            _segment(self, Vector3(x, -0.53, z), Vector3(x, 3.25, z), 0.014, frame_color)
+    for y in [-0.53, 3.25]:
+        for z in [-2.37, 2.37]:
+            _segment(self, Vector3(-3.17, y, z), Vector3(3.17, y, z), 0.014, frame_color)
+        for x in [-3.17, 3.17]:
+            _segment(self, Vector3(x, y, -2.37), Vector3(x, y, 2.37), 0.014, frame_color)
     var root := Node3D.new()
     root.name = "SubstrateDetails"
     add_child(root)
@@ -1345,7 +1631,7 @@ func _create_habitat_details() -> void:
         var litter_cluster: Vector2 = litter_clusters[rng.randi_range(0, litter_clusters.size() - 1)]
         var litter_angle: float = rng.randf_range(0.0, TAU)
         var litter_radius: float = rng.randf_range(0.03, 0.55)
-        item.position = Vector3(clampf(litter_cluster.x + cos(litter_angle) * litter_radius, -2.45, 2.45), -0.535, clampf(litter_cluster.y + sin(litter_angle) * litter_radius, -1.74, 1.74))
+        item.position = Vector3(clampf(litter_cluster.x + cos(litter_angle) * litter_radius, -3.0, 3.0), -0.535, clampf(litter_cluster.y + sin(litter_angle) * litter_radius, -2.25, 2.25))
         item.rotation.y = rng.randf_range(-PI, PI)
         if i % 6 == 0:
             item.mesh = stone_mesh
@@ -1523,7 +1809,7 @@ func _create_feeder_insect(prey: Node3D, size_factor: float, body_color: Color) 
     }
 
 func _create_prey_appendages(prey: Node3D) -> void:
-    _create_feeder_insect(prey, 0.62, Color(0.35, 0.24, 0.13))
+    _create_feeder_insect(prey, 0.70, Color(0.35, 0.24, 0.13))
 
 func _animate_prey_appendages(prey: Node3D, velocity: Vector3) -> void:
     var rig: Dictionary = prey_appendages.get(prey.get_instance_id(), {})
@@ -1594,7 +1880,7 @@ func _process(delta: float) -> void:
             molt_progress = 0.0
             molt_count += 1
             growth = minf(1.0, growth + 0.13)
-            animal.scale = Vector3.ONE * (0.32 * (0.80 + growth * 0.30))
+            animal.scale = Vector3.ONE * (0.42 * (0.90 + growth * 0.30))
             hunger = minf(100.0, hunger + 12.0)
             energy = maxf(15.0, energy - 22.0)
     elif life_age > 150.0 * float(molt_count + 1) and molt_count < 5 and hunger < 65.0 and stress < 40.0:
@@ -1636,6 +1922,7 @@ func _process(delta: float) -> void:
                     habitat_interactions.unregister_prey(target_prey)
                 prey_appendages.erase(target_prey.get_instance_id())
                 prey_velocities.erase(target_prey.get_instance_id())
+                prey_pause_timers.erase(target_prey.get_instance_id())
                 prey_nodes.erase(target_prey)
                 target_prey.queue_free()
                 target_prey = null
@@ -1662,17 +1949,31 @@ func _process(delta: float) -> void:
         _update_camera()
 
 func _roam(dt: float) -> void:
-    roam_time -= dt
-    if roam_time <= 0.0 or animal.position.distance_to(roam_target) < 0.12:
-        roam_time = randf_range(2.0, 5.0)
-        roam_target = Vector3(randf_range(-2.02, 2.02), -0.38, randf_range(-1.28, 1.28))
+    if roam_pause_time > 0.0:
+        roam_pause_time = maxf(0.0, roam_pause_time - dt)
+        roam_speed = move_toward(roam_speed, 0.0, dt * 0.10)
+        behavior = "잠시 멈춰 주변 관찰"
+        return
+    if not roam_target_valid:
+        roam_target = Vector3(randf_range(-WALK_BOUND_X * 0.86, WALK_BOUND_X * 0.86), -0.38, randf_range(-WALK_BOUND_Z * 0.84, WALK_BOUND_Z * 0.84))
+        roam_target_valid = true
     var direction := roam_target - animal.position
-    if direction.length() > 0.03:
-        animal.rotation.y = lerp_angle(animal.rotation.y, atan2(-direction.x, -direction.z), dt * 3.0)
-        animal.position = animal.position.move_toward(roam_target, dt * 0.085)
+    var distance: float = direction.length()
+    if distance < 0.065:
+        roam_target_valid = false
+        roam_pause_time = randf_range(1.8, 4.0)
+        roam_speed = 0.0
+        behavior = "잠시 멈춰 주변 관찰"
+        return
+    var target_speed: float = minf(0.074, distance * 0.46)
+    roam_speed = move_toward(roam_speed, target_speed, dt * 0.075)
+    if direction.length_squared() > 0.0001:
+        animal.rotation.y = lerp_angle(animal.rotation.y, atan2(-direction.x, -direction.z), dt * 1.2)
+        animal.position = animal.position.move_toward(roam_target, dt * roam_speed)
         animal.position.x = clampf(animal.position.x, -WALK_BOUND_X, WALK_BOUND_X)
         animal.position.z = clampf(animal.position.z, -WALK_BOUND_Z, WALK_BOUND_Z)
-        energy = maxf(0.0, energy - dt * 0.3)
+        energy = maxf(0.0, energy - dt * 0.20)
+        behavior = "천천히 이동"
 
 func _input(event: InputEvent) -> void:
     if menu_scroll == null or not ui_panel.visible:
@@ -1724,6 +2025,42 @@ func _unhandled_input(event: InputEvent) -> void:
                 edit_mouse_moved = true
         elif touching:
             _orbit(event.relative)
+    elif event is InputEventKey and event.pressed and not event.echo:
+        var camera_right := Vector3(cos(orbit_yaw), 0.0, -sin(orbit_yaw))
+        var camera_forward := Vector3(-sin(orbit_yaw), 0.0, -cos(orbit_yaw))
+        match event.keycode:
+            KEY_LEFT:
+                orbit_yaw -= 0.14
+            KEY_RIGHT:
+                orbit_yaw += 0.14
+            KEY_UP:
+                orbit_pitch = clampf(orbit_pitch + 0.12, -1.42, 1.42)
+            KEY_DOWN:
+                orbit_pitch = clampf(orbit_pitch - 0.12, -1.42, 1.42)
+            KEY_A:
+                camera_pan -= camera_right * 0.24
+            KEY_D:
+                camera_pan += camera_right * 0.24
+            KEY_W:
+                camera_pan += camera_forward * 0.24
+            KEY_S:
+                camera_pan -= camera_forward * 0.24
+            KEY_Q:
+                camera_pan.y += 0.22
+            KEY_E:
+                camera_pan.y -= 0.22
+            KEY_PAGEUP:
+                _set_camera_zoom(-0.45)
+            KEY_PAGEDOWN:
+                _set_camera_zoom(0.45)
+            KEY_F:
+                follow_animal = not follow_animal
+            KEY_HOME:
+                orbit_yaw = 0.0
+                orbit_pitch = 0.25
+                orbit_distance = 6.4
+                camera_pan = Vector3.ZERO
+                follow_animal = false
     elif event is InputEventScreenTouch:
         if editing and not event.pressed and touch_points.size() <= 1 and not edit_touch_moved and edit_touch_start.distance_to(event.position) < 20.0:
             _place_at_screen(event.position)
@@ -1751,7 +2088,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _orbit(motion: Vector2) -> void:
     orbit_yaw -= motion.x * 0.008
-    orbit_pitch = clampf(orbit_pitch + motion.y * 0.006, -0.15, 1.05)
+    orbit_pitch = clampf(orbit_pitch + motion.y * 0.006, -1.42, 1.42)
 
 func _set_camera_zoom(distance_delta: float) -> void:
     orbit_distance = clampf(orbit_distance + distance_delta, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE)
@@ -1760,7 +2097,8 @@ func _set_camera_zoom(distance_delta: float) -> void:
 func _update_camera() -> void:
     if camera == null:
         return
-    var center := animal.position + Vector3(0, 0.35, 0) if follow_animal and animal != null else Vector3(0, 0.0, 0)
+    var center_base := animal.position + Vector3(0, 0.35, 0) if follow_animal and animal != null else Vector3(0, 0.0, 0)
+    var center := center_base + camera_pan
     camera.position = center + Vector3(sin(orbit_yaw) * cos(orbit_pitch), sin(orbit_pitch), cos(orbit_yaw) * cos(orbit_pitch)) * orbit_distance
     camera.look_at(center, Vector3.UP)
 
@@ -1817,14 +2155,14 @@ func _load_state(show_message: bool) -> void:
         for entry in saved_decor:
             if entry is Dictionary and decorations.size() < MAX_DECORATIONS:
                 var kind: String = str(entry.get("kind", "rock"))
-                var x: float = clampf(float(entry.get("x", 0.0)), -2.45, 2.45)
-                var z: float = clampf(float(entry.get("z", 0.0)), -1.75, 1.75)
+                var x: float = clampf(float(entry.get("x", 0.0)), -3.0, 3.0)
+                var z: float = clampf(float(entry.get("z", 0.0)), -2.25, 2.25)
                 if kind in ["rock", "wood"]:
                     _add_decoration(kind, Vector3(x, -0.50, z))
     life_age = maxf(0.0, float(parsed.get("life_age", 0.0)))
     molt_count = clampi(int(parsed.get("molt_count", 0)), 0, 5)
     growth = clampf(float(parsed.get("growth", 0.35)), 0.35, 1.0)
-    animal.scale = Vector3.ONE * (0.32 * (0.80 + growth * 0.30))
+    animal.scale = Vector3.ONE * (0.42 * (0.90 + growth * 0.30))
     hunger = clampf(float(parsed.get("hunger", 32.0)), 0.0, 100.0)
     energy = clampf(float(parsed.get("energy", 86.0)), 0.0, 100.0)
     stress = clampf(float(parsed.get("stress", 12.0)), 0.0, 100.0)
@@ -1834,6 +2172,9 @@ func _load_state(show_message: bool) -> void:
     for prey in prey_nodes:
         prey.queue_free()
     prey_nodes.clear()
+    prey_velocities.clear()
+    prey_pause_timers.clear()
+    prey_appendages.clear()
     var positions: Variant = parsed.get("prey_positions", [])
     if positions is Array and positions.size() > 0:
         for coords in positions:
@@ -1857,7 +2198,7 @@ func _add_food() -> void:
     if prey_nodes.size() >= MAX_FOOD:
         notice.text = "먹이는 최대 12개까지 넣을 수 있습니다."
         return
-    _spawn_prey(Vector3(randf_range(-1.95, 1.95), -0.38, randf_range(-1.22, 1.22)))
+    _spawn_prey(Vector3(randf_range(-2.75, 2.75), -0.38, randf_range(-1.90, 1.90)))
     food_count = prey_nodes.size()
     _refresh()
 
@@ -1867,15 +2208,16 @@ func _spawn_prey(pos: Vector3) -> void:
     prey.position = pos
     add_child(prey)
     var palettes: Array[Color] = [Color(0.35, 0.24, 0.13), Color(0.28, 0.22, 0.12), Color(0.40, 0.23, 0.13)]
-    _create_feeder_insect(prey, 0.62, palettes[prey_nodes.size() % palettes.size()])
+    _create_feeder_insect(prey, 0.70, palettes[prey_nodes.size() % palettes.size()])
     prey_nodes.append(prey)
     if habitat_interactions != null:
         habitat_interactions.register_prey(prey)
     prey_velocities[prey.get_instance_id()] = Vector3(randf_range(-0.13, 0.13), 0, randf_range(-0.13, 0.13))
+    prey_pause_timers[prey.get_instance_id()] = randf_range(0.25, 1.15)
 
 func _sync_prey() -> void:
     while prey_nodes.size() < food_count:
-        _spawn_prey(Vector3(randf_range(-1.95, 1.95), -0.38, randf_range(-1.22, 1.22)))
+        _spawn_prey(Vector3(randf_range(-2.75, 2.75), -0.38, randf_range(-1.90, 1.90)))
     food_count = prey_nodes.size()
 
 func _prey_positions() -> Array:
@@ -1994,7 +2336,9 @@ func _resolve_animation() -> String:
         return "HUNT"
     if behavior.contains("경계"):
         return "ALERT"
-    if behavior.contains("탐색"):
+    if behavior.contains("관찰") or behavior.contains("멈춤"):
+        return "SCAN" if fmod(elapsed, 6.8) < 1.6 else "IDLE"
+    if behavior.contains("이동") or behavior.contains("접근") or behavior.contains("탐색"):
         if fmod(elapsed, 19.0) < 2.2:
             return "SCAN"
         return "WALK"
@@ -2053,7 +2397,7 @@ func _animate_mantis(dt: float) -> void:
             var outward := animal.global_basis.y.normalized()
             var lateral := animal.global_basis.x.normalized() * side
             var contact_normal := (outward * 0.62 + lateral * 0.78).normalized()
-            foot_world = on_axis + contact_normal * 0.067
+            foot_world = on_axis + contact_normal * 0.132
             foot_anchors[i] = foot_world
             foot_in_swing[i] = false
             foot = joint.to_local(foot_world)
@@ -2260,8 +2604,19 @@ func _move_prey(dt: float) -> void:
         var away := prey.position - animal.position
         if away.length() < prey_alert_radius and away.length() > 0.001:
             velocity = away.normalized() * 0.28
-        elif randf() < dt * 0.7:
-            velocity = Vector3(randf_range(-0.17, 0.17), 0, randf_range(-0.17, 0.17))
+            prey_pause_timers[id] = 0.0
+        else:
+            var pause_time: float = float(prey_pause_timers.get(id, 0.0))
+            if pause_time > 0.0:
+                pause_time = maxf(0.0, pause_time - dt)
+                velocity = velocity.move_toward(Vector3.ZERO, dt * 0.45)
+                prey_pause_timers[id] = pause_time
+            elif randf() < dt * 0.7:
+                if randf() < 0.34:
+                    velocity = Vector3.ZERO
+                    prey_pause_timers[id] = randf_range(0.35, 1.20)
+                else:
+                    velocity = Vector3(randf_range(-0.17, 0.17), 0, randf_range(-0.17, 0.17))
         prey_velocities[id] = velocity
         prey.position.x = clampf(prey.position.x + velocity.x * dt, -PREY_BOUND_X, PREY_BOUND_X)
         prey.position.z = clampf(prey.position.z + velocity.z * dt, -PREY_BOUND_Z, PREY_BOUND_Z)
@@ -2288,7 +2643,7 @@ func _place_at_screen(screen_pos: Vector2) -> void:
     if distance <= 0.0:
         return
     var point := origin + direction * distance
-    if absf(point.x) > 2.45 or absf(point.z) > 1.75:
+    if absf(point.x) > 3.0 or absf(point.z) > 2.25:
         return
     if decor_kind == "erase":
         _remove_nearest_decoration(point)
