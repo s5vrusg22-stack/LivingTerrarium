@@ -42,6 +42,12 @@ assert "for index,y in enumerate((-.13,.12,.32))" in generator
 assert "Install Blender and rendering dependencies" in workflow
 assert "tools/generate_rigged_mantis_blender.py" in workflow
 assert "refs/heads/codex/mantis-l1-l6-apk-20261012" in workflow
+assert "BLEND_OUT = Path(__file__).resolve().parent / 'blender_source'" in generator
+assert "stale_blend.unlink()" in generator
+assert (root / "tools/blender_source/.gdignore").is_file()
+assert not (root / "assets/models/mantis_rigged.blend").exists()
+assert "BLEND_OUT = Path(__file__).resolve().parent / 'blender_source'" in generator
+assert "stale_blend.unlink()" in generator
 
 glb_path = root / "assets/models/mantis_rigged.glb"
 binary = glb_path.read_bytes()
