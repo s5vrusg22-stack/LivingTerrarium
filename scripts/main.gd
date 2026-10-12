@@ -1948,13 +1948,14 @@ func _create_camera_pad() -> void:
     pad.add_theme_constant_override("v_separation", 4)
     root_ui.add_child(pad)
     for key in ["", "up", "", "left", "center", "right", "", "down", ""]:
+        var direction_key: String = key
         var button := Button.new()
-        button.text = "↑" if key == "up" else "↓" if key == "down" else "←" if key == "left" else "→" if key == "right" else "•" if key == "center" else ""
+        button.text = "↑" if direction_key == "up" else "↓" if direction_key == "down" else "←" if direction_key == "left" else "→" if direction_key == "right" else "•" if direction_key == "center" else ""
         button.custom_minimum_size = Vector2(50.0, 48.0)
-        button.disabled = key == "" or key == "center"
+        button.disabled = direction_key == "" or direction_key == "center"
         if not button.disabled:
-            button.button_down.connect(func(): camera_touch_directions[key] = true)
-            button.button_up.connect(func(): camera_touch_directions.erase(key))
+            button.button_down.connect(func(): camera_touch_directions[direction_key] = true)
+            button.button_up.connect(func(): camera_touch_directions.erase(direction_key))
         pad.add_child(button)
 
 func _on_species_selected(index: int) -> void:
@@ -2233,6 +2234,7 @@ func _create_new_slot_profile() -> void:
     _save_state(false)
     if notice != null:
         notice.text = "저장 %02d에 새 약충 개체를 만들었습니다." % active_save_slot
+    _refresh()
 
 func _reset_profile_state() -> void:
     _clear_decorations()
@@ -2257,6 +2259,7 @@ func _reset_profile_state() -> void:
     growth = 0.35
     molting = false
     molt_progress = 0.0
+    preview_strike_clock = 0.0
     life_stage = "성체"
     selected_species = "치앙마이형 (Hierodula sp.)"
     selected_biome = "열대 우림"
@@ -2265,8 +2268,13 @@ func _reset_profile_state() -> void:
     animation_preview = "AUTO"
     climb_active = false
     climb_progress = 0.0
+    climb_cooldown = 0.0
+    climb_pause = 0.0
+    roam_speed = 0.0
     roam_target_valid = false
     target_prey = null
+    behavior = "휴식"
+    command_elapsed = 0.0
     if feed_demo_prey != null and is_instance_valid(feed_demo_prey):
         feed_demo_prey.queue_free()
     feed_demo_prey = null
@@ -2276,6 +2284,8 @@ func _reset_profile_state() -> void:
     manual_command = ""
     command_timer = 0.0
     _clear_social_partner()
+    if animation_label != null:
+        animation_label.text = "애니메이션: AUTO"
     _apply_species_appearance()
     _apply_life_stage()
 

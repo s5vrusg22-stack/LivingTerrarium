@@ -20,6 +20,7 @@ assert "CAMERA_MOVE_SPEED := 20.0" in main and "CAMERA_BOOST_MULTIPLIER := 4.0" 
 assert "CAMERA_MAX_DISTANCE := 240.0" in main
 assert "camera_pan += movement.normalized() * speed * delta" in main
 assert "CameraDirectionPad" in main and "camera_touch_directions" in main
+assert "var direction_key: String = key" in main
 
 # Saved terrariums independently retain their insect, stage, biome, and prey.
 assert "SAVE_SLOT_COUNT := 12" in main

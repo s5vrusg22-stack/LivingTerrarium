@@ -3,13 +3,13 @@
 ## Runtime model lock
 
 - `assets/models/mantis_rigged.glb` is the single canonical visible rig.
-- Startup validates the asset path, 61-bone skeleton, ten animation clips, and at least 30 mesh parts.
+- Startup validates the asset path, 61-bone skeleton, ten required animation clips, named leg and body bones, and at least 30 mesh parts.
 - If validation fails, the runtime hides all procedural reference meshes and shows an error. It never switches to an older model.
 - Juvenile mode keeps the canonical rig, scales it to nymph size, hides adult wings, and adds small wing buds. This is the first in-game juvenile profile; a separate juvenile GLB can be authored later.
 
 ## Controls and habitats
 
-- Hold the arrow keys or WASD to pan freely. Hold Shift to move faster; Q/E move vertically. Page Up/Down zoom continuously.
+- Hold the arrow keys or WASD to pan freely beyond the enclosure. Movement runs at 20 scene units per second, Shift boosts it fourfold, and Q/E move vertically. Page Up/Down zoom continuously.
 - Touch users can hold the on-screen direction pad. Drag to orbit and pinch or use the zoom buttons.
 - The enclosure is 11.2 × 8.2 × 7.1 scene units. Rainforest, dry grassland, desert, and temperate forest profiles set different lighting, foliage tint, temperature, and humidity defaults.
 - Twelve independent terrarium slots preserve the individual name, species profile, life stage, biome, care values, decorations, feeder types, and position. Slot 1 can migrate existing v2–v6 saves.
