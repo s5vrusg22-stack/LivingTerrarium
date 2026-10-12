@@ -31,6 +31,10 @@ for modeling_detail in [
     "Rig_Coxa_{letter}{index}",
     "Rig_ForeFemur_",
     "Rig_Antenna_",
+    "Coxa_{letter}{index}",
+    "Joint_{letter}{index}",
+    "Tibia_{letter}{index}",
+    "ForeFemur_",
     "('FLY',30,.64)",
 ]:
     assert modeling_detail in generator, modeling_detail
@@ -52,6 +56,7 @@ node_names = {node.get("name", "") for node in nodes}
 joint_count = max((len(skin.get("joints", [])) for skin in document.get("skins", [])), default=0)
 assert joint_count >= 61, joint_count
 assert len(document.get("meshes", [])) >= 30
+assert len(document["meshes"]) >= 247, len(document["meshes"])
 required_bones = ["Rig_Head", "Rig_Thorax"]
 required_bones += [f"Rig_{part}_{side}{index}" for side in ["L", "R"] for index in range(3) for part in ["Coxa", "Joint", "Tibia", "Foot"]]
 required_bones += [f"Rig_{part}_{side}" for side in ["L", "R"] for part in ["ForeFemur", "ForeTibia", "Antenna"]]
