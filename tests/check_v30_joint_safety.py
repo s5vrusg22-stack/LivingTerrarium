@@ -2,7 +2,7 @@ from pathlib import Path
 import json, struct
 p=Path(__file__).resolve().parents[1]
 s=(p/'scripts/rigged_pose_driver.gd').read_text()
-keys=['HIP_YAW_LIMIT','HIP_PITCH_LIMIT','KNEE_FLEX_LIMIT','ANKLE_FLEX_LIMIT','MAX_FRAME_DELTA','MAX_INVALID_FRAMES','STANCE_WEIGHT','SWING_WEIGHT','CLIMB_STANCE_WEIGHT','CCD_DAMPING','_limit_joint_rotation','_finite_vector','_finite_basis','get_ik_diagnostics','target_ready.fill(false)','last_error[leg_index]','chain_enabled']
+keys=['HIP_YAW_LIMIT','HIP_PITCH_LIMIT','KNEE_FLEX_LIMIT','ANKLE_FLEX_LIMIT','MAX_CCD_STEP','MAX_TARGET_DISTANCE','MAX_TARGET_SPEED','MAX_ROTATION_SPEED','CCD_DAMPING','MAX_FRAME_DELTA','MIN_IK_SEGMENT','_limit_joint_rotation','_finite_vector','_finite_basis','get_ik_diagnostics','last_error','chain_enabled','target_ready']
 for key in keys: assert key in s,key
 assert s.count('func _solve_leg_ccd(')==1
 assert s.count('func get_ik_diagnostics(')==1

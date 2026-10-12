@@ -1,0 +1,40 @@
+[
+  {
+    "source": "1000157366.jpg",
+    "cutout": "mantis_dorsal_photo.png",
+    "source_size": [
+      1152,
+      1536
+    ],
+    "crop": [
+      264,
+      127,
+      970,
+      1396
+    ],
+    "cutout_size": [
+      706,
+      1269
+    ],
+    "opaque_pixels": 97568
+  },
+  {
+    "source": "1000157339.jpg",
+    "cutout": "mantis_side_photo.png",
+    "source_size": [
+      1536,
+      1244
+    ],
+    "crop": [
+      0,
+      95,
+      1481,
+      1244
+    ],
+    "cutout_size": [
+      1481,
+      1149
+    ],
+    "opaque_pixels": 232716
+  }
+]

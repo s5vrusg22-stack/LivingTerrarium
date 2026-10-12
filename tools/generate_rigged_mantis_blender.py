@@ -1,7 +1,6 @@
 """Blender 4.x: blender -b --python tools/generate_rigged_mantis_blender.py
 Generate editable mantis rig .blend + animated GLB; Blender is required.
-Adult Hierodula-style mint mantis; the Chiang Mai trade name is not a formal
-species diagnosis. Anatomically inspired, hand-procedural, not a scan.
+Anatomically inspired, hand-procedural model, not a scan or photoreal asset.
 Coordinates: Blender Z up, head toward -Y; 1 Blender unit ~= 1 m in game.
 """
 import bpy, math
@@ -24,14 +23,13 @@ def mat(name, color, roughness=0.48, metallic=0.0):
     p.inputs['Metallic'].default_value = metallic
     return m
 
-shell = mat('Chitin - mint green', (.46,.77,.62), .37)
-light = mat('Chitin - pale mint', (.67,.88,.74), .46)
-olive = mat('Joint membranes', (.22,.43,.34), .67)
-edge = mat('Segment edge', (.29,.52,.41), .55)
-eye = mat('Compound eye - deep jade', (.015,.06,.045), .18)
-vein = mat('Wing veins', (.34,.61,.49), .48)
-wing = mat('Tegmina - mint', (.60,.83,.69), .65)
-hindwing = mat('Hindwing - pale membrane', (.73,.91,.80), .54)
+shell = mat('Chitin - leaf green', (.30,.43,.13), .62)
+light = mat('Chitin - dorsal green', (.39,.53,.19), .66)
+olive = mat('Joint membranes', (.18,.26,.09), .72)
+edge = mat('Segment edge', (.25,.34,.12), .70)
+eye = mat('Compound eye - dark jade', (.018,.055,.028), .30)
+vein = mat('Wing veins', (.40,.53,.22), .68)
+wing = mat('Tegmina - semi matte', (.40,.54,.20), .78)
 
 # Each mesh is rigidly weighted to one deform bone. This gives a valid armature
 # and avoids brittle automatic skinning on thin insect limbs.
@@ -48,6 +46,120 @@ def ellipsoid(name, center, scale, material, bone):
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
     o.data.materials.append(material); smooth_mesh(o)
     parts.append((o,bone)); return o
+
+def leaf_wing(name, side, center_y, center_z, material, bone_name):
+    """One half of a paired, cambered leaf wing with a fine vein relief grid."""
+    length_steps, width_steps = 80, 24
+    columns = width_steps + 1
+    surface_count = (length_steps + 1) * columns
+    vertices, uv_by_vertex = [], []
+
+    def vertex_index(i, j, underside=False):
+        return i * columns + j + (surface_count if underside else 0)
+
+    for underside in (False, True):
+        for i in range(length_steps + 1):
+            u = i / length_steps
+            profile = max(0.0, math.sin(math.pi * u)) ** .74 * (0.88 + .12 * math.cos(math.pi * (u - .10)))
+            y = center_y + (u - .5) * .82
+            for j in range(columns):
+                across = j / width_steps
+                x = side * .145 * across * profile
+                camber = .012 * math.sin(math.pi * across) * max(0.0, math.sin(math.pi * u)) ** .70
+                midrib = .0048 * math.exp(-((across - .5) / .035) ** 2)
+                ribs = sum(height * math.exp(-((across - band) / .022) ** 2)
+                           for band, height in ((.24, .0018), (.39, .00145), (.62, .00145), (.78, .0012), (.92, .0009)))
+                cross_phase = u * 22.0 - across * .42
+                cross_dist = abs((cross_phase + .5) % 1.0 - .5)
+                crossvein = .00075 * math.exp(-((cross_dist / .075) ** 2)) * math.sin(math.pi * across)
+                z = center_z + camber + (midrib + ribs + crossvein) * max(0.0, math.sin(math.pi * u)) ** .6 + (-.0017 if underside else .0017)
+                vertices.append((x, y, z))
+                uv_by_vertex.append((across, u))
+
+    faces = []
+    for i in range(length_steps):
+        for j in range(width_steps):
+            a = vertex_index(i, j)
+            b = vertex_index(i, j + 1)
+            c = vertex_index(i + 1, j + 1)
+            d = vertex_index(i + 1, j)
+            if side > 0:
+                faces.append((a, b, c, d))
+                faces.append((vertex_index(i, j, True), vertex_index(i + 1, j, True),
+                              vertex_index(i + 1, j + 1, True), vertex_index(i, j + 1, True)))
+            else:
+                faces.append((a, d, c, b))
+                faces.append((vertex_index(i, j, True), vertex_index(i, j + 1, True),
+                              vertex_index(i + 1, j + 1, True), vertex_index(i + 1, j, True)))
+    for i in range(length_steps):
+        for j in (0, width_steps):
+            faces.append((vertex_index(i, j), vertex_index(i + 1, j),
+                          vertex_index(i + 1, j, True), vertex_index(i, j, True)))
+    for j in range(width_steps):
+        faces.append((vertex_index(0, j), vertex_index(0, j, True),
+                      vertex_index(0, j + 1, True), vertex_index(0, j + 1)))
+        faces.append((vertex_index(length_steps, j), vertex_index(length_steps, j + 1),
+                      vertex_index(length_steps, j + 1, True), vertex_index(length_steps, j, True)))
+
+    mesh = bpy.data.meshes.new(name + ' mesh')
+    mesh.from_pydata(vertices, [], faces)
+    mesh.update()
+    uv_layer = mesh.uv_layers.new(name='UVMap')
+    for polygon in mesh.polygons:
+        polygon.use_smooth = True
+        for loop_index in polygon.loop_indices:
+            vertex = mesh.loops[loop_index].vertex_index
+            uv_layer.data[loop_index].uv = uv_by_vertex[vertex % surface_count]
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    mesh.materials.append(material)
+    parts.append((obj, bone_name))
+    return obj
+
+def pronotum(name, material, bone_name):
+    """Fine swept pronotal shield with a keel, side carinae, and collar grooves."""
+    length_steps, ring_steps = 80, 24
+    vertices, faces = [], []
+    for i in range(length_steps + 1):
+        u = i / length_steps
+        y = -.65 + .72 * u
+        profile = .88 + .12 * math.sin(math.pi * u) ** .65
+        groove = .045 * (math.exp(-((u - .095) / .012) ** 2) + math.exp(-((u - .925) / .014) ** 2))
+        lip = .030 * (math.exp(-((u - .072) / .018) ** 2) + math.exp(-((u - .895) / .020) ** 2))
+        for j in range(ring_steps):
+            phi = 2.0 * math.pi * j / ring_steps
+            sn, cs = math.sin(phi), math.cos(phi)
+            dorsal = max(0.0, cs)
+            width = .052 * profile * (1.0 - groove + lip)
+            height = .060 * profile * (1.0 - groove + lip)
+            keel = .0085 * dorsal ** 8 * math.sin(math.pi * u) ** .45
+            carina = .0032 * math.exp(-((abs(sn) - .66) / .055) ** 2) * dorsal
+            vertices.append((width * sn, y, .30 + height * cs + keel + carina))
+    for i in range(length_steps):
+        for j in range(ring_steps):
+            a = i * ring_steps + j
+            b = i * ring_steps + (j + 1) % ring_steps
+            c = (i + 1) * ring_steps + (j + 1) % ring_steps
+            d = (i + 1) * ring_steps + j
+            faces.extend(((a, b, c), (a, c, d)))
+    start_center = len(vertices)
+    vertices.append((0.0, -.65, .30))
+    end_center = len(vertices)
+    vertices.append((0.0, .07, .30))
+    for j in range(ring_steps):
+        nxt = (j + 1) % ring_steps
+        faces.extend(((start_center, nxt, j), (end_center, length_steps * ring_steps + j,
+                                                length_steps * ring_steps + nxt)))
+    mesh = bpy.data.meshes.new(name + ' mesh')
+    mesh.from_pydata(vertices, [], faces)
+    mesh.update()
+    for poly in mesh.polygons:
+        poly.use_smooth = True
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    mesh.materials.append(material)
+    parts.append((obj, bone_name))
+    return obj
 
 def rod(name, a, b, r0, r1, material, bone, vertices=12):
     a,b=Vector(a),Vector(b); d=b-a
@@ -69,47 +181,35 @@ bone('root',(0,0,.2),(0,-.08,.2))
 bone('abdomen',(0,.02,.2),(0,.32,.2),'root')
 bone('thorax',(0,-.1,.28),(0,-.52,.31),'root')
 bone('head',(0,-.52,.31),(0,-.70,.32),'thorax')
-ellipsoid('Abdomen body',(0,.20,.24),(.108,.30,.105),shell,'abdomen')
-ellipsoid('Abdomen dorsal plate',(0,.18,.305),(.095,.26,.048),light,'abdomen')
+ellipsoid('Abdomen body',(0,.20,.24),(.122,.355,.108),shell,'abdomen')
+ellipsoid('Abdomen dorsal plate',(0,.18,.305),(.104,.305,.041),light,'abdomen')
 for i in range(7):
     y=-.01+i*.065
     k=1-.38*abs((i-3)/4)
-    ellipsoid('Abdominal tergite %02d'%i,(0,y,.265),(.104*k,.010,.084*k),edge,'abdomen')
-ellipsoid('Pronotum',(0,-.29,.30),(.056,.30,.065),shell,'thorax')
-ellipsoid('Pronotum ridge',(0,-.30,.357),(.019,.25,.014),light,'thorax')
-ellipsoid('Head triangular capsule',(0,-.67,.32),(.155,.102,.087),light,'head')
-ellipsoid('Clypeus',(0,-.759,.274),(.07,.023,.028),shell,'head')
+    ellipsoid('Abdominal tergite %02d'%i,(0,y,.265),(.108*k,.008,.086*k),edge,'abdomen')
+pronotum('Pronotum shield',shell,'thorax')
+ellipsoid('Head triangular capsule',(0,-.67,.32),(.105,.080,.073),light,'head')
+ellipsoid('Clypeus',(0,-.751,.277),(.058,.020,.024),shell,'head')
 for side,letter in [(-1,'L'),(1,'R')]:
-    ellipsoid('Compound eye '+letter,(side*.124,-.694,.357),(.053,.058,.056),eye,'head')
-    for facet in range(12):
-        row=facet//4; col=facet%4
-        facet_y=-.708+row*.021; facet_z=.323+col*.021
-        dy=facet_y+.694; dz=facet_z-.357
-        surface=.124+.053*math.sqrt(max(.05,1-(dy/.058)**2-(dz/.056)**2))+.003
-        ellipsoid('Eye facet '+letter+str(facet),(side*surface,facet_y,facet_z),(.0055,.006,.006),vein,'head')
-    # Two walking legs on each side, with explicit coxa/femur/tibia/tarsus.
-    for index,y in enumerate((.12,-.13)):
+    ellipsoid('Compound eye '+letter,(side*.103,-.694,.357),(.046,.050,.048),eye,'head')
+    for i in range(3):
+        ellipsoid('Ocellus '+letter+str(i),(side*(.013+.020*i),-.754,.395),(.008,.007,.008),olive,'head')
+    # Three walking legs on each side, with explicit coxa/femur/tibia/tarsus.
+    for index,y in enumerate((.13,-.07,-.28)):
         prefix=f'{letter}_walk{index+1}'
         hip=(side*.055,y,.255)
         coxa=(side*.16,y+.015,.24)
         knee=(side*.29,y+.085,.16)
-        ankle=(side*.38,y+.13,.025)
-        toe=(side*.41,y+.18,.014)
-        bone(prefix+'_coxa',hip,coxa,'thorax')
+        ankle=(side*.40,y+.15,.022)
+        toe=(side*.45,y+.205,.012)
+        bone(prefix+'_coxa',hip,coxa,'thorax' if index==2 else 'root')
         bone(prefix+'_femur',coxa,knee,prefix+'_coxa')
         bone(prefix+'_tibia',knee,ankle,prefix+'_femur')
         bone(prefix+'_tarsus',ankle,toe,prefix+'_tibia')
-        rod(prefix+' coxa',hip,coxa,.021,.016,shell,prefix+'_coxa')
-        rod(prefix+' femur',coxa,knee,.023,.012,light,prefix+'_femur')
+        rod(prefix+' coxa',hip,coxa,.018,.014,shell,prefix+'_coxa')
+        rod(prefix+' femur',coxa,knee,.019,.010,light,prefix+'_femur')
         rod(prefix+' tibia',knee,ankle,.011,.005,shell,prefix+'_tibia')
-        for tarsomere in range(5):
-            t0=tarsomere/5; t1=(tarsomere+1)/5
-            start=Vector(ankle).lerp(Vector(toe),t0)
-            end=Vector(ankle).lerp(Vector(toe),t1)
-            rod(prefix+' tarsomere %02d'%tarsomere,start,end,.005-tarsomere*.00045,.003,olive,prefix+'_tarsus')
-        for claw_side in (-1,1):
-            claw_end=(toe[0]+side*.018+claw_side*.006,toe[1]+.012,toe[2]+.006)
-            rod(prefix+' paired claw',toe,claw_end,.0028,.0007,light,prefix+'_tarsus')
+        rod(prefix+' tarsus',ankle,toe,.005,.002,olive,prefix+'_tarsus')
         ellipsoid(prefix+' knee',(knee),(.019,.019,.019),olive,prefix+'_femur')
     # Raptorial foreleg with movable coxa, spined femur, folding tibia.
     prefix=letter+'_raptor'
@@ -119,41 +219,40 @@ for side,letter in [(-1,'L'),(1,'R')]:
     bone(prefix+'_femur',b,c,prefix+'_coxa')
     bone(prefix+'_tibia',c,d,prefix+'_femur')
     bone(prefix+'_tarsus',d,e,prefix+'_tibia')
-    rod(prefix+' coxa',a,b,.022,.018,shell,prefix+'_coxa')
-    rod(prefix+' femur',b,c,.044,.023,light,prefix+'_femur')
-    rod(prefix+' tibia',c,d,.024,.006,shell,prefix+'_tibia')
-    rod(prefix+' tarsus',d,e,.007,.001,olive,prefix+'_tarsus')
-    for j in range(9):
-        t=(j+1)/10
+    rod(prefix+' coxa',a,b,.027,.022,shell,prefix+'_coxa')
+    rod(prefix+' femur',b,c,.068,.038,light,prefix+'_femur')
+    rod(prefix+' tibia',c,d,.040,.012,shell,prefix+'_tibia')
+    rod(prefix+' tarsus',d,e,.009,.0015,olive,prefix+'_tarsus')
+    for j in range(13):
+        t=(j+1)/14
         base=Vector(b).lerp(Vector(c),t)
-        tip=base+Vector((side*.013,-.017,-(.015+.018*math.sin(math.pi*t))))
-        rod(prefix+' femoral spine %02d'%j,base,tip,.004,.0005,olive,prefix+'_femur',8)
-    for j in range(7):
-        t=(j+1)/8
-        base=Vector(c).lerp(Vector(d),t)
-        tip=base+Vector((-side*.008,.018,-.012))
-        rod(prefix+' tibial spine %02d'%j,base,tip,.003,.0005,olive,prefix+'_tibia',8)
-    # Long, visibly curved antennae made from short articulated sections.
-    ant=letter+'_antenna'
-    p0=Vector((side*.047,-.74,.38))
-    previous=p0
+        tip=base+Vector((side*.020,-.025,-(.021+.021*math.sin(math.pi*t))))
+        rod(prefix+' femoral spine %02d'%j,base,tip,.006,.0005,olive,prefix+'_femur',8)
     for j in range(10):
-        t=(j+1)/10.0
-        current=Vector((side*(.047+.11*t+.035*math.sin(math.pi*t)),-.74-.56*t,.38+.16*math.sin(math.pi*t)))
-        u=tuple(previous); v=tuple(current)
+        t=(j+1)/11
+        base=Vector(c).lerp(Vector(d),t)
+        tip=base+Vector((-side*.010,.022,-.015))
+        rod(prefix+' tibial spine %02d'%j,base,tip,.004,.0006,olive,prefix+'_tibia',8)
+    # Antennae in three articulated sections.
+    ant=letter+'_antenna'
+    p0=(side*.047,-.74,.38); p1=(side*.078,-.89,.47)
+    p2=(side*.12,-1.03,.53); p3=(side*.17,-1.17,.56)
+    for j,(u,v) in enumerate(((p0,p1),(p1,p2),(p2,p3))):
         bn=ant+str(j)
         bone(bn,u,v,'head' if j==0 else ant+str(j-1))
-        rod(bn,u,v,.0035-j*.00025,.0025-j*.00018,olive,bn,8)
-        previous=current
-    # Wing covers and veins follow abdomen.
-    ellipsoid('Tegmen '+letter,(side*.065,.15,.345),(.055,.245,.013),wing,'abdomen')
-    ellipsoid('Membranous hindwing '+letter,(side*.105,.14,.343),(.072,.225,.008),hindwing,'abdomen')
-    for j in range(6):
-        x=side*(.025+j*.018)
-        rod('Wing vein '+letter+str(j),(x,-.09,.358),(x+side*.012,.39,.356),.0022,.0009,vein,'abdomen',8)
-
-for name, center in [('Ocellus_Median',(0,-.754,.395)),('Ocellus_Left',(-.026,-.748,.390)),('Ocellus_Right',(.026,-.748,.390))]:
-    ellipsoid(name,center,(.008,.007,.008),olive,'head')
+        rod(bn,u,v,.004-j*.0008,.002-j*.0004,olive,bn,8)
+    # Separate lanceolate tegmina meet at the dorsal seam and carry readable veins.
+    leaf_wing('Wing_'+letter,side,.17,.355,wing,'abdomen')
+    center_x=side*.073
+    rod('Wing midrib '+letter,(center_x,-.185,.373),(center_x,.525,.373),.0036,.0018,vein,'abdomen',8)
+    for row in range(1,19):
+        u=row/19.0
+        y=.17-.41+.82*u
+        extent=.0725*max(0.0,math.sin(math.pi*u))**.74
+        for flank in (-1.0,1.0):
+            end_x=center_x+flank*extent
+            rod('Wing crossvein %s %02d'%(letter,row),
+                (center_x,y,.371),(end_x,y+.026,.368),.0018,.0008,vein,'abdomen',8)
 
 # Build armature and bind rigid weights.
 bpy.ops.object.armature_add(enter_editmode=True, location=(0,0,0))

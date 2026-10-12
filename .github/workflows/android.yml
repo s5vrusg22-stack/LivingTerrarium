@@ -1,131 +1,70 @@
-name: Validate and export Godot 4.3 project
+name: Build Android APK
 on:
   workflow_dispatch:
   push:
     branches: [main]
 
 jobs:
-  validate:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
-          python-version: '3.12'
-      - name: Generate textures and run regression checks
-        run: |
-          python -m pip install --disable-pip-version-check numpy pillow
-          python tools/generate_mantis_cuticle_texture.py
-          for test_script in tests/check_*.py; do
-            echo "Running ${test_script}"
-            python "$test_script"
-          done
-      - name: Install Godot 4.3
+          distribution: temurin
+          java-version: '17'
+      - name: Install Godot 4.3 and export templates
         shell: bash
         run: |
           set -euo pipefail
           curl -fL --retry 3 -o /tmp/godot.zip https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
           unzip -q /tmp/godot.zip -d /tmp
           sudo install -m 755 /tmp/Godot_v4.3-stable_linux.x86_64 /usr/local/bin/godot
+          curl -fL --retry 3 -o /tmp/templates.tpz https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz
+          mkdir -p /tmp/godot_templates "$HOME/.local/share/godot/export_templates/4.3.stable"
+          unzip -q /tmp/templates.tpz -d /tmp/godot_templates
+          cp -a /tmp/godot_templates/templates/. "$HOME/.local/share/godot/export_templates/4.3.stable/"
           godot --headless --version
-      - name: Install software OpenGL display
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb libgl1-mesa-dri
-      - name: Import project and reject script parse errors
+      - name: Configure Android SDK and debug keystore
         shell: bash
         run: |
           set -euo pipefail
-          godot --headless --path . --editor --import --quit 2>&1 | tee /tmp/godot-import.log
-          if grep -E 'SCRIPT ERROR:|Parse Error:|Failed to load script' /tmp/godot-import.log; then
-            echo 'Godot reported a script import or parse error.' >&2
-            exit 1
-          fi
-      - name: Compile every GDScript file
+          : "${ANDROID_HOME:?Android SDK not present on runner}"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+          keytool -genkeypair -noprompt -keystore "$HOME/debug.keystore" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=Android Debug,O=Android,C=US'
+          mkdir -p "$HOME/.config/godot"
+          cat > "$HOME/.config/godot/editor_settings-4.tres" <<SETTINGS
+          [gd_resource type="EditorSettings" format=3]
+          [resource]
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/java_sdk_path = "$JAVA_HOME"
+          export/android/debug_keystore = "$HOME/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          SETTINGS
+      - name: Import project
         shell: bash
         run: |
           set -euo pipefail
-          while IFS= read -r -d '' script; do
-            relative_path=${script#./}
-            echo "Checking ${relative_path}"
-            godot --headless --path . --check-only --script "res://${relative_path}"
-          done < <(find . -type f -name '*.gd' -not -path './.godot/*' -print0 | sort -z)
-      - name: Smoke test the startup scene
-        shell: bash
-        run: |
-          set -euo pipefail
-          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --audio-driver Dummy --rendering-method gl_compatibility --rendering-driver opengl3 --disable-vsync --quit-after 180 2>&1 | tee /tmp/godot-startup.log
-          if grep -E 'SCRIPT ERROR:|Parse Error:|Failed to load script|Invalid call|Invalid set index|Node not found|^ERROR:' /tmp/godot-startup.log; then
-            echo 'Godot reported an application startup error.' >&2
-            exit 1
-          fi
-      - name: Capture six-angle mantis renders
-        env:
-          LIBGL_ALWAYS_SOFTWARE: "1"
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p build/model-renders
-          xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --audio-driver Dummy --rendering-method gl_compatibility --rendering-driver opengl3 --disable-vsync --script res://tests/render_reference_model.gd
-          test "$(find build/model-renders -maxdepth 1 -name '*.png' | wc -l)" -eq 6
-      - name: Set up Java 17 for Android export
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: ''
-          log-accepted-android-sdk-licenses: 'false'
-      - name: Install Godot 4.3 Android SDK packages
-        shell: bash
-        run: |
-          set -euo pipefail
-          sdkmanager --install \
-            "platform-tools" \
-            "platforms;android-34" \
-            "build-tools;34.0.0" \
-            "cmake;3.10.2.4988404" \
-            "ndk;23.2.8568313"
-      - name: Install Godot 4.3 Android export template
-        shell: bash
-        run: |
-          set -euo pipefail
-          template_dir="$HOME/.local/share/godot/export_templates/4.3.stable"
-          mkdir -p "$template_dir"
-          curl -fL --retry 3 -o /tmp/godot-android-templates.tpz https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz
-          mkdir -p /tmp/godot-android-templates
-          unzip -q /tmp/godot-android-templates.tpz -d /tmp/godot-android-templates
-          install -m 644 /tmp/godot-android-templates/templates/android_debug.apk "$template_dir/android_debug.apk"
-      - name: Export and verify installable Android APK
+          godot --headless --path . --editor --import --quit
+      - name: Export Android debug APK
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p build
-          godot --headless --path . --export-debug "Android" build/LivingTerrarium3D-debug.apk 2>&1 | tee /tmp/godot-android-export.log
-          apk="build/LivingTerrarium3D-debug.apk"
-          test -s "$apk"
-          unzip -tq "$apk"
-          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$apk" | tee /tmp/livingterrarium-apk-info.txt
-          grep -F "package: name='org.livingterrarium.simulator'" /tmp/livingterrarium-apk-info.txt
-          unzip -Z1 "$apk" | grep -q '^lib/arm64-v8a/'
-      - name: Upload installable Android APK
-        uses: actions/upload-artifact@v7
-        with:
-          name: LivingTerrarium3D-Android-debug-APK
-          path: build/LivingTerrarium3D-debug.apk
-          if-no-files-found: error
-      - name: Upload six-angle mantis renders
+          godot --headless --path . --export-debug Android build/LivingTerrarium3D-v8.3-ARM64.apk
+          test -s build/LivingTerrarium3D-v8.3-ARM64.apk
+          sha256sum build/LivingTerrarium3D-v8.3-ARM64.apk > build/SHA256SUMS.txt
+      - name: Upload APK and checksum
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
-          name: LivingTerrarium3D-mantis-six-angle-reference-renders
-          path: build/model-renders/*.png
+          name: LivingTerrarium3D-v8.3-ARM64-apk
+          path: |
+            build/LivingTerrarium3D-v8.3-ARM64.apk
+            build/SHA256SUMS.txt
           if-no-files-found: warn

@@ -2,9 +2,9 @@ class_name RiggedPoseDriver
 extends Node
 
 # Procedural pose corrections are layered on top of imported glTF clips.
-# Hierarchical CCD is applied to the four walking legs when compatible bones exist.
+# Hierarchical CCD is applied to the six walking legs when compatible bones exist.
 const SIDES := ["L", "R"]
-const LEGS_PER_SIDE := 2
+const LEGS_PER_SIDE := 3
 const MAX_ANGLE := 0.28
 const FOOT_SMOOTHING := 9.0
 const CCD_ITERATIONS := 9
@@ -43,7 +43,14 @@ var bone_map: Dictionary = {}
 var leg_offsets: Array[float] = []
 var head_offset := 0.0
 var foreleg_offset := 0.0
+const FRONT_LEG_ANIMATION_COUNT := 100
+const FRONT_LEG_KEYFRAME_COUNT := 9
+const FRONT_LEG_ANIMATION_PATH := "res://assets/animations/front_leg_100.json"
+var front_leg_animation_bank: Array[Dictionary] = []
+var front_leg_animation_index := -1
+var front_leg_animation_clock := 0.0
 var active_state := "IDLE"
+var motion_clock := 0.0
 var hierarchical_chains := false
 var chain_bones: Array = []
 var chain_reach: Array[float] = []
@@ -84,32 +91,32 @@ func setup(target_skeleton: Skeleton3D, target_player: AnimationPlayer) -> void:
                 missing.append(name)
             else:
                 bone_map[name] = bone
-    for name in ["Rig_Head", "Rig_Thorax"]:
+    for name in ["Rig_Head", "Rig_Thorax", "Rig_Abdomen"]:
         var bone := skeleton.find_bone(name)
         if bone < 0:
             missing.append(name)
         else:
             bone_map[name] = bone
-    leg_offsets.resize(4)
+    leg_offsets.resize(6)
     leg_offsets.fill(0.0)
     valid = missing.is_empty()
     validation_message = "all required rig bones found" if valid else "Missing: " + ", ".join(missing)
     enabled = valid
     chain_bones.clear()
     chain_reach.clear()
-    ik_blend.resize(4)
+    ik_blend.resize(6)
     ik_blend.fill(0.0)
     hierarchical_chains = valid
-    filtered_targets.resize(4)
-    target_ready.resize(4)
+    filtered_targets.resize(6)
+    target_ready.resize(6)
     target_ready.fill(false)
-    invalid_frames.resize(4)
+    invalid_frames.resize(6)
     invalid_frames.fill(0)
-    last_error.resize(4)
+    last_error.resize(6)
     last_error.fill(0.0)
-    solve_iterations.resize(4)
+    solve_iterations.resize(6)
     solve_iterations.fill(0)
-    chain_enabled.resize(4)
+    chain_enabled.resize(6)
     chain_enabled.fill(false)
     joint_rest_bases.clear()
     if valid:
@@ -129,13 +136,62 @@ func setup(target_skeleton: Skeleton3D, target_player: AnimationPlayer) -> void:
                 var tarsus := ankle_rest.distance_to(tip_rest)
                 chain_reach.append(upper + lower + tarsus)
                 var chain_ok := skeleton.get_bone_parent(knee) == hip and skeleton.get_bone_parent(ankle) == knee and skeleton.get_bone_parent(tip) == ankle and upper >= MIN_IK_SEGMENT and lower >= MIN_IK_SEGMENT and tarsus >= MIN_IK_SEGMENT
-                chain_enabled[index if side == "L" else index + 2] = chain_ok
+                chain_enabled[index if side == "L" else index + 3] = chain_ok
                 if not chain_ok:
                     hierarchical_chains = false
                 for bone_id in [hip, knee, ankle]:
                     joint_rest_bases[bone_id] = skeleton.get_bone_global_rest(bone_id).basis.orthonormalized()
     if not hierarchical_chains:
         validation_message += "; hierarchical IK unavailable, orientation fallback"
+    _build_front_leg_animation_bank()
+
+func _build_front_leg_animation_bank() -> void:
+    front_leg_animation_bank.clear()
+    if not FileAccess.file_exists(FRONT_LEG_ANIMATION_PATH):
+        return
+    var file := FileAccess.open(FRONT_LEG_ANIMATION_PATH, FileAccess.READ)
+    if file == null:
+        return
+    var parsed: Variant = JSON.parse_string(file.get_as_text())
+    if not (parsed is Dictionary):
+        return
+    var clips: Variant = parsed.get("animations", [])
+    if not (clips is Array) or clips.size() != FRONT_LEG_ANIMATION_COUNT:
+        return
+    for clip in clips:
+        if not (clip is Dictionary):
+            front_leg_animation_bank.clear()
+            return
+        var clip_data: Dictionary = clip
+        var keyframes: Variant = clip_data.get("keyframes", [])
+        if not (keyframes is Array) or keyframes.size() != FRONT_LEG_KEYFRAME_COUNT:
+            front_leg_animation_bank.clear()
+            return
+        for frame in keyframes:
+            if not (frame is Array) or frame.size() != 12:
+                front_leg_animation_bank.clear()
+                return
+        front_leg_animation_bank.append(clip_data)
+
+func play_front_leg_animation(animation_index: int) -> void:
+    if animation_index < 0:
+        stop_front_leg_animation()
+        return
+    if front_leg_animation_bank.size() != FRONT_LEG_ANIMATION_COUNT:
+        _build_front_leg_animation_bank()
+    if front_leg_animation_bank.size() != FRONT_LEG_ANIMATION_COUNT:
+        return
+    front_leg_animation_index = posmod(animation_index, FRONT_LEG_ANIMATION_COUNT)
+    front_leg_animation_clock = 0.0
+
+func stop_front_leg_animation() -> void:
+    front_leg_animation_index = -1
+    front_leg_animation_clock = 0.0
+
+func get_front_leg_animation_name() -> String:
+    if front_leg_animation_index < 0 or front_leg_animation_index >= front_leg_animation_bank.size():
+        return "AUTO"
+    return String(front_leg_animation_bank[front_leg_animation_index]["name"])
 
 func reset_offsets() -> void:
     leg_offsets.fill(0.0)
@@ -161,12 +217,13 @@ func set_motion_targets(state: String, movement: float, anchors: Array[Vector3],
             target_ready.fill(false)
         last_state = state
     active_state = state
+    motion_clock += dt
     # Start each update from the imported clip, rather than accumulating previous
     # frame's IK rotations. This also releases overrides when the model is paused.
     skeleton.clear_bones_global_pose_override()
     # A target is supplied in WORLD coordinates by the grounded gait controller.
     # Convert it into the Skeleton3D local frame; never treat it as joint-local.
-    for i in range(4):
+    for i in range(6):
         if i >= anchors.size() or i >= swings.size():
             continue
         if not _finite_vector(anchors[i]):
@@ -176,8 +233,8 @@ func set_motion_targets(state: String, movement: float, anchors: Array[Vector3],
             _solve_leg_ccd(i, skeleton.to_local(anchors[i]), swings[i], movement, dt)
         elif i < joints.size():
             # Flat glTF bones: backward compatibility with older flat skeletons.
-            var side := "L" if i < 2 else "R"
-            var index := i % 2
+            var side := "L" if i < 3 else "R"
+            var index := i % 3
             var target_local := joints[i].to_local(anchors[i])
             var reach_bias := clampf(atan2(target_local.z, maxf(0.1, absf(target_local.y))) * 0.22, -MAX_ANGLE, MAX_ANGLE)
             var lateral_bias := clampf(atan2(target_local.x, maxf(0.1, absf(target_local.y))) * 0.12, -MAX_ANGLE, MAX_ANGLE)
@@ -191,8 +248,62 @@ func set_motion_targets(state: String, movement: float, anchors: Array[Vector3],
     var strike_goal := -0.45 if state == "STRIKE" and strike_timer > 0.0 else -0.18 if state in ["HUNT", "ALERT"] else 0.0
     foreleg_offset = move_toward(foreleg_offset, strike_goal, dt * 10.0)
     for side in SIDES:
-        _apply_local_rotation("Rig_ForeFemur_" + side, Vector3.RIGHT, foreleg_offset, 0.75)
-        _apply_local_rotation("Rig_ForeTibia_" + side, Vector3.RIGHT, -foreleg_offset * 0.48, 0.65)
+        # The whole foreleg is reflected across its thorax-root Z plane, so
+        # pitch and yaw inputs must be reflected with it while roll stays fixed.
+        _apply_local_rotation("Rig_ForeFemur_" + side, Vector3.RIGHT, -foreleg_offset, 0.75)
+        _apply_local_rotation("Rig_ForeTibia_" + side, Vector3.RIGHT, foreleg_offset * 0.48, 0.65)
+        var alert_sweep := 1.55 if state == "ALERT" else 0.92 if state == "SCAN" else 0.46
+        var side_phase := 0.0 if side == "L" else 1.25
+        var antenna_sway := sin(motion_clock * (3.2 if state == "ALERT" else 1.7) + side_phase) * alert_sweep
+        _apply_local_rotation("Rig_Antenna_" + side, Vector3.UP, antenna_sway, 0.56)
+    _advance_front_leg_animation(dt)
+    var torso_breath := sin(motion_clock * 1.8) * 0.022
+    var stride_roll := sin(motion_clock * 7.0) * movement * 0.045
+    var torso_pose := torso_breath + stride_roll
+    if state in ["ALERT", "DEFEND"]:
+        torso_pose += 0.065
+    elif state == "STRIKE":
+        torso_pose -= 0.10
+    _apply_local_rotation("Rig_Thorax", Vector3.RIGHT, torso_pose, 0.52)
+    var abdomen_pulse := sin(motion_clock * 1.45) * 0.026 + sin(motion_clock * 3.5) * movement * 0.018
+    if state == "FEED":
+        abdomen_pulse += sin(motion_clock * 6.0) * 0.035
+    _apply_local_rotation("Rig_Abdomen", Vector3.RIGHT, abdomen_pulse, 0.46)
+
+func _advance_front_leg_animation(dt: float) -> void:
+    if front_leg_animation_index < 0 or front_leg_animation_index >= front_leg_animation_bank.size():
+        return
+    front_leg_animation_clock += dt
+    var profile: Dictionary = front_leg_animation_bank[front_leg_animation_index]
+    var duration := float(profile["duration"])
+    var progress := fposmod(front_leg_animation_clock, duration) / duration
+    var key_position := progress * float(FRONT_LEG_KEYFRAME_COUNT - 1)
+    var key_index := mini(int(floor(key_position)), FRONT_LEG_KEYFRAME_COUNT - 2)
+    var blend := key_position - float(key_index)
+    var frames: Array = profile["keyframes"]
+    var from_frame: Array = frames[key_index]
+    var to_frame: Array = frames[key_index + 1]
+    for side_index in range(2):
+        var side := "L" if side_index == 0 else "R"
+        var offset := side_index * 6
+        var femur_pitch := lerpf(float(from_frame[offset]), float(to_frame[offset]), blend)
+        var femur_yaw := lerpf(float(from_frame[offset + 1]), float(to_frame[offset + 1]), blend)
+        var femur_roll := lerpf(float(from_frame[offset + 2]), float(to_frame[offset + 2]), blend)
+        var tibia_fold := lerpf(float(from_frame[offset + 3]), float(to_frame[offset + 3]), blend)
+        var tibia_sweep := lerpf(float(from_frame[offset + 4]), float(to_frame[offset + 4]), blend)
+        var tibia_roll := lerpf(float(from_frame[offset + 5]), float(to_frame[offset + 5]), blend)
+        _apply_combined_local_rotation("Rig_ForeFemur_" + side, femur_pitch, femur_yaw, femur_roll, 0.84)
+        _apply_combined_local_rotation("Rig_ForeTibia_" + side, tibia_fold, tibia_sweep, tibia_roll, 0.84)
+
+func _apply_combined_local_rotation(name: String, pitch: float, yaw: float, roll: float, strength: float) -> void:
+    if not bone_map.has(name):
+        return
+    var index: int = bone_map[name]
+    var base := skeleton.get_bone_global_pose_no_override(index)
+    var rotated := base.rotated_local(Vector3.RIGHT, pitch)
+    rotated = rotated.rotated_local(Vector3.UP, yaw)
+    rotated = rotated.rotated_local(Vector3.BACK, roll)
+    skeleton.set_bone_global_pose_override(index, rotated, strength, false)
 
 func _apply_local_rotation(name: String, axis: Vector3, angle: float, strength: float) -> void:
     if not bone_map.has(name):

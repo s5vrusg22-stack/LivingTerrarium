@@ -1,54 +1,20 @@
-# Living Terrarium 3D v1.3 — Material Pass
+# Living Terrarium 3D
 
-Godot 4 / GDScript Android-targeted terrarium prototype.
+The `main` branch baseline is **v8.3.0**. It restores the articulated mantis
+and the six selectable habitats: mantis terrarium, tropical fish aquarium,
+crayfish habitat, butterfly greenhouse, land hermit crab tank, and stream
+valley salamander habitat.
 
-## Changes from v1.2
-- 5 extra normal maps + 5 roughness maps (512×512 PNG), for a total of 15 textures.
-- Godot StandardMaterial3D hookup for cuticle, eyes, bark, stones, substrate.
-- Includes deterministic source texture processing script `tools/generate_pbr_maps.py`.
-- Existing 10 animation states, physics-based foot raycasts, enclosure editor, saves retained.
+The detailed mantis model is `assets/models/mantis_rigged.glb`. Its SHA-256 is
+`8580a9c00936b436f121db546f5a758e5d306fa829e1b4198ec663ccc1e9a3c2`, matching
+the model in the recovered v8.3 APK. Baseline and recovery provenance are in
+[`README_v8.3.md`](README_v8.3.md).
 
-## Limitations
-- Normal and roughness maps are **estimated from albedo**, not scanned or physically measured.
-- The in-game mantis uses `assets/models/mantis_rigged.glb` as its only visible model. A hidden procedural hierarchy supplies movement and contact references; the Blender authoring scripts remain separate from the runtime asset.
-- Godot/Blender/Android SDK are unavailable in this environment. The project has NOT been launched or built as APK.
+Build the Android ARM64 APK with `tools/build_android_apk.sh` and Godot 4.3,
+Android export templates, and the Android SDK. Run
+`python3 tests/check_v83_baseline.py` and the habitat checks in `tests/`.
 
-
-## v1.4: Independent articulated body joints
-- Thorax pivot with state-dependent pitch.
-- Each grasping foreleg now has independent shoulder, elbow, and tibial claw nodes.
-- HUNT, STRIKE, GROOM, FEED, DEFEND and CLIMB drive elbow/claw angles separately.
-- Existing six-leg IK, ten animation states and PBR texture assets retained.
-- The geometry remains procedural; this is not a skinned Blender GLB.
-- Godot runtime and Android APK were not verified in this environment.
-
-
-See README_v1.6.md for twenty additional procedural anatomical details.
-
-
-See README_v1.8.md for 30 additional ecological interactions and limitations.
-
-
-See README_v1.9.md for prey-to-leaf collision approximation, event throttling, and humidity droop fixes.
-
-
-## v2.4
-See `README_v2.4.md` for main-scene rigged GLB integration, 30 validation steps, and known limitations.
-
-## Taller habitat and reference mantis detail pass
-
-The adult mantis uses volumetric body meshes with PBR cuticle and wing maps,
-guided by the supplied green mantis photographs. Its tapered triangular head
-has a raised compound-eye line. The abdomen uses a 64 by 48 shell grid, the
-pronotum a 40 by 32 grid, and each wing a 48 by 18 double surface with modeled
-veins. Generated cuticle and wing maps are 1024 px; the jade eye atlas and habitat maps stay
-512 px for mobile memory use.
-
-The enclosure measures 7.2 by 5.8 by 5.2 scene units. A tall climbing trunk
-reaches into the upper canopy, with five branch tiers and 18 curved vines with
-leaves. Roaming uses a slower gait and longer pauses; climbing pauses midway.
-
-Camera controls: drag to orbit, use the mouse wheel to zoom, arrow keys to
-orbit, WASD to pan, Q/E to raise or lower the view, Page Up/Page Down to zoom,
-F to follow the mantis, and Home to reset. On touch screens, drag to orbit and
-pinch to zoom.
+Historical model and habitat notes are retained in `README_v2.9.md`,
+`README_v3.0.md`, `README_v3.8.md`, `README_v3.9.md`, `README_v4.0.md`,
+`README_v4.1.md`, `README_v4.3.md`, `README_v4.5.md`, `README_v4.6.md`,
+`README_v4.8.md`, `README_v5.0.md`, `README_v5.2.md`, and `README_v8.1.md`.

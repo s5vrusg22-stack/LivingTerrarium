@@ -1,0 +1,361 @@
+#!/usr/bin/env python3
+"""Resculpt the raptorial forelegs toward the supplied side-view reference.
+
+Run from the project root after the v4.5 reference-shaped body pass:
+    python3 tools/refine_mantis_v10_photo_forelegs.py
+
+The existing four skinned foreleg meshes are rebuilt in place. Skin joints,
+materials, animation clips, and scene nodes remain untouched.
+"""
+from __future__ import annotations
+
+import math
+import struct
+from pathlib import Path
+
+import upgrade_mantis_glb as glb
+
+
+MODEL = glb.PROJECT / "assets" / "models" / "mantis_rigged.glb"
+SOURCE_MARKER = "photo_proportions_v8_forelegs_100"
+MARKER = "photo_proportions_v10_photo_forelegs_100"
+FEMUR_AXIAL, FEMUR_RADIAL = 72, 24
+TIBIA_AXIAL, TIBIA_RADIAL = 64, 20
+MICRO_STRIAE = 9
+FEMUR_SPINES, TIBIA_TEETH = 18, 14
+
+
+def normalized_color(document: dict, binary: bytearray, accessor_index: int) -> tuple[float, ...]:
+    accessor = document["accessors"][accessor_index]
+    value = glb.read_vectors(document, binary, accessor_index)[0]
+    if accessor.get("normalized") and accessor["componentType"] == 5121:
+        return tuple(channel / 255.0 for channel in value)
+    return tuple(value)
+
+
+def append_accessor(document: dict, binary: bytearray, rows: list[tuple], *,
+                    gl_type: str, fmt: str, target: int) -> int:
+    glb.align4(binary)
+    offset = len(binary)
+    packer = struct.Struct("<" + fmt * len(rows[0]))
+    for row in rows:
+        binary.extend(packer.pack(*row))
+    view_index = len(document["bufferViews"])
+    document["bufferViews"].append({
+        "buffer": 0, "byteOffset": offset, "byteLength": len(rows) * packer.size,
+        "target": target,
+    })
+    component_type = {"f": 5126, "H": 5123}[fmt]
+    accessor = {
+        "bufferView": view_index, "componentType": component_type,
+        "count": len(rows), "type": gl_type,
+    }
+    if gl_type != "SCALAR":
+        width = len(rows[0])
+        accessor["min"] = [min(float(row[i]) for row in rows) for i in range(width)]
+        accessor["max"] = [max(float(row[i]) for row in rows) for i in range(width)]
+    elif rows:
+        accessor["min"] = [min(int(row[0]) for row in rows)]
+        accessor["max"] = [max(int(row[0]) for row in rows)]
+    accessor_index = len(document["accessors"])
+    document["accessors"].append(accessor)
+    return accessor_index
+
+
+def dot(a: tuple[float, ...], b: tuple[float, ...]) -> float:
+    return sum(x * y for x, y in zip(a, b))
+
+
+def add(a: tuple[float, ...], b: tuple[float, ...]) -> tuple[float, float, float]:
+    return tuple(x + y for x, y in zip(a, b))
+
+
+def scale(a: tuple[float, ...], amount: float) -> tuple[float, float, float]:
+    return tuple(x * amount for x in a)
+
+
+def subtract(a: tuple[float, ...], b: tuple[float, ...]) -> tuple[float, float, float]:
+    return tuple(x - y for x, y in zip(a, b))
+
+
+def cross(a: tuple[float, ...], b: tuple[float, ...]) -> tuple[float, float, float]:
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+
+def unit(value: tuple[float, ...]) -> tuple[float, float, float]:
+    length = math.sqrt(dot(value, value))
+    if length < 1e-12:
+        return (0.0, 1.0, 0.0)
+    return tuple(component / length for component in value)
+
+
+def principal_axis(points: list[tuple[float, ...]]) -> tuple[float, float, float]:
+    center = tuple(sum(point[i] for point in points) / len(points) for i in range(3))
+    centered = [subtract(point, center) for point in points]
+    covariance = [[sum(point[i] * point[j] for point in centered) for j in range(3)] for i in range(3)]
+    axis = (1.0, 0.73, -0.41)
+    for _ in range(40):
+        axis = unit(tuple(sum(covariance[i][j] * axis[j] for j in range(3)) for i in range(3)))
+    return axis
+
+
+def add_spike(positions: list[tuple[float, float, float]], indices: list[int],
+              uv: list[tuple[float, float]], colors: list[tuple[float, float, float, float]],
+              joints: list[tuple[int, int, int, int]], weights: list[tuple[float, float, float, float]],
+              base: tuple[float, float, float], outward: tuple[float, float, float],
+              across: tuple[float, float, float], length: float, width: float,
+              joint_index: int, color: tuple[float, ...], phase: float) -> None:
+    """Append one curved, ridged, pointed cuticle spine to the skinned limb."""
+    forward = unit(add(outward, scale(across, 0.10 * math.sin(phase))))
+    side_axis = unit(cross(forward, across))
+    ring_sides = 7
+    start = len(positions)
+    for ring, (distance, radius) in enumerate(((0.0, width), (0.34, width * 0.66), (0.72, width * 0.30))):
+        center = add(base, scale(forward, length * distance))
+        center = add(center, scale(across, length * 0.08 * distance * distance))
+        for j in range(ring_sides):
+            angle = 2.0 * math.pi * j / ring_sides
+            ridge = 1.0 + 0.08 * math.cos(3.0 * angle + phase)
+            p = add(center, add(scale(side_axis, radius * math.cos(angle) * ridge), scale(across, radius * math.sin(angle) * ridge)))
+            positions.append(p)
+            uv.append((distance, j / ring_sides))
+            shade = 0.74 + 0.08 * math.cos(angle * 2.0 + phase)
+            colors.append(tuple(min(1.0, max(0.0, color[i] * shade)) for i in range(3)) + (color[3],))
+            joints.append((joint_index, 0, 0, 0))
+            weights.append((1.0, 0.0, 0.0, 0.0))
+    tip_index = len(positions)
+    tip = add(base, scale(forward, length))
+    tip = add(tip, scale(across, length * 0.10))
+    positions.append(tip)
+    uv.append((1.0, 0.5))
+    colors.append(tuple(min(1.0, max(0.0, c * 0.58)) for c in color[:3]) + (color[3],))
+    joints.append((joint_index, 0, 0, 0))
+    weights.append((1.0, 0.0, 0.0, 0.0))
+    for ring in range(2):
+        here = start + ring * ring_sides
+        nxt = here + ring_sides
+        for j in range(ring_sides):
+            a, b = here + j, here + (j + 1) % ring_sides
+            c, d = nxt + (j + 1) % ring_sides, nxt + j
+            indices.extend((a, b, d, b, c, d))
+    for j in range(ring_sides):
+        indices.extend((start + 2 * ring_sides + j,
+                        start + 2 * ring_sides + (j + 1) % ring_sides,
+                        tip_index))
+
+
+def foreleg_geometry(name: str, side: int, joint_index: int,
+                     color: tuple[float, ...], reference_points: list[tuple[float, ...]]):
+    is_femur = name.startswith("ForeFemur")
+    length_steps = FEMUR_AXIAL if is_femur else TIBIA_AXIAL
+    radial_steps = FEMUR_RADIAL if is_femur else TIBIA_RADIAL
+    axis = principal_axis(reference_points)
+    # Keep the distal femur end aligned toward its tibial joint.
+    if is_femur:
+        direction = (float(side), -0.38, -0.62)
+        if dot(axis, direction) < 0.0:
+            axis = scale(axis, -1.0)
+    elif axis[0] < 0.0:
+        axis = scale(axis, -1.0)
+    inward_candidate = (float(-side), 0.0, 0.0)
+    inward = unit(subtract(inward_candidate, scale(axis, dot(inward_candidate, axis))))
+    dorsal = unit(subtract((0.0, 1.0, 0.0), scale(axis, axis[1])))
+    if math.sqrt(dot(dorsal, dorsal)) < 0.5:
+        dorsal = unit(cross(axis, inward))
+    across = unit(cross(axis, inward))
+    if dot(across, dorsal) < 0.0:
+        across = scale(across, -1.0)
+    # The photo shows a long, broad femoral blade paired with a finer sickle.
+    # Keep the pivot locations intact while lengthening the segments slightly.
+    length = max(abs(dot(point, axis)) for point in reference_points) * (1.22 if is_femur else 1.08)
+    inner_radius = 0.044 if is_femur else 0.019
+    dorsal_radius = 0.016 if is_femur else 0.011
+    ring_count = radial_steps
+    positions: list[tuple[float, float, float]] = []
+    indices: list[int] = []
+    uv: list[tuple[float, float]] = []
+    colors: list[tuple[float, float, float, float]] = []
+    joints: list[tuple[int, int, int, int]] = []
+    weights: list[tuple[float, float, float, float]] = []
+
+    # Nine stronger lengthwise costae make the broad inner face readable.
+    stria_angles = [0.32 + i * (2.0 * math.pi - 0.64) / (MICRO_STRIAE - 1)
+                    for i in range(MICRO_STRIAE)]
+
+    def centerline(u: float) -> tuple[float, float, float]:
+        center = scale(axis, (2.0 * u - 1.0) * length)
+        if is_femur:
+            center = add(center, scale(across, 0.005 * math.sin(2.0 * math.pi * u)))
+        else:
+            # A gentle inward bow and hook gives the tibia its sickle profile.
+            center = add(center, scale(across, -0.048 * math.sin(math.pi * u)))
+            center = add(center, scale(inward, 0.009 * math.sin(2.0 * math.pi * u)))
+        return center
+
+    def cross_section_profile(u: float) -> tuple[float, float]:
+        wave = max(0.0, math.sin(math.pi * u))
+        if is_femur:
+            taper = 0.025 + 0.975 * wave ** 0.52
+            # A fuller distal third reads as the hinged blade seen in the photo.
+            hinge_pad = 1.0 + 0.095 * math.exp(-(((u - 0.79) / 0.12) ** 2))
+            return taper * (0.82 + 0.18 * wave) * hinge_pad, wave
+        taper = 0.018 + 0.982 * wave ** 0.76
+        return taper * (0.90 + 0.10 * wave), wave
+
+    for i in range(length_steps + 1):
+        u = i / length_steps
+        longitudinal, end_taper = cross_section_profile(u)
+        center = centerline(u)
+        for j in range(ring_count):
+            theta = 2.0 * math.pi * j / ring_count
+            cos_t, sin_t = math.cos(theta), math.sin(theta)
+            # Superellipse: flatter broad faces on the femur, rounder profile on tibia.
+            exponent = 3.0 if is_femur else 2.15
+            power = 2.0 / exponent
+            shape_inner = math.copysign(abs(cos_t) ** power, cos_t)
+            shape_dorsal = math.copysign(abs(sin_t) ** power, sin_t)
+            radius_inner = inner_radius * longitudinal
+            radius_dorsal = dorsal_radius * longitudinal
+            relief = 0.0
+            for ridge_i, ridge_angle in enumerate(stria_angles):
+                angular_delta = (theta - ridge_angle + math.pi) % (2.0 * math.pi) - math.pi
+                ridge_width = 0.070 if is_femur else 0.047
+                ridge_strength = 0.135 if is_femur else 0.085
+                if ridge_i == MICRO_STRIAE // 2:
+                    ridge_strength *= 1.30
+                relief += ridge_strength * math.exp(-((angular_delta / ridge_width) ** 2))
+            keel = (0.16 if is_femur else 0.09) * max(0.0, sin_t) ** 8
+            relief_scale = 1.0 + min(relief, 0.38) + keel
+            # The wide axis lies in the animal's side plane so the blade is
+            # visible in the same side view as the supplied photo.
+            p = add(center, add(scale(across, radius_inner * shape_inner * relief_scale),
+                                scale(inward, radius_dorsal * shape_dorsal * relief_scale)))
+            positions.append(p)
+            uv.append((u, j / ring_count))
+            vein_shade = 1.0 + min(0.09, relief * 0.22) + keel * 0.20
+            end_shade = 0.84 + 0.16 * end_taper
+            colors.append(tuple(min(1.0, max(0.0, color[k] * vein_shade * end_shade)) for k in range(3)) + (color[3],))
+            joints.append((joint_index, 0, 0, 0))
+            weights.append((1.0, 0.0, 0.0, 0.0))
+    for i in range(length_steps):
+        for j in range(ring_count):
+            a = i * ring_count + j
+            b = i * ring_count + (j + 1) % ring_count
+            c = (i + 1) * ring_count + (j + 1) % ring_count
+            d = (i + 1) * ring_count + j
+            indices.extend((a, b, c, a, c, d))
+
+    # Seal the tapered tips with weighted center vertices.
+    cap_start = len(positions)
+    for u in (0.0, 1.0):
+        p = centerline(u)
+        positions.append(p)
+        uv.append((u, 0.5))
+        colors.append(color)
+        joints.append((joint_index, 0, 0, 0))
+        weights.append((1.0, 0.0, 0.0, 0.0))
+    for j in range(ring_count):
+        indices.extend((cap_start, (j + 1) % ring_count, j))
+        last_ring = length_steps * ring_count
+        indices.extend((cap_start + 1, last_ring + j, last_ring + (j + 1) % ring_count))
+
+    spine_count = FEMUR_SPINES if is_femur else TIBIA_TEETH
+    # Dense opposing tooth rows face inward when the limb folds shut.
+    for tooth in range(spine_count):
+        u = 0.13 + 0.74 * (tooth + 0.5) / spine_count
+        longitudinal, _ = cross_section_profile(u)
+        center = centerline(u)
+        edge_sign = -1.0 if is_femur else 1.0
+        base = add(center, scale(across, edge_sign * inner_radius * longitudinal * 0.985))
+        if is_femur:
+            direction = unit(add(scale(across, -0.82), scale(axis, 0.57)))
+            tooth_length = 0.028 + 0.008 * (0.5 + 0.5 * math.sin(tooth * 1.37))
+            tooth_width = 0.0058 + 0.0008 * (tooth % 3)
+        else:
+            direction = unit(add(scale(across, 0.87), scale(axis, -0.49)))
+            tooth_length = 0.022 + 0.007 * (0.5 + 0.5 * math.cos(tooth * 1.61))
+            tooth_width = 0.0042 + 0.0007 * (tooth % 2)
+        add_spike(positions, indices, uv, colors, joints, weights, base, direction,
+                  across, tooth_length, tooth_width, joint_index, color, tooth * 0.71)
+
+    normals = glb.vertex_normals(positions, indices)
+    return positions, indices, normals, uv, colors, joints, weights
+
+
+def finish_primitive(document: dict, binary: bytearray, primitive: dict, geometry) -> None:
+    positions, indices, normals, uv, colors, joints, weights = geometry
+    primitive["attributes"] = {
+        "POSITION": append_accessor(document, binary, positions, gl_type="VEC3", fmt="f", target=34962),
+        "NORMAL": append_accessor(document, binary, normals, gl_type="VEC3", fmt="f", target=34962),
+        "TEXCOORD_0": append_accessor(document, binary, uv, gl_type="VEC2", fmt="f", target=34962),
+        "COLOR_0": append_accessor(document, binary, colors, gl_type="VEC4", fmt="f", target=34962),
+        "JOINTS_0": append_accessor(document, binary, joints, gl_type="VEC4", fmt="H", target=34962),
+        "WEIGHTS_0": append_accessor(document, binary, weights, gl_type="VEC4", fmt="f", target=34962),
+    }
+    primitive["indices"] = append_accessor(
+        document, binary, [(index,) for index in indices], gl_type="SCALAR", fmt="H", target=34963,
+    )
+    primitive["mode"] = 4
+
+
+def main() -> None:
+    document, binary = glb.read_glb(MODEL)
+    extras = document.setdefault("asset", {}).setdefault("extras", {})
+    marker = extras.get("reference_mantis_refinement")
+    if marker in {MARKER, "photo_proportions_v11_two_hinge_forelegs_slim_pronotum"}:
+        print("The v10 photo-guided foreleg rebuild is already applied; leaving the GLB unchanged.")
+        return
+    if marker != SOURCE_MARKER:
+        raise ValueError(f"Expected {SOURCE_MARKER!r}, found {marker!r}; refusing to rebuild an unknown base.")
+    profile = extras.get("photo_reference_profile_v9", {})
+    if profile.get("foreleg_details_preserved") != 100:
+        raise ValueError("The v4.5 photo-shaped profile must be present before rebuilding its forelegs.")
+
+    meshes = {mesh.get("name"): mesh for mesh in document.get("meshes", [])}
+    expected = {"ForeFemur_L", "ForeFemur_R", "ForeTibia_L", "ForeTibia_R"}
+    if not expected.issubset(meshes):
+        raise ValueError("The four skinned raptorial foreleg segment meshes are required.")
+    if len(document.get("skins", [{}])[0].get("joints", [])) != 61 or len(document.get("animations", [])) != 10:
+        raise ValueError("The v3.6 skeleton and 10 existing clips must be preserved.")
+
+    for name in sorted(expected):
+        mesh = meshes[name]
+        if len(mesh.get("primitives", [])) != 1:
+            raise ValueError(f"Expected one primitive in {name}; refusing to discard material slots.")
+        primitive = mesh["primitives"][0]
+        attrs = primitive["attributes"]
+        source_points = glb.read_vectors(document, binary, attrs["POSITION"])
+        joint_rows = glb.read_vectors(document, binary, attrs["JOINTS_0"])
+        joint_index = int(round(joint_rows[0][0]))
+        color = normalized_color(document, binary, attrs["COLOR_0"])
+        side = -1 if name.endswith("_L") else 1
+        finish_primitive(document, binary, primitive,
+                         foreleg_geometry(name, side, joint_index, color, source_points))
+
+    extras["reference_mantis_refinement"] = MARKER
+    extras["mantis_v10_frontleg_geometry"] = {
+        "femur_axial_segments": FEMUR_AXIAL,
+        "femur_radial_segments": FEMUR_RADIAL,
+        "tibia_axial_segments": TIBIA_AXIAL,
+        "tibia_radial_segments": TIBIA_RADIAL,
+        "fine_cuticle_striae_per_segment": MICRO_STRIAE,
+        "femoral_spines_per_side": FEMUR_SPINES,
+        "tibial_teeth_per_side": TIBIA_TEETH,
+        "discrete_grasping_spines": FEMUR_SPINES * 2,
+        "discrete_tibial_teeth": TIBIA_TEETH * 2,
+        "raised_cuticle_striae": MICRO_STRIAE * 4,
+        "total_foreleg_render_details": FEMUR_SPINES * 2 + TIBIA_TEETH * 2 + MICRO_STRIAE * 4,
+        "segments": ["ForeFemur_L", "ForeFemur_R", "ForeTibia_L", "ForeTibia_R"],
+        "surface_relief": ["flattened femoral blade", "longitudinal cuticle costae", "opposing dense tooth rows", "inward-curved tibia", "tapered joint ends"],
+        "femur_half_length_scale": 1.22,
+        "tibia_half_length_scale": 1.08,
+        "femur_cross_section": "flattened superellipse n=3, face aligned to lateral view",
+        "tibia_cross_section": "slender curved sickle n=2.15",
+        "reference_features": ["broad femur plate", "folding knee", "dense inward spines", "slender curved tibia"],
+    }
+    glb.write_glb(MODEL, document, binary)
+    print("Resculpted the four skinned forelegs toward the side photo with 100 visible details; retained the v4.5 profile, rig, clips, and habitats.")
+
+
+if __name__ == "__main__":
+    main()

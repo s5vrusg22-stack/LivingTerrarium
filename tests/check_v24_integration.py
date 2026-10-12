@@ -29,12 +29,10 @@ clips={a['name'] for a in j.get('animations',[])}
 check('15 ten animation clips',len(clips)>=10)
 for name in ['IDLE','WALK','ALERT','GROOM','HUNT','STRIKE','SCAN','FEED','CLIMB','DEFEND']:
     check('clip '+name,name in clips)
-check('26 canonical latest GLB preload','const LATEST_MANTIS_SCENE: PackedScene = preload("res://assets/models/mantis_rigged.glb")' in s)
+check('26 runtime GLB preload','preload("res://assets/models/mantis_rigged.glb")' in s)
 check('27 runtime model attached','animal.add_child(rigged_visual)' in s)
 check('28 animation crossfade','rigged_player.play(name, 0.18)' in s)
-check('29 latest model cannot revert to the old renderer','func _toggle_visual_model' not in s and 'use_rigged_visual' not in s and 'part.visible = false' in s)
-legacy_model = "mantis_" + "detailed.glb"
-preview = (root/'scenes/mantis_model_preview.tscn').read_text(encoding='utf-8')
-check('30 full-scale latest GLB is the only model source',model.stat().st_size >= 6_000_000 and 'visual_model_scale := 1.0' in s and 'body_material.albedo_texture = body_texture' in s and 'wing_material.albedo_texture = wing_texture' in s and not (root/'assets/models'/legacy_model).exists() and legacy_model not in s and 'assets/models/mantis_rigged.glb' in preview and legacy_model not in preview)
+check('29 procedural fallback','part.visible = not show_rigged' in s)
+check('30 UI model toggle','3D 모델 전환 (GLB / 기본)' in s)
 assert len(checks)==30, len(checks)
 print('v2.4 integration: 30/30 static checks PASS (engine runtime not verified)')
