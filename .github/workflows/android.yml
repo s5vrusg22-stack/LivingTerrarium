@@ -1,8 +1,14 @@
 name: Validate and export Godot 4.3 project
 on:
   workflow_dispatch:
+    inputs:
+      build_android:
+        description: Explicitly build the Android APK
+        required: false
+        default: false
+        type: boolean
   push:
-    branches: [main]
+    branches: [main, 'codex/**']
 
 jobs:
   validate:
@@ -75,16 +81,19 @@ jobs:
           xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --audio-driver Dummy --rendering-method gl_compatibility --rendering-driver opengl3 --disable-vsync --script res://tests/render_reference_model.gd
           test "$(find build/model-renders -maxdepth 1 -name '*.png' | wc -l)" -eq 6
       - name: Set up Java 17 for Android export
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_android }}
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
       - name: Set up Android SDK
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_android }}
         uses: android-actions/setup-android@v3
         with:
           packages: ''
           log-accepted-android-sdk-licenses: 'false'
       - name: Install Godot 4.3 Android SDK packages
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_android }}
         shell: bash
         run: |
           set -euo pipefail
@@ -95,6 +104,7 @@ jobs:
             "cmake;3.10.2.4988404" \
             "ndk;23.2.8568313"
       - name: Install Godot 4.3 Android export template
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_android }}
         shell: bash
         run: |
           set -euo pipefail
@@ -105,6 +115,7 @@ jobs:
           unzip -q /tmp/godot-android-templates.tpz -d /tmp/godot-android-templates
           install -m 644 /tmp/godot-android-templates/templates/android_debug.apk "$template_dir/android_debug.apk"
       - name: Export and verify installable Android APK
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_android }}
         shell: bash
         run: |
           set -euo pipefail
@@ -117,6 +128,7 @@ jobs:
           grep -F "package: name='org.livingterrarium.simulator'" /tmp/livingterrarium-apk-info.txt
           unzip -Z1 "$apk" | grep -q '^lib/arm64-v8a/'
       - name: Upload installable Android APK
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_android }}
         uses: actions/upload-artifact@v7
         with:
           name: LivingTerrarium3D-Android-debug-APK

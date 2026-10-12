@@ -44,11 +44,17 @@ pronotum a 40 by 32 grid, and each wing a 48 by 18 double surface with modeled
 veins. Generated cuticle and wing maps are 1024 px; the jade eye atlas and habitat maps stay
 512 px for mobile memory use.
 
-The enclosure measures 7.2 by 5.8 by 5.2 scene units. A tall climbing trunk
-reaches into the upper canopy, with five branch tiers and 18 curved vines with
-leaves. Roaming uses a slower gait and longer pauses; climbing pauses midway.
+The enclosure measures 11.2 by 8.2 by 7.1 scene units. A climbing trunk reaches
+into the upper canopy, with five branch tiers and 18 curved vines. Climbing
+animates staggered feet against the bark surface.
 
-Camera controls: drag to orbit, use the mouse wheel to zoom, arrow keys to
-orbit, WASD to pan, Q/E to raise or lower the view, Page Up/Page Down to zoom,
-F to follow the mantis, and Home to reset. On touch screens, drag to orbit and
-pinch to zoom.
+Camera controls: hold the arrow keys or WASD to pan freely, Shift to move
+faster, Q/E to raise or lower the view, and Page Up/Page Down to zoom. Drag to
+orbit, use F to follow the mantis, and Home to reset. Touch users can hold the
+on-screen direction pad, drag to orbit, and pinch to zoom.
+
+## v3.1 — expanded mantis care
+
+See `README_v3.1.md` for the fail-closed latest-model lock, 12 terrarium saves,
+species and juvenile profiles, four habitat biomes, eight feeder types, and
+direct behavior commands.

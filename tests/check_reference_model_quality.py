@@ -35,13 +35,13 @@ assert "roam_speed = move_toward(roam_speed, target_speed, dt * 0.060)" in main
 assert "climb_midpoint_pause_used" in main
 assert all(key in main for key in ["KEY_LEFT", "KEY_RIGHT", "KEY_UP", "KEY_DOWN"])
 assert all(key in main for key in ["KEY_W", "KEY_A", "KEY_S", "KEY_D", "KEY_Q", "KEY_E"])
-assert "CAMERA_MAX_DISTANCE := 22.0" in main
-assert "Vector3(7.2, 5.8, 0.06)" in main
-assert "box_shape.size = Vector3(7.2, 0.2, 5.2)" in main
-assert "for y in [-0.53, 5.20]" in main
+assert "CAMERA_MAX_DISTANCE := 240.0" in main
+assert "Vector3(11.2, 7.1, 0.06)" in main
+assert "box_shape.size = Vector3(11.2, 0.2, 8.2)" in main
+assert "for y in [-0.53, 6.37]" in main
 assert "for vine_index in range(18):" in main
 assert "for leaf_index in range(9):" in main
-assert "_create_feeder_insect(prey, 0.70," in main
+assert "_create_feeder_insect(prey, _prey_size(kind), _prey_color(kind), kind)" in main
 
 abdomen_vertices = (64 + 1) * (48 + 1) + 2
 assert abdomen_vertices == 3187

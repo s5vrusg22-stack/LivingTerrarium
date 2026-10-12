@@ -7,7 +7,18 @@ const V4_SAVE_PATH := "user://terrarium_save_v4.json"
 const MAX_DECORATIONS := 32
 const PREVIOUS_SAVE_PATH := "user://terrarium_save_v3.json"
 const LEGACY_SAVE_PATH := "user://terrarium_save_v2.json"
-const MAX_FOOD := 12
+const MAX_FOOD := 36
+const SAVE_SLOT_COUNT := 12
+const ACTIVE_SLOT_PATH := "user://active_mantis_slot.txt"
+const LATEST_MODEL_LOCK := "res://assets/models/mantis_rigged.glb"
+const LATEST_MODEL_MIN_BONES := 61
+const LATEST_MODEL_MIN_CLIPS := 10
+const LATEST_MODEL_MIN_MESHES := 30
+const SPECIES_NAMES: Array[String] = ["치앙마이형 (Hierodula sp.)", "왕사마귀", "중국사마귀", "유럽사마귀", "고스트사마귀", "꽃사마귀"]
+const PREY_TYPES: Array[String] = ["귀뚜라미", "두비아바퀴", "초파리", "검정파리", "밀웜", "왁스웜", "풀무치", "나방"]
+const BIOME_NAMES: Array[String] = ["열대 우림", "건조 초원", "사막", "온대림"]
+const LIFE_STAGES: Array[String] = ["약충", "성체"]
+const LATEST_MODEL_REQUIRED_CLIPS: Array[String] = ["IDLE", "WALK", "ALERT", "GROOM", "HUNT", "STRIKE", "SCAN", "FEED", "CLIMB", "DEFEND"]
 var hunger := 32.0
 var energy := 86.0
 var stress := 12.0
@@ -25,11 +36,13 @@ var orbit_pitch := 0.25
 var orbit_distance := 9.4
 var camera_pan := Vector3.ZERO
 const CAMERA_MIN_DISTANCE := 0.65
-const CAMERA_MAX_DISTANCE := 22.0
-const WALK_BOUND_X := 3.10
-const WALK_BOUND_Z := 2.16
-const PREY_BOUND_X := 3.30
-const PREY_BOUND_Z := 2.36
+const CAMERA_MAX_DISTANCE := 240.0
+const CAMERA_MOVE_SPEED := 20.0
+const CAMERA_BOOST_MULTIPLIER := 4.0
+const WALK_BOUND_X := 5.05
+const WALK_BOUND_Z := 3.72
+const PREY_BOUND_X := 5.28
+const PREY_BOUND_Z := 3.92
 var pointer_last := Vector2.ZERO
 var touching := false
 var touch_points: Dictionary = {}
@@ -44,6 +57,7 @@ var legs: Array[Node3D] = []
 var antennae: Array[Node3D] = []
 var root_ui: Control
 var prey_nodes: Array[Node3D] = []
+var prey_kinds: Dictionary = {}
 var feeding_timer := 0.0
 var autosave_timer := 0.0
 var follow_animal := false
@@ -81,6 +95,14 @@ var prey_alert_radius := 0.43
 var step_height := 0.085
 var stats_visible := true
 var ui_panel: PanelContainer
+var model_status_label: Label
+var species_picker: OptionButton
+var stage_picker: OptionButton
+var biome_picker: OptionButton
+var prey_picker: OptionButton
+var save_slot_picker: OptionButton
+var mantis_name_edit: LineEdit
+var camera_touch_directions: Dictionary = {}
 var menu_scroll: ScrollContainer
 var menu_touch_index := -1
 var menu_touch_start := Vector2.ZERO
@@ -144,13 +166,25 @@ var rigged_pose_driver: RiggedPoseDriver
 var rigged_skeleton: Skeleton3D
 var rigged_ik_enabled := true
 var rigged_pose_status := "not initialized"
+var selected_species := "치앙마이형 (Hierodula sp.)"
+var life_stage := "성체"
+var selected_biome := "열대 우림"
+var selected_prey_type := "귀뚜라미"
+var active_save_slot := 1
+var mantis_name := "초록이"
+var juvenile_wing_buds: Node3D
+var habitat_floor: MeshInstance3D
+var world_environment: Environment
+var directional_light: DirectionalLight3D
+var biome_accent_root: Node3D
+var biome_base_colors: Dictionary = {}
 # v2.6: scripted traversal of a real, collidable inclined branch.
 var climb_active := false
 var climb_progress := 0.0
 var climb_cooldown := 18.0
 var climb_branch_start := Vector3(-0.48, -0.48, 0.62)
 var climb_branch_end := Vector3(-0.18, 0.92, 0.38)
-const CLIMB_SPEED := 0.14
+const CLIMB_SPEED := 0.34
 const CLIMB_BODY_CLEARANCE := 0.205
 var climb_direction := 1.0
 var climb_pause := 0.0
@@ -160,6 +194,17 @@ var flight_start_position := Vector3.ZERO
 var flight_start_yaw := 0.0
 const FLIGHT_TAKEOFF_DURATION := 0.95
 var feed_demo_prey: Node3D
+var manual_command := ""
+var command_timer := 0.0
+var command_elapsed := 0.0
+var jump_start := Vector3.ZERO
+var jump_end := Vector3.ZERO
+var hang_start := Vector3.ZERO
+var social_partner: Node3D
+var social_partner_player: AnimationPlayer
+var social_partner_clip := ""
+var command_origin := Vector3.ZERO
+var command_origin_rotation := Quaternion.IDENTITY
 
 
 
@@ -185,6 +230,7 @@ var habitat_event_count := 0
 
 
 func _ready() -> void:
+    active_save_slot = _read_active_save_slot()
     _load_textures()
     _create_world()
     terrain_root = Node3D.new()
@@ -200,12 +246,17 @@ func _ready() -> void:
     _create_ui()
     _create_habitat_details()
     _create_animated_ecosystem()
+    habitat_motion_root.scale = Vector3(1.28, 1.0, 1.28)
     habitat_interactions = HabitatInteractions.new()
     habitat_interactions.name = "HabitatInteractions"
     add_child(habitat_interactions)
     habitat_interactions.setup(self)
     _load_state(false)
     _sync_prey()
+    _apply_biome_profile()
+    _apply_species_appearance()
+    _apply_life_stage()
+    _sync_profile_selectors()
     _update_camera()
     _refresh()
 
@@ -243,32 +294,92 @@ func _initialize_rigged_visual() -> void:
             if not String(library_name).is_empty():
                 full_name = String(library_name) + "/" + full_name
             rigged_clips[String(clip_name).to_upper()] = full_name
-    rigged_available = not rigged_clips.is_empty()
+    rigged_skeleton = _find_rigged_skeleton(rigged_visual)
+    var model_mesh_count := _count_model_meshes(rigged_visual)
+    var required_clips_present := true
+    for required_clip in LATEST_MODEL_REQUIRED_CLIPS:
+        if not rigged_clips.has(required_clip):
+            required_clips_present = false
+            break
+    var required_bones_present := _has_latest_model_bones(rigged_skeleton)
+    rigged_available = (
+        LATEST_MANTIS_SCENE.resource_path == LATEST_MODEL_LOCK
+        and rigged_clips.size() >= LATEST_MODEL_MIN_CLIPS
+        and required_clips_present
+        and rigged_skeleton != null
+        and rigged_skeleton.get_bone_count() >= LATEST_MODEL_MIN_BONES
+        and required_bones_present
+        and model_mesh_count >= LATEST_MODEL_MIN_MESHES
+    )
     if not rigged_available:
-        rigged_import_warnings.append("Imported model has no animation clips")
+        rigged_import_warnings.append("Latest model contract failed: meshes=%d bones=%d clips=%d required_clips=%s required_bones=%s" % [model_mesh_count, rigged_skeleton.get_bone_count() if rigged_skeleton != null else 0, rigged_clips.size(), str(required_clips_present), str(required_bones_present)])
+        rigged_visual.visible = false
     _apply_visual_mode()
     if rigged_available:
-        rigged_skeleton = _find_rigged_skeleton(rigged_visual)
-        if rigged_skeleton != null:
-            rigged_pose_driver = RiggedPoseDriver.new()
-            rigged_pose_driver.name = "RiggedPoseDriver"
-            rigged_visual.add_child(rigged_pose_driver)
-            rigged_pose_driver.setup(rigged_skeleton, rigged_player)
-            rigged_pose_status = rigged_pose_driver.validation_message
-            if not rigged_pose_driver.hierarchical_chains:
-                rigged_import_warnings.append("Hierarchical leg IK unavailable; using fallback")
-            rigged_ik_enabled = rigged_pose_driver.valid
-        else:
-            rigged_pose_status = "Skeleton3D missing; clip playback only"
-            rigged_import_warnings.append(rigged_pose_status)
+        rigged_pose_driver = RiggedPoseDriver.new()
+        rigged_pose_driver.name = "RiggedPoseDriver"
+        rigged_visual.add_child(rigged_pose_driver)
+        rigged_pose_driver.setup(rigged_skeleton, rigged_player)
+        rigged_pose_status = rigged_pose_driver.validation_message
+        if not rigged_pose_driver.hierarchical_chains:
+            rigged_import_warnings.append("Hierarchical leg IK unavailable; using fallback")
+        rigged_ik_enabled = rigged_pose_driver.valid
+        _create_juvenile_wing_buds()
+        _apply_life_stage()
         _play_rigged_clip("IDLE")
+
+func _has_latest_model_bones(skeleton: Skeleton3D) -> bool:
+    if skeleton == null:
+        return false
+    for side in ["L", "R"]:
+        for index in range(3):
+            for prefix in ["Coxa", "Joint", "Tibia", "Foot"]:
+                if skeleton.find_bone("Rig_%s_%s%d" % [prefix, side, index]) < 0:
+                    return false
+        for prefix in ["ForeFemur", "ForeTibia", "Antenna"]:
+            if skeleton.find_bone("Rig_%s_%s" % [prefix, side]) < 0:
+                return false
+    for name in ["Rig_Head", "Rig_Thorax"]:
+        if skeleton.find_bone(name) < 0:
+            return false
+    return true
+
+func _count_model_meshes(root: Node) -> int:
+    var count := 0
+    var candidates: Array = root.find_children("*", "MeshInstance3D", true, false)
+    for candidate in candidates:
+        var part := candidate as MeshInstance3D
+        if part != null and part.mesh != null:
+            count += 1
+    return count
+
+func _create_juvenile_wing_buds() -> void:
+    if rigged_visual == null or juvenile_wing_buds != null:
+        return
+    juvenile_wing_buds = Node3D.new()
+    juvenile_wing_buds.name = "JuvenileWingBudModel"
+    rigged_visual.add_child(juvenile_wing_buds)
+    for side in [-1.0, 1.0]:
+        var bud := MeshInstance3D.new()
+        bud.name = "NymphWingBud_%d" % int(side)
+        var mesh := SphereMesh.new()
+        mesh.radial_segments = 16
+        mesh.rings = 8
+        bud.mesh = mesh
+        bud.scale = Vector3(0.22, 0.075, 0.37)
+        bud.position = Vector3(side * 0.105, 0.205, 0.13)
+        var material := StandardMaterial3D.new()
+        material.albedo_color = _species_tint().lightened(0.14)
+        material.roughness = 0.58
+        bud.material_override = material
+        juvenile_wing_buds.add_child(bud)
 
 func _style_rigged_materials(root: Node) -> void:
     # Use the imported vertex palette with the repository's cuticle, wing, and
     # eye maps. GLB surfaces have no embedded materials, so set them explicitly.
     var body_material := StandardMaterial3D.new()
     body_material.vertex_color_use_as_albedo = true
-    body_material.albedo_color = Color.WHITE
+    body_material.albedo_color = _species_tint()
     body_material.albedo_texture = body_texture
     body_material.uv1_triplanar = true
     body_material.uv1_triplanar_sharpness = 8.0
@@ -279,7 +390,7 @@ func _style_rigged_materials(root: Node) -> void:
 
     var wing_material := StandardMaterial3D.new()
     wing_material.vertex_color_use_as_albedo = true
-    wing_material.albedo_color = Color.WHITE
+    wing_material.albedo_color = _species_tint().lightened(0.06)
     wing_material.albedo_texture = wing_texture
     wing_material.roughness = 0.82
     wing_material.cull_mode = BaseMaterial3D.CULL_DISABLED
@@ -450,19 +561,21 @@ func _create_world() -> void:
     env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
     env.ambient_light_color = Color(0.7, 0.8, 0.72)
     env.ambient_light_energy = 0.98
+    world_environment = env
     world.environment = env
     add_child(world)
     var sun := DirectionalLight3D.new()
     sun.rotation_degrees = Vector3(-55, -25, 0)
     sun.light_energy = 1.48
     sun.shadow_enabled = true
+    directional_light = sun
     add_child(sun)
-    # Tall, wide enclosure gives adult mantids room to climb and hold a high perch.
-    _box(Vector3(7.2, 0.2, 5.2), Vector3(0, -0.65, 0), Color(0.23, 0.15, 0.09))
-    _box(Vector3(7.2, 5.8, 0.06), Vector3(0, 2.35, -2.62), Color(0.13, 0.19, 0.16, 0.42), true)
-    _box(Vector3(7.0, 5.65, 0.035), Vector3(0, 2.35, -2.575), Color(0.66, 0.72, 0.48))
-    _box(Vector3(0.05, 5.8, 5.2), Vector3(-3.62, 2.35, 0), Color(0.5, 0.7, 0.7, 0.12), true)
-    _box(Vector3(0.05, 5.8, 5.2), Vector3(3.62, 2.35, 0), Color(0.5, 0.7, 0.7, 0.12), true)
+    # Adult and juvenile habitats now have an 11.2 x 8.2 x 7.1 walkable volume.
+    habitat_floor = _box(Vector3(11.2, 0.2, 8.2), Vector3(0, -0.65, 0), Color(0.23, 0.15, 0.09))
+    _box(Vector3(11.2, 7.1, 0.06), Vector3(0, 2.90, -4.12), Color(0.13, 0.19, 0.16, 0.42), true)
+    _box(Vector3(11.0, 6.95, 0.035), Vector3(0, 2.90, -4.075), Color(0.66, 0.72, 0.48))
+    _box(Vector3(0.05, 7.1, 8.2), Vector3(-5.62, 2.90, 0), Color(0.5, 0.7, 0.7, 0.12), true)
+    _box(Vector3(0.05, 7.1, 8.2), Vector3(5.62, 2.90, 0), Color(0.5, 0.7, 0.7, 0.12), true)
     var branch_rng := RandomNumberGenerator.new()
     branch_rng.seed = 9182026
     var branch_clusters: Array[Vector2] = [Vector2(-2.22, -1.42), Vector2(-2.30, -0.60), Vector2(-2.16, 0.42), Vector2(-1.82, 1.48), Vector2(-0.92, 1.48), Vector2(0.88, 1.48), Vector2(1.88, 1.40), Vector2(2.24, 0.63), Vector2(2.28, -0.42), Vector2(1.92, -1.42), Vector2(0.74, -1.48), Vector2(-0.84, -1.45)]
@@ -554,8 +667,8 @@ func _advance_climb(dt: float, force_demo: bool = false) -> void:
         var approach := Vector3(climb_branch_start.x, -0.38, climb_branch_start.z)
         var planar := Vector2(animal.position.x - approach.x, animal.position.z - approach.z)
         if planar.length() > 0.13:
-            animal.position.x = move_toward(animal.position.x, approach.x, dt * 0.20)
-            animal.position.z = move_toward(animal.position.z, approach.z, dt * 0.20)
+            animal.position.x = move_toward(animal.position.x, approach.x, dt * 0.55)
+            animal.position.z = move_toward(animal.position.z, approach.z, dt * 0.55)
             behavior = "나뭇가지 접근"
             return
         climb_active = true
@@ -579,8 +692,13 @@ func _advance_climb(dt: float, force_demo: bool = false) -> void:
     var tangent := (climb_branch_end - climb_branch_start).normalized()
     var radial := Vector3(0.0, 0.0, 1.0)
     radial = (radial - tangent * radial.dot(tangent)).normalized()
+    var across := tangent.cross(radial).normalized()
     var travel_direction := tangent * climb_direction
-    var target := center + radial * CLIMB_BODY_CLEARANCE
+    # A wall-hugging climb follows the trunk surface with small alternating
+    # weight shifts; the body does not translate like a lift along one rail.
+    var weight_shift := across * sin(climb_progress * TAU * 5.0 + elapsed * 1.7) * 0.035
+    var body_bob := radial * sin(elapsed * 4.2) * 0.012
+    var target := center + radial * CLIMB_BODY_CLEARANCE + weight_shift + body_bob
     var target_basis := Basis.looking_at(travel_direction, radial)
     animal.position = animal.position.lerp(target, clampf(dt * 8.0, 0.0, 1.0))
     animal.quaternion = animal.quaternion.slerp(target_basis.get_rotation_quaternion(), clampf(dt * 7.0, 0.0, 1.0))
@@ -609,8 +727,8 @@ func _advance_flight(dt: float) -> void:
     var glide_time := maxf(0.0, flight_demo_clock - FLIGHT_TAKEOFF_DURATION)
     # A short forward-and-up launch avoids the old straight vertical lift.
     var target := flight_start_position + Vector3(0.0, 0.62 * launch_ease, -0.16 * launch_ease)
-    var x_extent: float = minf(0.56, maxf(0.0, 2.78 - absf(flight_start_position.x)))
-    var z_extent: float = minf(0.76, maxf(0.0, 1.92 - absf(flight_start_position.z)))
+    var x_extent: float = minf(0.84, maxf(0.0, 4.72 - absf(flight_start_position.x)))
+    var z_extent: float = minf(1.12, maxf(0.0, 3.35 - absf(flight_start_position.z)))
     var dx := 0.0
     var dz := -0.18 - z_extent * 0.56
     if glide_time > 0.0:
@@ -624,6 +742,211 @@ func _advance_flight(dt: float) -> void:
     animal.position = target
     var desired_yaw := atan2(-dx, -dz)
     animal.rotation.y = lerp_angle(animal.rotation.y, desired_yaw, clampf(dt * 2.4, 0.0, 1.0))
+
+func _command_mantis(command: String) -> void:
+    if molting and command != "MOLT":
+        notice.text = "탈피가 끝난 뒤 다른 명령을 내릴 수 있습니다."
+        return
+    if command == manual_command:
+        _finish_manual_command()
+        return
+    if not manual_command.is_empty():
+        _finish_manual_command()
+    if command in ["FLY", "CLIMB"]:
+        if command == "FLY":
+            _set_animation_preview("AUTO" if animation_preview == "FLY" else "FLY")
+        else:
+            _set_animation_preview("CLIMB")
+        return
+    if command == "MOLT":
+        if molting:
+            notice.text = "이미 탈피 중입니다."
+            return
+        manual_command = ""
+        molting = true
+        molt_progress = 0.0
+        behavior = "탈피 시작"
+        notice.text = "탈피를 시작했습니다. 안전한 자세를 유지합니다."
+        return
+    if command == "MATE" and life_stage != "성체":
+        notice.text = "짝짓기 행동은 성체 단계에서 시작할 수 있습니다."
+        return
+    command_origin = animal.position
+    command_origin_rotation = animal.quaternion
+    command_elapsed = 0.0
+    manual_command = command
+    match command:
+        "HUNT":
+            if prey_nodes.is_empty():
+                _add_food()
+            hunger = maxf(hunger, 46.0)
+            command_timer = 45.0
+            behavior = "사냥 시작"
+            notice.text = "가장 가까운 먹이를 추적합니다."
+        "JUMP":
+            var facing := Vector3(-sin(animal.rotation.y), 0.0, -cos(animal.rotation.y))
+            jump_start = animal.position
+            jump_end = animal.position + facing * 1.05 + Vector3(0.30 if facing.x >= 0.0 else -0.30, 0.0, 0.0)
+            jump_end.x = clampf(jump_end.x, -WALK_BOUND_X, WALK_BOUND_X)
+            jump_end.z = clampf(jump_end.z, -WALK_BOUND_Z, WALK_BOUND_Z)
+            command_timer = 0.95
+            behavior = "점프 준비"
+        "HANG":
+            hang_start = animal.position
+            command_timer = 7.0
+            behavior = "잎 뒷면을 찾는 중"
+        "THREATEN", "FIGHT", "MATE":
+            command_timer = 8.0 if command == "THREATEN" else 9.0 if command == "FIGHT" else 12.0
+            if not _spawn_social_partner(command):
+                manual_command = ""
+                notice.text = "최신 모델 검증이 끝난 뒤 상대 개체를 불러올 수 있습니다."
+                return
+            behavior = "위협 자세" if command == "THREATEN" else "싸움 행동 시연" if command == "FIGHT" else "짝짓기 행동 시연"
+            notice.text = behavior + " · 피해 없는 행동 시연"
+
+func _spawn_social_partner(command: String) -> bool:
+    _clear_social_partner()
+    if not rigged_available:
+        return false
+    var instance := LATEST_MANTIS_SCENE.instantiate()
+    if not instance is Node3D:
+        return false
+    social_partner = instance as Node3D
+    social_partner.name = "LatestRiggedSocialPartner"
+    add_child(social_partner)
+    social_partner.position = animal.position + Vector3(0.95, 0.0, -0.42)
+    social_partner.scale = animal.scale * (0.78 if command == "MATE" else 0.94)
+    _style_rigged_materials(social_partner)
+    social_partner_player = _find_rigged_player(social_partner)
+    social_partner_clip = ""
+    _play_social_partner_clip("IDLE")
+    return true
+
+func _play_social_partner_clip(clip: String) -> void:
+    if social_partner_player == null or social_partner_clip == clip:
+        return
+    for library_name in social_partner_player.get_animation_library_list():
+        var library := social_partner_player.get_animation_library(library_name)
+        if library == null:
+            continue
+        for clip_name in library.get_animation_list():
+            if String(clip_name).to_upper() != clip:
+                continue
+            var full_name := String(clip_name)
+            if not String(library_name).is_empty():
+                full_name = String(library_name) + "/" + full_name
+            social_partner_player.play(full_name, 0.18)
+            social_partner_clip = clip
+            return
+
+func _clear_social_partner() -> void:
+    if social_partner != null and is_instance_valid(social_partner):
+        social_partner.queue_free()
+    social_partner = null
+    social_partner_player = null
+    social_partner_clip = ""
+
+func _advance_manual_command(dt: float) -> void:
+    command_elapsed += dt
+    command_timer = maxf(0.0, command_timer - dt)
+    match manual_command:
+        "HUNT":
+            var prey := _nearest_prey()
+            if prey == null:
+                _finish_manual_command()
+                return
+            behavior = "먹이 추적"
+            var delta_to_prey := prey.position - animal.position
+            if delta_to_prey.length() > 0.015:
+                animal.rotation.y = lerp_angle(animal.rotation.y, atan2(-delta_to_prey.x, -delta_to_prey.z), dt * 3.4)
+                animal.position = animal.position.move_toward(prey.position, dt * 0.28)
+            if animal.position.distance_to(prey.position) < 0.20:
+                _consume_prey(prey)
+                if hunger < 25.0 or prey_nodes.is_empty():
+                    _finish_manual_command()
+            elif command_timer <= 0.0:
+                _finish_manual_command()
+        "JUMP":
+            var t := clampf(command_elapsed / 0.95, 0.0, 1.0)
+            var eased := t * t * (3.0 - 2.0 * t)
+            animal.position = jump_start.lerp(jump_end, eased)
+            animal.position.y = jump_start.y + sin(t * PI) * 0.78
+            behavior = "점프 중" if t < 1.0 else "착지"
+            if t >= 1.0:
+                animal.position = jump_end
+                _finish_manual_command()
+        "HANG":
+            var t := clampf(command_elapsed / 1.25, 0.0, 1.0)
+            var perch := Vector3(climb_branch_end.x + 0.08, climb_branch_end.y + 0.26, climb_branch_end.z)
+            animal.position = hang_start.lerp(perch, t)
+            animal.quaternion = animal.quaternion.slerp(Quaternion(Vector3.RIGHT, PI), clampf(dt * 2.4, 0.0, 1.0))
+            behavior = "잎 뒷면에 거꾸로 매달림"
+            if command_timer <= 0.0:
+                _finish_manual_command()
+        "THREATEN", "FIGHT", "MATE":
+            _advance_social_display()
+            if command_timer <= 0.0:
+                _finish_manual_command()
+
+func _advance_social_display() -> void:
+    if social_partner == null or not is_instance_valid(social_partner):
+        _finish_manual_command()
+        return
+    var face := Vector3(-sin(animal.rotation.y), 0.0, -cos(animal.rotation.y))
+    var spacing := 0.78 if manual_command == "MATE" else 0.96
+    var approach := 0.5 + 0.5 * sin(command_elapsed * 1.25)
+    var offset := face * lerpf(spacing + 0.18, spacing - 0.12, approach)
+    social_partner.position = animal.position + offset
+    social_partner.rotation.y = animal.rotation.y + PI
+    if manual_command == "THREATEN":
+        _play_rigged_clip("DEFEND")
+        _play_social_partner_clip("DEFEND")
+        behavior = "서로 위협 자세를 보임"
+    elif manual_command == "FIGHT":
+        var strike_phase := int(floor(command_elapsed / 1.1)) % 2 == 0
+        _play_rigged_clip("STRIKE" if strike_phase else "DEFEND")
+        _play_social_partner_clip("DEFEND" if strike_phase else "STRIKE")
+        behavior = "앞다리로 겨루는 중"
+    else:
+        _play_rigged_clip("IDLE")
+        _play_social_partner_clip("IDLE")
+        animal.rotation.y = lerp_angle(animal.rotation.y, atan2(-offset.x, -offset.z), 0.04)
+        behavior = "짝짓기 행동 시연"
+
+func _finish_manual_command() -> void:
+    var ended_command := manual_command
+    manual_command = ""
+    command_timer = 0.0
+    _clear_social_partner()
+    if ended_command == "HANG":
+        animal.position = hang_start
+        animal.quaternion = command_origin_rotation
+    elif ended_command == "JUMP":
+        animal.position = jump_end
+        animal.position.y = -0.38
+        animal.quaternion = command_origin_rotation
+        _initialize_foot_anchors()
+    elif ended_command in ["THREATEN", "FIGHT", "MATE"]:
+        animal.quaternion = command_origin_rotation
+    behavior = "행동 종료 · 주변 탐색"
+
+func _consume_prey(prey: Node3D) -> void:
+    if prey == null or not is_instance_valid(prey):
+        return
+    if habitat_interactions != null:
+        habitat_interactions.unregister_prey(prey)
+    var id := prey.get_instance_id()
+    prey_appendages.erase(id)
+    prey_velocities.erase(id)
+    prey_pause_timers.erase(id)
+    prey_kinds.erase(id)
+    prey_nodes.erase(prey)
+    prey.queue_free()
+    food_count = prey_nodes.size()
+    hunger = maxf(0.0, hunger - 35.0)
+    energy = maxf(0.0, energy - 2.0)
+    strike_time = 0.45
+    _refresh()
 
 func _ensure_feed_demo_prey() -> void:
     if feed_demo_prey != null and is_instance_valid(feed_demo_prey):
@@ -644,7 +967,7 @@ func _create_floor_collider() -> void:
     floor_body.position = Vector3(0, -0.55, 0)
     var shape := CollisionShape3D.new()
     var box_shape := BoxShape3D.new()
-    box_shape.size = Vector3(7.2, 0.2, 5.2)
+    box_shape.size = Vector3(11.2, 0.2, 8.2)
     shape.shape = box_shape
     floor_body.add_child(shape)
     add_child(floor_body)
@@ -1418,7 +1741,7 @@ func _tapered_branch(a: Vector3, b: Vector3, base_radius: float, tip_radius: flo
     item.material_override = mat
     add_child(item)
 
-func _box(size: Vector3, pos: Vector3, color: Color, transparent := false) -> void:
+func _box(size: Vector3, pos: Vector3, color: Color, transparent := false) -> MeshInstance3D:
     var item := MeshInstance3D.new()
     var mesh := BoxMesh.new()
     mesh.size = size
@@ -1436,6 +1759,7 @@ func _box(size: Vector3, pos: Vector3, color: Color, transparent := false) -> vo
         mat.roughness = 0.08
     item.material_override = mat
     add_child(item)
+    return item
 
 func _material(color: Color) -> StandardMaterial3D:
     var mat := StandardMaterial3D.new()
@@ -1480,6 +1804,48 @@ func _create_ui() -> void:
     status = Label.new()
     status.mouse_filter = Control.MOUSE_FILTER_IGNORE
     column.add_child(status)
+    model_status_label = Label.new()
+    model_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    model_status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    if rigged_available:
+        model_status_label.text = "모델 잠금: %s · %d본 · %d개 애니메이션" % [LATEST_MODEL_LOCK.get_file(), rigged_skeleton.get_bone_count(), rigged_clips.size()]
+        model_status_label.add_theme_color_override("font_color", Color(0.65, 0.92, 0.68))
+    else:
+        model_status_label.text = "최신 사마귀 모델을 검증하지 못했습니다. 구형 모델은 표시하지 않습니다. " + str(rigged_import_warnings)
+        model_status_label.add_theme_color_override("font_color", Color(1.0, 0.55, 0.42))
+    column.add_child(model_status_label)
+    species_picker = _add_profile_option(column, "사마귀 종류", SPECIES_NAMES, selected_species, _on_species_selected)
+    stage_picker = _add_profile_option(column, "성장 단계", LIFE_STAGES, life_stage, _on_stage_selected)
+    biome_picker = _add_profile_option(column, "사육장 환경", BIOME_NAMES, selected_biome, _on_biome_selected)
+    prey_picker = _add_profile_option(column, "먹이 곤충", PREY_TYPES, selected_prey_type, _on_prey_selected)
+    save_slot_picker = OptionButton.new()
+    save_slot_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    for slot_number in range(1, SAVE_SLOT_COUNT + 1):
+        save_slot_picker.add_item("사육장 저장 %02d" % slot_number)
+    save_slot_picker.select(active_save_slot - 1)
+    save_slot_picker.item_selected.connect(_on_save_slot_selected)
+    column.add_child(save_slot_picker)
+    mantis_name_edit = LineEdit.new()
+    mantis_name_edit.placeholder_text = "사마귀 이름"
+    mantis_name_edit.text = mantis_name
+    mantis_name_edit.text_changed.connect(func(value: String): mantis_name = value)
+    column.add_child(mantis_name_edit)
+    _button(column, "새 사육장 개체 만들기", func(): _create_new_slot_profile())
+    _button(column, "이 사육장 저장", func(): _save_state())
+    _button(column, "선택한 사육장 불러오기", func(): _load_state(true))
+    var command_title := Label.new()
+    command_title.text = "직접 명령"
+    command_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    column.add_child(command_title)
+    _button(column, "날아다니기", func(): _command_mantis("FLY"))
+    _button(column, "사냥하기", func(): _command_mantis("HUNT"))
+    _button(column, "점프하기", func(): _command_mantis("JUMP"))
+    _button(column, "잎 뒷면에 거꾸로 매달리기", func(): _command_mantis("HANG"))
+    _button(column, "탈피하기", func(): _command_mantis("MOLT"))
+    _button(column, "위협 자세", func(): _command_mantis("THREATEN"))
+    _button(column, "다른 개체와 싸움 시연", func(): _command_mantis("FIGHT"))
+    _button(column, "짝짓기 행동 시연", func(): _command_mantis("MATE"))
+    _button(column, "나무 줄기 타기", func(): _command_mantis("CLIMB"))
     _button(column, "먹이 추가", func(): _add_food())
     _button(column, "바람 켜기/끄기", func(): wind_enabled = not wind_enabled; notice.text = "바람: " + ("켜짐" if wind_enabled else "꺼짐"))
     _button(column, "생태계 상호작용 켜기/끄기", func(): habitat_interactions.active = not habitat_interactions.active; notice.text = "생태계 상호작용: " + ("켜짐" if habitat_interactions.active else "꺼짐"))
@@ -1498,7 +1864,7 @@ func _create_ui() -> void:
         elif selected_clip == "FLY":
             clip_label = "동작 시연: 비행"
         elif selected_clip == "CLIMB":
-            clip_label = "동작 시연: 가지 오르기"
+            clip_label = "자세 시연: 나무 줄기 타기"
         _button(column, clip_label, func(): _set_animation_preview(selected_clip))
     _button(column, "관찰 기록", func(): notice.text = "성장 %.0f%% / 탈피 %d회 / 경과 %.0f초" % [growth * 100.0, molt_count, life_age])
     _button(column, "온도 +1°C", func(): temperature = minf(38.0, temperature + 1.0); _refresh())
@@ -1512,14 +1878,12 @@ func _create_ui() -> void:
     _button(column, "장식 지우기 모드", func(): _set_edit_mode("erase"))
     _button(column, "편집 종료", func(): editing = false; edit_hint.text = "관찰 모드")
     _button(column, "UI 숨김/표시", func(): stats_visible = not stats_visible; ui_panel.visible = stats_visible)
-    _button(column, "저장", func(): _save_state())
-    _button(column, "불러오기", func(): _load_state(true))
     edit_hint = Label.new()
     edit_hint.text = "관찰 모드"
     edit_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
     column.add_child(edit_hint)
     notice = Label.new()
-    notice.text = "드래그: 회전 | 두 손가락 또는 오른쪽 +/-: 확대"
+    notice.text = "방향키/WASD: 자유 이동 · Shift: 빠르게 · 드래그: 회전 · +/-: 확대"
     notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
     column.add_child(notice)
 
@@ -1551,6 +1915,369 @@ func _create_ui() -> void:
     zoom_reset.custom_minimum_size = Vector2(68, 42)
     zoom_reset.pressed.connect(func(): orbit_distance = 9.4; orbit_pitch = 0.25; camera_pan = Vector3.ZERO; _update_camera())
     zoom_controls.add_child(zoom_reset)
+    _create_camera_pad()
+
+func _add_profile_option(column: VBoxContainer, title_text: String, values: Array[String], selected_value: String, handler: Callable) -> OptionButton:
+    var title := Label.new()
+    title.text = title_text
+    title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    column.add_child(title)
+    var option := OptionButton.new()
+    option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    for value in values:
+        option.add_item(value)
+    var selected_index := values.find(selected_value)
+    option.select(maxi(0, selected_index))
+    option.item_selected.connect(handler)
+    column.add_child(option)
+    return option
+
+func _create_camera_pad() -> void:
+    var pad := GridContainer.new()
+    pad.name = "CameraDirectionPad"
+    pad.columns = 3
+    pad.anchor_left = 1.0
+    pad.anchor_top = 1.0
+    pad.anchor_right = 1.0
+    pad.anchor_bottom = 1.0
+    pad.offset_left = -182.0
+    pad.offset_top = -176.0
+    pad.offset_right = -16.0
+    pad.offset_bottom = -12.0
+    pad.add_theme_constant_override("h_separation", 4)
+    pad.add_theme_constant_override("v_separation", 4)
+    root_ui.add_child(pad)
+    for key in ["", "up", "", "left", "center", "right", "", "down", ""]:
+        var button := Button.new()
+        button.text = "↑" if key == "up" else "↓" if key == "down" else "←" if key == "left" else "→" if key == "right" else "•" if key == "center" else ""
+        button.custom_minimum_size = Vector2(50.0, 48.0)
+        button.disabled = key == "" or key == "center"
+        if not button.disabled:
+            button.button_down.connect(func(): camera_touch_directions[key] = true)
+            button.button_up.connect(func(): camera_touch_directions.erase(key))
+        pad.add_child(button)
+
+func _on_species_selected(index: int) -> void:
+    if index < 0 or index >= SPECIES_NAMES.size():
+        return
+    selected_species = SPECIES_NAMES[index]
+    _apply_species_appearance()
+    _refresh()
+
+func _on_stage_selected(index: int) -> void:
+    life_stage = "약충" if index == 0 else "성체"
+    _apply_life_stage()
+    _refresh()
+
+func _on_biome_selected(index: int) -> void:
+    if index < 0 or index >= BIOME_NAMES.size():
+        return
+    selected_biome = BIOME_NAMES[index]
+    match selected_biome:
+        "열대 우림":
+            temperature = 25.0
+            humidity = 72.0
+        "건조 초원":
+            temperature = 27.0
+            humidity = 48.0
+        "사막":
+            temperature = 29.0
+            humidity = 34.0
+        _:
+            temperature = 22.0
+            humidity = 62.0
+    _apply_biome_profile()
+    _refresh()
+
+func _on_prey_selected(index: int) -> void:
+    if index >= 0 and index < PREY_TYPES.size():
+        selected_prey_type = PREY_TYPES[index]
+
+func _on_save_slot_selected(index: int) -> void:
+    _switch_save_slot(index + 1)
+
+func _sync_profile_selectors() -> void:
+    if species_picker != null:
+        species_picker.select(maxi(0, SPECIES_NAMES.find(selected_species)))
+    if stage_picker != null:
+        stage_picker.select(0 if life_stage == "약충" else 1)
+    if biome_picker != null:
+        biome_picker.select(maxi(0, BIOME_NAMES.find(selected_biome)))
+    if prey_picker != null:
+        prey_picker.select(maxi(0, PREY_TYPES.find(selected_prey_type)))
+    if save_slot_picker != null:
+        save_slot_picker.select(active_save_slot - 1)
+    if mantis_name_edit != null:
+        mantis_name_edit.text = mantis_name
+
+func _species_tint() -> Color:
+    match selected_species:
+        "치앙마이형 (Hierodula sp.)":
+            return Color(0.67, 0.88, 0.70)
+        "중국사마귀":
+            return Color(0.83, 0.89, 0.68)
+        "유럽사마귀":
+            return Color(0.82, 0.79, 0.56)
+        "고스트사마귀":
+            return Color(0.77, 0.70, 0.54)
+        "꽃사마귀":
+            return Color(0.94, 0.72, 0.73)
+        _:
+            return Color(0.78, 0.92, 0.68)
+
+func _species_size_factor() -> float:
+    match selected_species:
+        "치앙마이형 (Hierodula sp.)":
+            return 1.12
+        "왕사마귀":
+            return 1.12
+        "중국사마귀":
+            return 1.06
+        "유럽사마귀":
+            return 0.93
+        "고스트사마귀":
+            return 0.82
+        "꽃사마귀":
+            return 0.92
+        _:
+            return 1.0
+
+func _apply_species_appearance() -> void:
+    if rigged_visual != null and rigged_available:
+        _style_rigged_materials(rigged_visual)
+    if juvenile_wing_buds != null:
+        for child in juvenile_wing_buds.get_children():
+            var bud := child as MeshInstance3D
+            if bud != null:
+                var bud_material := bud.material_override as StandardMaterial3D
+                if bud_material != null:
+                    bud_material.albedo_color = _species_tint().lightened(0.14)
+    _apply_life_stage()
+
+func _apply_life_stage() -> void:
+    var is_juvenile := life_stage == "약충"
+    if animal != null:
+        var growth_scale := 0.42 * (0.90 + growth * 0.30)
+        if is_juvenile:
+            growth_scale = 0.42 * (0.38 + growth * 0.18)
+        animal.scale = Vector3.ONE * growth_scale * _species_size_factor()
+    if rigged_visual != null:
+        var wing_parts: Array = rigged_visual.find_children("*", "MeshInstance3D", true, false)
+        for candidate in wing_parts:
+            var part := candidate as MeshInstance3D
+            if part == null:
+                continue
+            if part.name.begins_with("Wing_") or part.name.begins_with("Hindwing_") or part.name.begins_with("WingVeinDetail_"):
+                part.visible = not is_juvenile
+    if juvenile_wing_buds != null:
+        juvenile_wing_buds.visible = is_juvenile
+
+func _apply_biome_profile() -> void:
+    var sky := Color(0.065, 0.085, 0.08)
+    var ambient := Color(0.70, 0.80, 0.72)
+    var floor_tint := Color(0.70, 0.77, 0.58)
+    var foliage_tint := Color(0.46, 0.78, 0.38)
+    var light_energy := 1.48
+    match selected_biome:
+        "건조 초원":
+            sky = Color(0.16, 0.13, 0.085)
+            ambient = Color(0.84, 0.73, 0.50)
+            floor_tint = Color(0.88, 0.73, 0.45)
+            foliage_tint = Color(0.78, 0.68, 0.34)
+            light_energy = 1.72
+        "사막":
+            sky = Color(0.20, 0.15, 0.10)
+            ambient = Color(0.93, 0.76, 0.52)
+            floor_tint = Color(0.93, 0.79, 0.56)
+            foliage_tint = Color(0.70, 0.65, 0.36)
+            light_energy = 1.92
+        "온대림":
+            sky = Color(0.075, 0.095, 0.12)
+            ambient = Color(0.69, 0.77, 0.80)
+            floor_tint = Color(0.63, 0.70, 0.48)
+            foliage_tint = Color(0.62, 0.74, 0.43)
+            light_energy = 1.30
+    if world_environment != null:
+        world_environment.background_color = sky
+        world_environment.ambient_light_color = ambient
+    if directional_light != null:
+        directional_light.light_energy = light_energy
+        directional_light.light_color = ambient
+    if habitat_floor != null and habitat_floor.material_override is StandardMaterial3D:
+        var floor_material := habitat_floor.material_override as StandardMaterial3D
+        floor_material.albedo_color = floor_tint
+    if habitat_motion_root != null:
+        var plant_index := 0
+        for child in habitat_motion_root.get_children():
+            if child.name.begins_with("Plant_"):
+                var plant := child as Node3D
+                plant.visible = selected_biome != "사막" or plant_index % 7 == 0
+                if selected_biome == "건조 초원":
+                    plant.visible = plant_index % 3 != 0
+                plant_index += 1
+            elif child.name.begins_with("CanopyVine_"):
+                child.visible = selected_biome in ["열대 우림", "온대림"]
+        var foliage_parts: Array = habitat_motion_root.find_children("*", "MeshInstance3D", true, false)
+        for candidate in foliage_parts:
+            var part := candidate as MeshInstance3D
+            if part == null or not (part.material_override is StandardMaterial3D):
+                continue
+            var material := part.material_override as StandardMaterial3D
+            var material_id := material.get_instance_id()
+            if not biome_base_colors.has(material_id):
+                biome_base_colors[material_id] = material.albedo_color
+            var base: Color = biome_base_colors[material_id]
+            material.albedo_color = base.lerp(foliage_tint, 0.38)
+    _rebuild_biome_accents()
+
+func _rebuild_biome_accents() -> void:
+    if biome_accent_root == null:
+        biome_accent_root = Node3D.new()
+        biome_accent_root.name = "BiomeAccents"
+        add_child(biome_accent_root)
+    for child in biome_accent_root.get_children():
+        biome_accent_root.remove_child(child)
+        child.queue_free()
+    if selected_biome == "열대 우림":
+        return
+    var rng := RandomNumberGenerator.new()
+    rng.seed = 31600 + BIOME_NAMES.find(selected_biome) * 31
+    if selected_biome == "사막":
+        var cactus_color := Color(0.43, 0.50, 0.34)
+        for i in range(10):
+            var cactus_x := rng.randf_range(-4.8, 4.8)
+            var cactus_z := rng.randf_range(-3.6, 3.6)
+            var cactus_height := rng.randf_range(0.58, 1.30)
+            var cactus_base := Vector3(cactus_x, -0.49, cactus_z)
+            var cactus_top := cactus_base + Vector3(0.0, cactus_height, 0.0)
+            _segment(biome_accent_root, cactus_base, cactus_top, rng.randf_range(0.045, 0.080), cactus_color)
+            if i % 2 == 0:
+                var arm_y := rng.randf_range(0.34, 0.62) * cactus_height
+                var arm_side := -1.0 if i % 4 == 0 else 1.0
+                var elbow := cactus_base + Vector3(0.0, arm_y, 0.0)
+                var arm_mid := elbow + Vector3(arm_side * 0.18, 0.0, 0.0)
+                var arm_tip := arm_mid + Vector3(0.0, 0.30, 0.0)
+                _segment(biome_accent_root, elbow, arm_mid, 0.032, cactus_color)
+                _segment(biome_accent_root, arm_mid, arm_tip, 0.032, cactus_color)
+    elif selected_biome == "건조 초원":
+        for i in range(48):
+            var grass_x := rng.randf_range(-5.0, 5.0)
+            var grass_z := rng.randf_range(-3.8, 3.8)
+            var grass_start := Vector3(grass_x, -0.50, grass_z)
+            var grass_height := rng.randf_range(0.22, 0.72)
+            var grass_drift := Vector3(rng.randf_range(-0.14, 0.14), grass_height, rng.randf_range(-0.12, 0.12))
+            var tint := Color(0.55, 0.52, 0.30).lerp(Color(0.71, 0.61, 0.34), rng.randf())
+            _segment(biome_accent_root, grass_start, grass_start + grass_drift, rng.randf_range(0.006, 0.012), tint)
+    else:
+        var litter := _leaf_mesh()
+        var litter_tints: Array[Color] = [Color(0.52, 0.31, 0.13), Color(0.62, 0.43, 0.18), Color(0.38, 0.42, 0.19), Color(0.55, 0.28, 0.20)]
+        for i in range(72):
+            var item := MeshInstance3D.new()
+            item.name = "TemperateLeaf_%02d" % i
+            item.mesh = litter
+            item.position = Vector3(rng.randf_range(-5.0, 5.0), -0.535, rng.randf_range(-3.8, 3.8))
+            item.rotation.y = rng.randf_range(-PI, PI)
+            item.scale = Vector3(rng.randf_range(0.30, 0.62), 0.16, rng.randf_range(0.52, 0.96))
+            var material := _material(litter_tints[rng.randi_range(0, litter_tints.size() - 1)])
+            material.cull_mode = BaseMaterial3D.CULL_DISABLED
+            material.vertex_color_use_as_albedo = true
+            item.material_override = material
+            biome_accent_root.add_child(item)
+
+func _slot_path(slot_number: int) -> String:
+    return "user://mantis_terrarium_%02d_v1.json" % clampi(slot_number, 1, SAVE_SLOT_COUNT)
+
+func _slot_backup_path(slot_number: int) -> String:
+    return "user://mantis_terrarium_%02d_v1_backup.json" % clampi(slot_number, 1, SAVE_SLOT_COUNT)
+
+func _read_active_save_slot() -> int:
+    if not FileAccess.file_exists(ACTIVE_SLOT_PATH):
+        return 1
+    return clampi(int(FileAccess.get_file_as_string(ACTIVE_SLOT_PATH).strip_edges()), 1, SAVE_SLOT_COUNT)
+
+func _write_active_save_slot() -> void:
+    var file := FileAccess.open(ACTIVE_SLOT_PATH, FileAccess.WRITE)
+    if file != null:
+        file.store_string(str(active_save_slot))
+        file.close()
+
+func _switch_save_slot(slot_number: int) -> void:
+    var next_slot := clampi(slot_number, 1, SAVE_SLOT_COUNT)
+    if next_slot == active_save_slot:
+        return
+    _save_state(false)
+    active_save_slot = next_slot
+    _write_active_save_slot()
+    _reset_profile_state()
+    _load_state(false)
+    _sync_prey()
+    _apply_biome_profile()
+    _apply_species_appearance()
+    _apply_life_stage()
+    _sync_profile_selectors()
+    if notice != null:
+        notice.text = "사육장 저장 %02d 불러옴" % active_save_slot
+    _refresh()
+
+func _create_new_slot_profile() -> void:
+    _reset_profile_state()
+    life_stage = "약충"
+    selected_species = "치앙마이형 (Hierodula sp.)"
+    selected_biome = "열대 우림"
+    selected_prey_type = "귀뚜라미"
+    mantis_name = "사마귀 %02d" % active_save_slot
+    _apply_biome_profile()
+    _apply_species_appearance()
+    _apply_life_stage()
+    _sync_profile_selectors()
+    _save_state(false)
+    if notice != null:
+        notice.text = "저장 %02d에 새 약충 개체를 만들었습니다." % active_save_slot
+
+func _reset_profile_state() -> void:
+    _clear_decorations()
+    for prey in prey_nodes:
+        if is_instance_valid(prey):
+            if habitat_interactions != null:
+                habitat_interactions.unregister_prey(prey)
+            prey.queue_free()
+    prey_nodes.clear()
+    prey_kinds.clear()
+    prey_velocities.clear()
+    prey_pause_timers.clear()
+    prey_appendages.clear()
+    food_count = 0
+    hunger = 32.0
+    energy = 86.0
+    stress = 12.0
+    humidity = 72.0
+    temperature = 25.0
+    life_age = 0.0
+    molt_count = 0
+    growth = 0.35
+    molting = false
+    molt_progress = 0.0
+    life_stage = "성체"
+    selected_species = "치앙마이형 (Hierodula sp.)"
+    selected_biome = "열대 우림"
+    selected_prey_type = "귀뚜라미"
+    mantis_name = "초록이"
+    animation_preview = "AUTO"
+    climb_active = false
+    climb_progress = 0.0
+    roam_target_valid = false
+    target_prey = null
+    if feed_demo_prey != null and is_instance_valid(feed_demo_prey):
+        feed_demo_prey.queue_free()
+    feed_demo_prey = null
+    if animal != null:
+        animal.position = Vector3(0.0, -0.38, 0.0)
+        animal.quaternion = Quaternion.IDENTITY
+    manual_command = ""
+    command_timer = 0.0
+    _clear_social_partner()
+    _apply_species_appearance()
+    _apply_life_stage()
 
 func _resize_ui() -> void:
     if ui_panel == null:
@@ -1762,16 +2489,17 @@ func _create_animated_ecosystem() -> void:
 func _create_habitat_details() -> void:
     # Slim dark frame bars mark the much larger enclosure without blocking it.
     var frame_color := Color(0.14, 0.18, 0.16)
-    for x in [-3.57, 3.57]:
-        for z in [-2.57, 2.57]:
-            _segment(self, Vector3(x, -0.53, z), Vector3(x, 5.20, z), 0.014, frame_color)
-    for y in [-0.53, 5.20]:
-        for z in [-2.57, 2.57]:
-            _segment(self, Vector3(-3.57, y, z), Vector3(3.57, y, z), 0.014, frame_color)
-        for x in [-3.57, 3.57]:
-            _segment(self, Vector3(x, y, -2.57), Vector3(x, y, 2.57), 0.014, frame_color)
+    for x in [-5.57, 5.57]:
+        for z in [-4.07, 4.07]:
+            _segment(self, Vector3(x, -0.53, z), Vector3(x, 6.37, z), 0.014, frame_color)
+    for y in [-0.53, 6.37]:
+        for z in [-4.07, 4.07]:
+            _segment(self, Vector3(-5.57, y, z), Vector3(5.57, y, z), 0.014, frame_color)
+        for x in [-5.57, 5.57]:
+            _segment(self, Vector3(x, y, -4.07), Vector3(x, y, 4.07), 0.014, frame_color)
     var root := Node3D.new()
     root.name = "SubstrateDetails"
+    root.scale = Vector3(1.38, 1.0, 1.38)
     add_child(root)
     var rng := RandomNumberGenerator.new()
     rng.seed = 240619
@@ -1829,11 +2557,11 @@ func _animate_ecosystem(dt: float) -> void:
         var phase := ecosystem_clock * 0.45 + float(i) * 1.37
         mote.position = origin + Vector3(sin(phase) * 0.14 * wind, sin(phase * 0.63) * 0.07, cos(phase * 0.7) * 0.09 * wind)
 
-func _create_feeder_insect(prey: Node3D, size_factor: float, body_color: Color) -> void:
+func _create_feeder_insect(prey: Node3D, size_factor: float, body_color: Color, kind: String = "귀뚜라미") -> void:
     # Cricket-like feeder anatomy: a shielded thorax, plated abdomen, paired
     # tegmina, long filiform antennae, cerci, and three distinct leg pairs.
     var model := Node3D.new()
-    model.name = "CricketAnatomy"
+    model.name = "%sFeederAnatomy" % kind
     model.scale = Vector3.ONE * size_factor
     prey.add_child(model)
 
@@ -1964,6 +2692,30 @@ func _create_feeder_insect(prey: Node3D, size_factor: float, body_color: Color) 
             _segment(knee, toe_local, toe_local + Vector3(-side * 0.007, -0.002, 0.015), 0.0016, shell_dark)
             leg_hips.append(hip)
             leg_knees.append(knee)
+    if kind in ["밀웜", "왁스웜"]:
+        for wing_root in wing_pivots:
+            wing_root.visible = false
+        for antenna_root in antenna_roots:
+            antenna_root.visible = false
+        for hip in leg_hips:
+            hip.scale = Vector3.ONE * 0.72
+        for segment_index in range(6):
+            var segment_t := float(segment_index) / 5.0
+            var segment_color := shell_light if segment_index % 2 == 0 else shell
+            _part(model, Vector3(0.0, -0.004, 0.005 + segment_t * 0.13), Vector3(0.030 * (1.0 - segment_t * 0.25), 0.022, 0.014), segment_color)
+    elif kind in ["초파리", "검정파리"]:
+        for wing_root in wing_pivots:
+            wing_root.scale = Vector3(1.65, 0.58, 0.74)
+    elif kind == "나방":
+        for wing_root in wing_pivots:
+            wing_root.scale = Vector3(2.05, 0.46, 0.92)
+    elif kind == "두비아바퀴":
+        model.scale = Vector3(size_factor * 1.25, size_factor * 0.74, size_factor * 0.88)
+        for wing_root in wing_pivots:
+            wing_root.visible = false
+    elif kind == "풀무치":
+        for hind_index in [2, 5]:
+            leg_hips[hind_index].scale = Vector3(1.28, 1.0, 1.12)
     prey_appendages[prey.get_instance_id()] = {
         "hips": leg_hips,
         "knees": leg_knees,
@@ -2013,6 +2765,7 @@ func _button(parent: VBoxContainer, label_text: String, callback: Callable) -> v
     parent.add_child(button)
 
 func _process(delta: float) -> void:
+    _process_camera_navigation(delta)
     if rigged_player != null and rigged_available:
         rigged_player.speed_scale = 0.0 if simulation_paused else 1.0
     if simulation_paused:
@@ -2043,7 +2796,9 @@ func _process(delta: float) -> void:
             molt_progress = 0.0
             molt_count += 1
             growth = minf(1.0, growth + 0.13)
-            animal.scale = Vector3.ONE * (0.42 * (0.90 + growth * 0.30))
+            if life_stage == "약충" and molt_count >= 5:
+                life_stage = "성체"
+            _apply_life_stage()
             hunger = minf(100.0, hunger + 12.0)
             energy = maxf(15.0, energy - 22.0)
     elif life_age > 150.0 * float(molt_count + 1) and molt_count < 5 and hunger < 65.0 and stress < 40.0:
@@ -2051,9 +2806,12 @@ func _process(delta: float) -> void:
         molt_progress = 0.0
     hunger = minf(100.0, hunger + dt * 0.22)
     humidity = maxf(0.0, humidity - dt * 0.018)
-    stress = clampf(stress + (dt * 0.75 if temperature < 21.0 or temperature > 31.0 or humidity < 40.0 else -dt * 0.15), 0.0, 100.0)
+    var humidity_stress_limit := 25.0 if selected_biome == "사막" else 40.0
+    stress = clampf(stress + (dt * 0.75 if temperature < 21.0 or temperature > 31.0 or humidity < humidity_stress_limit else -dt * 0.15), 0.0, 100.0)
     if molting:
         pass
+    elif not manual_command.is_empty():
+        _advance_manual_command(dt)
     elif animation_preview == "FLY":
         _advance_flight(dt)
         behavior = "비행 시연"
@@ -2086,6 +2844,7 @@ func _process(delta: float) -> void:
                 prey_appendages.erase(target_prey.get_instance_id())
                 prey_velocities.erase(target_prey.get_instance_id())
                 prey_pause_timers.erase(target_prey.get_instance_id())
+                prey_kinds.erase(target_prey.get_instance_id())
                 prey_nodes.erase(target_prey)
                 target_prey.queue_free()
                 target_prey = null
@@ -2189,33 +2948,7 @@ func _unhandled_input(event: InputEvent) -> void:
         elif touching:
             _orbit(event.relative)
     elif event is InputEventKey and event.pressed and not event.echo:
-        var camera_right := Vector3(cos(orbit_yaw), 0.0, -sin(orbit_yaw))
-        var camera_forward := Vector3(-sin(orbit_yaw), 0.0, -cos(orbit_yaw))
         match event.keycode:
-            KEY_LEFT:
-                orbit_yaw -= 0.14
-            KEY_RIGHT:
-                orbit_yaw += 0.14
-            KEY_UP:
-                orbit_pitch = clampf(orbit_pitch + 0.12, -1.42, 1.42)
-            KEY_DOWN:
-                orbit_pitch = clampf(orbit_pitch - 0.12, -1.42, 1.42)
-            KEY_A:
-                camera_pan -= camera_right * 0.24
-            KEY_D:
-                camera_pan += camera_right * 0.24
-            KEY_W:
-                camera_pan += camera_forward * 0.24
-            KEY_S:
-                camera_pan -= camera_forward * 0.24
-            KEY_Q:
-                camera_pan.y += 0.22
-            KEY_E:
-                camera_pan.y -= 0.22
-            KEY_PAGEUP:
-                _set_camera_zoom(-0.45)
-            KEY_PAGEDOWN:
-                _set_camera_zoom(0.45)
             KEY_F:
                 follow_animal = not follow_animal
             KEY_HOME:
@@ -2249,6 +2982,35 @@ func _unhandled_input(event: InputEvent) -> void:
             pinch_previous = distance
     _update_camera()
 
+func _process_camera_navigation(delta: float) -> void:
+    if camera == null:
+        return
+    var camera_right := Vector3(cos(orbit_yaw), 0.0, -sin(orbit_yaw))
+    var camera_forward := Vector3(-sin(orbit_yaw), 0.0, -cos(orbit_yaw))
+    var movement := Vector3.ZERO
+    if Input.is_key_pressed(KEY_LEFT) or Input.is_key_pressed(KEY_A) or bool(camera_touch_directions.get("left", false)):
+        movement -= camera_right
+    if Input.is_key_pressed(KEY_RIGHT) or Input.is_key_pressed(KEY_D) or bool(camera_touch_directions.get("right", false)):
+        movement += camera_right
+    if Input.is_key_pressed(KEY_UP) or Input.is_key_pressed(KEY_W) or bool(camera_touch_directions.get("up", false)):
+        movement += camera_forward
+    if Input.is_key_pressed(KEY_DOWN) or Input.is_key_pressed(KEY_S) or bool(camera_touch_directions.get("down", false)):
+        movement -= camera_forward
+    if Input.is_key_pressed(KEY_Q):
+        movement.y += 1.0
+    if Input.is_key_pressed(KEY_E):
+        movement.y -= 1.0
+    var speed := CAMERA_MOVE_SPEED * (CAMERA_BOOST_MULTIPLIER if Input.is_key_pressed(KEY_SHIFT) else 1.0)
+    if movement.length_squared() > 0.0:
+        camera_pan += movement.normalized() * speed * delta
+        _update_camera()
+    if Input.is_key_pressed(KEY_PAGEUP):
+        orbit_distance = maxf(CAMERA_MIN_DISTANCE, orbit_distance - speed * delta)
+        _update_camera()
+    elif Input.is_key_pressed(KEY_PAGEDOWN):
+        orbit_distance = minf(CAMERA_MAX_DISTANCE, orbit_distance + speed * delta)
+        _update_camera()
+
 func _orbit(motion: Vector2) -> void:
     orbit_yaw -= motion.x * 0.008
     orbit_pitch = clampf(orbit_pitch + motion.y * 0.006, -1.42, 1.42)
@@ -2268,34 +3030,39 @@ func _update_camera() -> void:
 func _refresh() -> void:
     if status == null:
         return
-    status.text = "온도: %.1f°C | 습도: %.1f%%\n배고픔: %.0f | 체력: %.0f\n스트레스: %.0f | 먹이: %d\n탈피: %d회 | 성장: %.0f%%\n행동: %s%s" % [temperature, humidity, hunger, energy, stress, food_count, molt_count, growth * 100.0, behavior, " (정지)" if simulation_paused else ""]
+    status.text = "%s · %s · %s\n사육장 %02d · %s\n%.1f°C | 습도 %.0f%% · 배고픔 %.0f · 체력 %.0f\n스트레스 %.0f · 먹이 개체 %d마리\n탈피 %d회 · 성장 %.0f%%\n행동: %s%s" % [mantis_name, selected_species, life_stage, active_save_slot, selected_biome, temperature, humidity, hunger, energy, stress, food_count, molt_count, growth * 100.0, behavior, " (정지)" if simulation_paused else ""]
 
 func _save_state(show_message: bool = true) -> void:
-    var data := {"version": 6, "decorations": decoration_data, "life_age": life_age, "molt_count": molt_count, "growth": growth, "hunger": hunger, "energy": energy, "stress": stress, "humidity": humidity, "temperature": temperature, "food_count": food_count, "prey_positions": _prey_positions(), "animal_position": [animal.position.x, animal.position.y, animal.position.z]}
+    var target_path := _slot_path(active_save_slot)
+    var backup_path := _slot_backup_path(active_save_slot)
+    var data := {"version": 7, "slot": active_save_slot, "name": mantis_name, "species": selected_species, "life_stage": life_stage, "biome": selected_biome, "selected_prey_type": selected_prey_type, "decorations": decoration_data, "life_age": life_age, "molt_count": molt_count, "growth": growth, "hunger": hunger, "energy": energy, "stress": stress, "humidity": humidity, "temperature": temperature, "food_count": food_count, "prey_positions": _prey_positions(), "prey": _prey_records(), "animal_position": [animal.position.x, animal.position.y, animal.position.z]}
     # Keep a last-known-good copy before replacing the main save.
-    if FileAccess.file_exists(SAVE_PATH):
-        var previous := FileAccess.get_file_as_string(SAVE_PATH)
-        var backup := FileAccess.open(BACKUP_PATH, FileAccess.WRITE)
+    if FileAccess.file_exists(target_path):
+        var previous := FileAccess.get_file_as_string(target_path)
+        var backup := FileAccess.open(backup_path, FileAccess.WRITE)
         if backup != null:
             backup.store_string(previous)
             backup.close()
-    var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+    var file := FileAccess.open(target_path, FileAccess.WRITE)
     if file == null:
         if show_message:
             notice.text = "저장 실패: 파일을 열 수 없습니다."
         return
     file.store_string(JSON.stringify(data))
     file.close()
+    _write_active_save_slot()
     if show_message:
         notice.text = "저장 완료"
 
 func _load_state(show_message: bool) -> void:
-    var candidates := [SAVE_PATH, BACKUP_PATH, V5_SAVE_PATH, V4_SAVE_PATH, PREVIOUS_SAVE_PATH, LEGACY_SAVE_PATH]
+    var candidates: Array[String] = [_slot_path(active_save_slot), _slot_backup_path(active_save_slot)]
+    if active_save_slot == 1:
+        candidates.append_array([SAVE_PATH, BACKUP_PATH, V5_SAVE_PATH, V4_SAVE_PATH, PREVIOUS_SAVE_PATH, LEGACY_SAVE_PATH])
     var path := ""
     for candidate in candidates:
         if FileAccess.file_exists(candidate):
             var candidate_data: Variant = JSON.parse_string(FileAccess.get_file_as_string(candidate))
-            if candidate_data is Dictionary and int(candidate_data.get("version", 0)) in [2, 3, 4, 5, 6]:
+            if candidate_data is Dictionary and int(candidate_data.get("version", 0)) in [2, 3, 4, 5, 6, 7]:
                 path = candidate
                 break
     if path.is_empty():
@@ -2308,7 +3075,7 @@ func _load_state(show_message: bool) -> void:
             notice.text = "불러오기 실패"
         return
     var parsed: Variant = JSON.parse_string(file.get_as_text())
-    if not (parsed is Dictionary) or int(parsed.get("version", 0)) not in [2, 3, 4, 5, 6]:
+    if not (parsed is Dictionary) or int(parsed.get("version", 0)) not in [2, 3, 4, 5, 6, 7]:
         if show_message:
             notice.text = "저장 파일 형식이 맞지 않습니다."
         return
@@ -2318,39 +3085,61 @@ func _load_state(show_message: bool) -> void:
         for entry in saved_decor:
             if entry is Dictionary and decorations.size() < MAX_DECORATIONS:
                 var kind: String = str(entry.get("kind", "rock"))
-                var x: float = clampf(float(entry.get("x", 0.0)), -3.0, 3.0)
-                var z: float = clampf(float(entry.get("z", 0.0)), -2.25, 2.25)
+                var x: float = clampf(float(entry.get("x", 0.0)), -5.35, 5.35)
+                var z: float = clampf(float(entry.get("z", 0.0)), -3.85, 3.85)
                 if kind in ["rock", "wood"]:
                     _add_decoration(kind, Vector3(x, -0.50, z))
+    var saved_species := str(parsed.get("species", "왕사마귀"))
+    selected_species = saved_species if SPECIES_NAMES.has(saved_species) else "왕사마귀"
+    var saved_stage := str(parsed.get("life_stage", "성체"))
+    life_stage = saved_stage if saved_stage in ["약충", "성체"] else "성체"
+    var saved_biome := str(parsed.get("biome", "열대 우림"))
+    selected_biome = saved_biome if BIOME_NAMES.has(saved_biome) else "열대 우림"
+    var saved_prey_kind := str(parsed.get("selected_prey_type", "귀뚜라미"))
+    selected_prey_type = saved_prey_kind if PREY_TYPES.has(saved_prey_kind) else "귀뚜라미"
+    mantis_name = str(parsed.get("name", "초록이"))
     life_age = maxf(0.0, float(parsed.get("life_age", 0.0)))
     molt_count = clampi(int(parsed.get("molt_count", 0)), 0, 5)
     growth = clampf(float(parsed.get("growth", 0.35)), 0.35, 1.0)
-    animal.scale = Vector3.ONE * (0.42 * (0.90 + growth * 0.30))
+    _apply_species_appearance()
     hunger = clampf(float(parsed.get("hunger", 32.0)), 0.0, 100.0)
     energy = clampf(float(parsed.get("energy", 86.0)), 0.0, 100.0)
     stress = clampf(float(parsed.get("stress", 12.0)), 0.0, 100.0)
     humidity = clampf(float(parsed.get("humidity", 70.0)), 0.0, 100.0)
     temperature = clampf(float(parsed.get("temperature", 25.0)), 15.0, 38.0)
-    food_count = clampi(int(parsed.get("food_count", 0)), 0, MAX_FOOD)
     for prey in prey_nodes:
-        prey.queue_free()
+        if is_instance_valid(prey):
+            if habitat_interactions != null:
+                habitat_interactions.unregister_prey(prey)
+            prey.queue_free()
     prey_nodes.clear()
+    prey_kinds.clear()
     prey_velocities.clear()
     prey_pause_timers.clear()
     prey_appendages.clear()
+    var records: Variant = parsed.get("prey", [])
     var positions: Variant = parsed.get("prey_positions", [])
-    if positions is Array and positions.size() > 0:
+    if records is Array and not records.is_empty():
+        for record in records:
+            if record is Dictionary and prey_nodes.size() < MAX_FOOD:
+                var pos := Vector3(clampf(float(record.get("x", 0.0)), -PREY_BOUND_X, PREY_BOUND_X), -0.38, clampf(float(record.get("z", 0.0)), -PREY_BOUND_Z, PREY_BOUND_Z))
+                var kind := str(record.get("kind", selected_prey_type))
+                _spawn_prey(pos, kind if PREY_TYPES.has(kind) else selected_prey_type)
+        food_count = prey_nodes.size()
+    elif positions is Array and positions.size() > 0:
         for coords in positions:
             if coords is Array and coords.size() == 3 and prey_nodes.size() < MAX_FOOD:
-                _spawn_prey(Vector3(clampf(float(coords[0]), -PREY_BOUND_X, PREY_BOUND_X), -0.38, clampf(float(coords[2]), -PREY_BOUND_Z, PREY_BOUND_Z)))
+                _spawn_prey(Vector3(clampf(float(coords[0]), -PREY_BOUND_X, PREY_BOUND_X), -0.38, clampf(float(coords[2]), -PREY_BOUND_Z, PREY_BOUND_Z)), selected_prey_type)
         food_count = prey_nodes.size()
     else:
+        food_count = clampi(int(parsed.get("food_count", 0)), 0, MAX_FOOD)
         _sync_prey()
     var pos: Variant = parsed.get("animal_position", [])
     if pos is Array and pos.size() == 3:
         animal.position = Vector3(clampf(float(pos[0]), -WALK_BOUND_X, WALK_BOUND_X), -0.38, clampf(float(pos[2]), -WALK_BOUND_Z, WALK_BOUND_Z))
+    _apply_life_stage()
     if show_message:
-        notice.text = "불러오기 완료" + (" (백업 복구)" if path == BACKUP_PATH else "")
+        notice.text = "불러오기 완료" + (" (백업 복구)" if path == _slot_backup_path(active_save_slot) else "")
     _refresh()
 
 func _notification(what: int) -> void:
@@ -2359,28 +3148,29 @@ func _notification(what: int) -> void:
 
 func _add_food() -> void:
     if prey_nodes.size() >= MAX_FOOD:
-        notice.text = "먹이는 최대 12개까지 넣을 수 있습니다."
+        notice.text = "먹이는 최대 %d개까지 넣을 수 있습니다." % MAX_FOOD
         return
-    _spawn_prey(Vector3(randf_range(-2.75, 2.75), -0.38, randf_range(-1.90, 1.90)))
+    _spawn_prey(Vector3(randf_range(-4.80, 4.80), -0.38, randf_range(-3.45, 3.45)), selected_prey_type)
     food_count = prey_nodes.size()
     _refresh()
 
-func _spawn_prey(pos: Vector3) -> void:
+func _spawn_prey(pos: Vector3, kind: String = "귀뚜라미") -> void:
     var prey := Node3D.new()
-    prey.name = "Prey_%d" % prey_nodes.size()
+    prey.name = "Prey_%02d_%s" % [prey_nodes.size(), kind]
     prey.position = pos
     add_child(prey)
-    var palettes: Array[Color] = [Color(0.35, 0.24, 0.13), Color(0.28, 0.22, 0.12), Color(0.40, 0.23, 0.13)]
-    _create_feeder_insect(prey, 0.70, palettes[prey_nodes.size() % palettes.size()])
+    _create_feeder_insect(prey, _prey_size(kind), _prey_color(kind), kind)
     prey_nodes.append(prey)
+    prey_kinds[prey.get_instance_id()] = kind
     if habitat_interactions != null:
         habitat_interactions.register_prey(prey)
-    prey_velocities[prey.get_instance_id()] = Vector3(randf_range(-0.13, 0.13), 0, randf_range(-0.13, 0.13))
+    var prey_speed := _prey_speed(kind)
+    prey_velocities[prey.get_instance_id()] = Vector3(randf_range(-prey_speed, prey_speed), 0, randf_range(-prey_speed, prey_speed))
     prey_pause_timers[prey.get_instance_id()] = randf_range(0.25, 1.15)
 
 func _sync_prey() -> void:
     while prey_nodes.size() < food_count:
-        _spawn_prey(Vector3(randf_range(-2.75, 2.75), -0.38, randf_range(-1.90, 1.90)))
+        _spawn_prey(Vector3(randf_range(-4.80, 4.80), -0.38, randf_range(-3.45, 3.45)), selected_prey_type)
     food_count = prey_nodes.size()
 
 func _prey_positions() -> Array:
@@ -2388,6 +3178,67 @@ func _prey_positions() -> Array:
     for prey in prey_nodes:
         result.append([prey.position.x, prey.position.y, prey.position.z])
     return result
+
+func _prey_records() -> Array:
+    var result: Array[Dictionary] = []
+    for prey in prey_nodes:
+        if not is_instance_valid(prey):
+            continue
+        result.append({"x": prey.position.x, "y": prey.position.y, "z": prey.position.z, "kind": str(prey_kinds.get(prey.get_instance_id(), "귀뚜라미"))})
+    return result
+
+func _prey_size(kind: String) -> float:
+    match kind:
+        "초파리":
+            return 0.40
+        "검정파리":
+            return 0.62
+        "밀웜", "왁스웜":
+            return 0.66
+        "두비아바퀴":
+            return 0.82
+        "풀무치":
+            return 0.92
+        "나방":
+            return 0.76
+        _:
+            return 0.70
+
+func _prey_color(kind: String) -> Color:
+    match kind:
+        "두비아바퀴":
+            return Color(0.28, 0.18, 0.12)
+        "초파리":
+            return Color(0.48, 0.31, 0.20)
+        "검정파리":
+            return Color(0.20, 0.36, 0.31)
+        "밀웜":
+            return Color(0.70, 0.51, 0.25)
+        "왁스웜":
+            return Color(0.82, 0.69, 0.40)
+        "풀무치":
+            return Color(0.42, 0.42, 0.18)
+        "나방":
+            return Color(0.62, 0.56, 0.45)
+        _:
+            return Color(0.35, 0.24, 0.13)
+
+func _prey_speed(kind: String) -> float:
+    match kind:
+        "초파리", "검정파리":
+            return 0.32
+        "풀무치":
+            return 0.22
+        "귀뚜라미":
+            return 0.16
+        "두비아바퀴":
+            return 0.12
+        "밀웜", "왁스웜":
+            return 0.055
+        "나방":
+            return 0.20
+        _:
+            return 0.14
 
 func _make_gait_bone(parent: Node3D, radius: float, tint: Color) -> MeshInstance3D:
     var bone := MeshInstance3D.new()
@@ -2446,6 +3297,8 @@ func _surface_height_at(world_point: Vector3) -> float:
 func _set_animation_preview(clip: String) -> void:
     if clip != "AUTO" and not ANIMATIONS.has(clip):
         return
+    if not manual_command.is_empty():
+        _finish_manual_command()
     var previous_clip := animation_preview
     if clip != "FEED" and feed_demo_prey != null and is_instance_valid(feed_demo_prey):
         prey_appendages.erase(feed_demo_prey.get_instance_id())
@@ -2487,6 +3340,19 @@ func _set_animation_preview(clip: String) -> void:
 func _resolve_animation() -> String:
     if molting:
         return "MOLT"
+    match manual_command:
+        "HUNT":
+            return "HUNT"
+        "JUMP":
+            return "FLY"
+        "HANG":
+            return "CLIMB"
+        "THREATEN":
+            return "DEFEND"
+        "FIGHT":
+            return "STRIKE" if int(floor(command_elapsed / 1.1)) % 2 == 0 else "DEFEND"
+        "MATE":
+            return "IDLE"
     if animation_preview != "AUTO":
         return animation_preview
     if strike_time > 0.0:
@@ -2552,15 +3418,31 @@ func _animate_mantis(dt: float) -> void:
             foot = grounded_foot.lerp(tucked_foot, flight_pose_blend)
             foot_anchors[i] = joint.to_global(foot)
             foot_in_swing[i] = false
+        elif next_state == "CLIMB" and manual_command == "HANG":
+            var perch_foot := Vector3(side * 0.20, 0.18, -0.10 if index == 0 else 0.16)
+            foot_world = joint.to_global(perch_foot)
+            foot_anchors[i] = foot_world
+            foot_in_swing[i] = false
+            foot = joint.to_local(foot_world)
         elif next_state == "CLIMB" and climb_active:
             var axis := climb_branch_end - climb_branch_start
-            var step_phase := walking_phase + float(i % 2) * PI + (PI if i >= 2 else 0.0)
-            var t_axis := clampf(climb_progress + (0.105 if index == 0 else -0.105) + sin(step_phase) * 0.025, 0.0, 1.0)
+            var tangent := axis.normalized()
+            var radial := Vector3(0.0, 0.0, 1.0)
+            radial = (radial - tangent * radial.dot(tangent)).normalized()
+            var around := tangent.cross(radial).normalized()
+            var step_cycle := fposmod(walking_phase / TAU + float(i) * 0.25, 1.0)
+            var step_offset := 0.065 * climb_direction
+            var step_lift := 0.0
+            if step_cycle < 0.28:
+                var step_t := step_cycle / 0.28
+                step_offset = lerpf(-0.075, 0.080, step_t) * climb_direction
+                step_lift = sin(step_t * PI) * 0.035
+            var t_axis := clampf(climb_progress + step_offset, 0.0, 1.0)
             var on_axis := climb_branch_start + axis * t_axis
-            var outward := animal.global_basis.y.normalized()
-            var lateral := animal.global_basis.x.normalized() * side
-            var contact_normal := (outward * 0.62 + lateral * 0.78).normalized()
-            foot_world = on_axis + contact_normal * 0.145
+            var angle := (-0.70 if i < 2 else 0.70) + (-0.16 if index == 0 else 0.16)
+            var contact_normal := (radial * cos(angle) + around * sin(angle)).normalized()
+            var trunk_radius := lerpf(0.160, 0.082, t_axis)
+            foot_world = on_axis + contact_normal * (trunk_radius + 0.014 + step_lift)
             foot_anchors[i] = foot_world
             foot_in_swing[i] = false
             foot = joint.to_local(foot_world)
@@ -2763,10 +3645,11 @@ func _move_prey(dt: float) -> void:
         if not is_instance_valid(prey):
             continue
         var id := prey.get_instance_id()
+        var prey_speed := _prey_speed(str(prey_kinds.get(id, "귀뚜라미")))
         var velocity: Vector3 = prey_velocities.get(id, Vector3.ZERO)
         var away := prey.position - animal.position
         if away.length() < prey_alert_radius and away.length() > 0.001:
-            velocity = away.normalized() * 0.28
+            velocity = away.normalized() * prey_speed * 1.8
             prey_pause_timers[id] = 0.0
         else:
             var pause_time: float = float(prey_pause_timers.get(id, 0.0))
@@ -2779,7 +3662,7 @@ func _move_prey(dt: float) -> void:
                     velocity = Vector3.ZERO
                     prey_pause_timers[id] = randf_range(0.35, 1.20)
                 else:
-                    velocity = Vector3(randf_range(-0.17, 0.17), 0, randf_range(-0.17, 0.17))
+                    velocity = Vector3(randf_range(-prey_speed, prey_speed), 0, randf_range(-prey_speed, prey_speed))
         prey_velocities[id] = velocity
         prey.position.x = clampf(prey.position.x + velocity.x * dt, -PREY_BOUND_X, PREY_BOUND_X)
         prey.position.z = clampf(prey.position.z + velocity.z * dt, -PREY_BOUND_Z, PREY_BOUND_Z)
@@ -2806,7 +3689,7 @@ func _place_at_screen(screen_pos: Vector2) -> void:
     if distance <= 0.0:
         return
     var point := origin + direction * distance
-    if absf(point.x) > 3.0 or absf(point.z) > 2.25:
+    if absf(point.x) > 5.35 or absf(point.z) > 3.85:
         return
     if decor_kind == "erase":
         _remove_nearest_decoration(point)

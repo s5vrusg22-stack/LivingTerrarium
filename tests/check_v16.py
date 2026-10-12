@@ -9,11 +9,11 @@ assert 'zoom_in.text = "+"' in main and 'zoom_out.text = "−"' in main
 assert "func _set_camera_zoom(" in main and "InputEventScreenDrag" in main
 assert all(key in main for key in ["KEY_LEFT", "KEY_RIGHT", "KEY_UP", "KEY_DOWN", "KEY_W", "KEY_A", "KEY_S", "KEY_D"])
 assert "CAMERA_MIN_DISTANCE" in main and "CAMERA_MAX_DISTANCE" in main
-assert "Vector3(7.2, 0.2, 5.2)" in main and "Vector3(7.2, 5.8, 0.06)" in main, "Enclosure should be wide and tall"
-assert "box_shape.size = Vector3(7.2, 0.2, 5.2)" in main
-assert "for y in [-0.53, 5.20]" in main
+assert "Vector3(11.2, 0.2, 8.2)" in main and "Vector3(11.2, 7.1, 0.06)" in main, "Enclosure should be wider and taller"
+assert "box_shape.size = Vector3(11.2, 0.2, 8.2)" in main
+assert "for y in [-0.53, 6.37]" in main
 assert "animal.scale = Vector3.ONE * (0.42 * (0.90 + growth * 0.30))" in main
-assert "orbit_distance := 9.4" in main and "CAMERA_MAX_DISTANCE := 22.0" in main
+assert "orbit_distance := 9.4" in main and "CAMERA_MAX_DISTANCE := 240.0" in main
 
 assert "for i in range(2):" in main
 assert 'joint.name = "WalkingLeg_%d_%d"' in main
@@ -42,7 +42,7 @@ assert "Vector2(-2.22, -1.46)" in main
 assert "var stations := 24" in main and "for vein_index in range(25):" in main
 assert "func _create_triangular_head_volume(" in main
 assert "climb_midpoint_pause_used" in main
-assert "CLIMB_SPEED := 0.14" in main
+assert "CLIMB_SPEED := 0.34" in main
 
 assert (root / "scenes/main.tscn").exists()
 assert len(list((root / "assets/textures").glob("*.png"))) >= 15

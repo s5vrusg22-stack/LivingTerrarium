@@ -19,6 +19,6 @@ for term in ['get_bone_global_rest','chain_reach','ik_blend','IK_EPSILON','clear
  assert term in s,term
 m=(p/'scripts/main.gd').read_text()
 assert 'elif next_state == "CLIMB" and climb_active:' in m
-assert 'foot_world = on_axis + contact_normal * 0.145' in m
+assert 'foot_world = on_axis + contact_normal * (trunk_radius + 0.014 + step_lift)' in m
 assert 'Basis.looking_at(travel_direction, radial)' in m
 print('v2.8 GLB skeleton and IK integration static checks passed')
