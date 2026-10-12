@@ -29,6 +29,10 @@ jobs:
           unzip -q /tmp/godot.zip -d /tmp
           sudo install -m 755 /tmp/Godot_v4.3-stable_linux.x86_64 /usr/local/bin/godot
           godot --headless --version
+      - name: Install software OpenGL display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1-mesa-dri
       - name: Import project and reject script parse errors
         shell: bash
         run: |
@@ -51,8 +55,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          godot --headless --path . --quit-after 180 2>&1 | tee /tmp/godot-startup.log
-          if grep -E 'SCRIPT ERROR:|Parse Error:|Failed to load script|Invalid call|Invalid set index|Node not found' /tmp/godot-startup.log; then
+          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --audio-driver Dummy --rendering-method gl_compatibility --rendering-driver opengl3 --quit-after 180 2>&1 | tee /tmp/godot-startup.log
+          if grep -E 'SCRIPT ERROR:|Parse Error:|Failed to load script|Invalid call|Invalid set index|Node not found|^ERROR:' /tmp/godot-startup.log; then
             echo 'Godot reported an application startup error.' >&2
             exit 1
           fi
@@ -62,10 +66,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y xvfb libgl1-mesa-dri
           mkdir -p build/model-renders
-          xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --rendering-method gl_compatibility --rendering-driver opengl3 --script res://tests/render_reference_model.gd
+          xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --audio-driver Dummy --rendering-method gl_compatibility --rendering-driver opengl3 --script res://tests/render_reference_model.gd
           test "$(find build/model-renders -maxdepth 1 -name '*.png' | wc -l)" -eq 4
       - name: Upload four-angle mantis renders
         if: always()
