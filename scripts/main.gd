@@ -130,11 +130,10 @@ const FOOT_SWING_DURATION := 0.30
 
 # v2.4: imported skinned GLB is the visible model; the existing procedural
 # hierarchy remains an invisible motion/IK fallback and physics reference.
-const RIGGED_MANTIS_SCENE: PackedScene = preload("res://assets/models/mantis_rigged.glb")
+const LATEST_MANTIS_SCENE: PackedScene = preload("res://assets/models/mantis_rigged.glb")
 var rigged_visual: Node3D
 var rigged_player: AnimationPlayer
 var rigged_clip := ""
-var use_rigged_visual := true
 var rigged_available := false
 var rigged_clips: Dictionary = {}
 var procedural_meshes: Array[MeshInstance3D] = []
@@ -211,14 +210,14 @@ func _ready() -> void:
     _refresh()
 
 func _initialize_rigged_visual() -> void:
-    # Use the photo-guided 61-bone mantis as the default view. Procedural meshes
-    # remain available as a graceful fallback if GLB import or clips fail.
-    if not use_rigged_visual:
-        return
-    # Keep procedural geometry available if GLB import or clip discovery fails.
+    # The latest photo-guided rig is the only visible mantis model.
+    # Procedural meshes stay hidden and serve only as pose and physics references.
     procedural_meshes.clear()
     _collect_procedural_meshes(animal)
-    var imported := RIGGED_MANTIS_SCENE.instantiate()
+    for part in procedural_meshes:
+        if is_instance_valid(part):
+            part.visible = false
+    var imported := LATEST_MANTIS_SCENE.instantiate()
     if not imported is Node3D:
         rigged_import_warnings.append("GLB root is not Node3D")
         return
@@ -375,28 +374,22 @@ func _find_rigged_skeleton(root: Node) -> Skeleton3D:
     return null
 
 func _apply_visual_mode() -> void:
-    var show_rigged := use_rigged_visual and rigged_available
+    # Never switch back to the older procedural rendering path.
     for part in procedural_meshes:
         if is_instance_valid(part):
-            part.visible = not show_rigged
+            part.visible = false
     if rigged_visual != null:
-        rigged_visual.visible = show_rigged
+        rigged_visual.visible = rigged_available
     if rigged_player != null:
-        if show_rigged:
+        if rigged_available:
             rigged_player.speed_scale = 1.0
         else:
             rigged_player.stop()
     rigged_clip = ""
     if rigged_pose_driver != null:
-        rigged_pose_driver.enabled = show_rigged and rigged_ik_enabled
-        if not show_rigged:
+        rigged_pose_driver.enabled = rigged_available and rigged_ik_enabled
+        if not rigged_available:
             rigged_pose_driver.reset_offsets()
-
-func _toggle_visual_model() -> void:
-    use_rigged_visual = not use_rigged_visual
-    _apply_visual_mode()
-    if notice != null:
-        notice.text = "3D 모델: " + ("리깅 GLB" if use_rigged_visual and rigged_available else "절차적 모델")
 
 func _play_rigged_clip(clip: String) -> void:
     if rigged_player == null or not rigged_available:
@@ -417,7 +410,7 @@ func _play_rigged_clip(clip: String) -> void:
     rigged_clip = resolved
 
 func _update_rigged_visual(_dt: float) -> void:
-    if not use_rigged_visual or not rigged_available or rigged_visual == null:
+    if not rigged_available or rigged_visual == null:
         return
     var state := animation_state
     # Molting has no matching clip in the GLB; use a non-moving pose.
@@ -695,8 +688,7 @@ func _raycast_foot_height(point: Vector3) -> float:
     return -0.45
 
 func _create_mantis() -> void:
-    # Procedural Hierodula-style fallback. The photo-guided rigged GLB is the
-    # Android default; these meshes remain for physics and safe import fallback.
+    # Keep procedural nodes for physics and pose references; render the latest GLB only.
     animal = Node3D.new()
     animal.name = "Mantis_01"
     animal.position = Vector3(0, -0.38, 0)
@@ -2016,7 +2008,7 @@ func _button(parent: VBoxContainer, label_text: String, callback: Callable) -> v
     parent.add_child(button)
 
 func _process(delta: float) -> void:
-    if rigged_player != null and use_rigged_visual and rigged_available:
+    if rigged_player != null and rigged_available:
         rigged_player.speed_scale = 0.0 if simulation_paused else 1.0
     if simulation_paused:
         return
@@ -2482,7 +2474,7 @@ func _set_animation_preview(clip: String) -> void:
         _ensure_feed_demo_prey()
     if clip == "STRIKE":
         preview_strike_clock = 0.65
-        if rigged_player != null and rigged_clip == "STRIKE" and use_rigged_visual:
+        if rigged_player != null and rigged_clip == "STRIKE" and rigged_available:
             rigged_player.seek(0.0, true)
     if animation_label != null:
         animation_label.text = "애니메이션: " + clip

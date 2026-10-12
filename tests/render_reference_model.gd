@@ -30,7 +30,15 @@ func _capture_reference_views() -> void:
         push_error("The scene did not initialize its mantis, camera, or UI.")
         quit(1)
         return
-    var mesh_instances: Array = app.animal.find_children("*", "MeshInstance3D", true, false)
+    if app.rigged_visual == null or not app.rigged_visual.visible:
+        push_error("The canonical latest mantis GLB is not the visible model.")
+        quit(1)
+        return
+    var mesh_instances: Array = []
+    for candidate in app.animal.find_children("*", "MeshInstance3D", true, false):
+        var part := candidate as MeshInstance3D
+        if part != null and part.is_visible_in_tree():
+            mesh_instances.append(part)
     if mesh_instances.size() < 30:
         push_error("The procedural mantis hierarchy is incomplete: %d mesh instances." % mesh_instances.size())
         quit(1)
