@@ -105,10 +105,58 @@ def build_wing_maps() -> None:
     normals = np.stack((-gx * strength, -gy * strength, np.ones_like(height)), axis=-1)
     normals /= np.maximum(np.linalg.norm(normals, axis=2, keepdims=True), 1e-8)
     normal_rgb = np.uint8(np.clip(normals * 0.5 + 0.5, 0.0, 1.0) * 255.0)
-    Image.fromarray(normal_rgb, "RGB").save(ROOT / "mantis_wing_normal.png", optimize=True)
+    Image.fromarray(normal_rgb, "RGB").save(ROOT / "mantis_wing_normal.png", optimize=False, compress_level=6)
 
     roughness = np.clip(0.70 - major * 0.10 - minor * 0.035 + mid * 0.014, 0.54, 0.78)
-    Image.fromarray(np.uint8(roughness * 255.0), "L").save(ROOT / "mantis_wing_roughness.png", optimize=True)
+    Image.fromarray(np.uint8(roughness * 255.0), "L").save(ROOT / "mantis_wing_roughness.png", optimize=False, compress_level=6)
+
+
+def build_compound_eye_maps() -> None:
+    """Create a dark jade compound-eye atlas with subtle raised ommatidia."""
+    size = 512
+    rows = 28
+    columns = 32
+    cell_width = float(size) / columns
+    cell_height = float(size) / rows
+    y, x = np.mgrid[0:size, 0:size].astype(np.float32)
+    row = np.floor(y / cell_height).astype(np.int32)
+    row_shift = (row % 2) * (cell_width * 0.5)
+    column = np.rint((x - row_shift - cell_width * 0.5) / cell_width).astype(np.int32)
+    center_x = column * cell_width + row_shift + cell_width * 0.5
+    center_y = row * cell_height + cell_height * 0.5
+    dx = (x - center_x) / (cell_width * 0.5)
+    dy = (y - center_y) / (cell_height * 0.5)
+    hex_distance = np.maximum(np.abs(dx), np.abs(dx) * 0.50 + np.abs(dy) * 0.87)
+    rim = np.clip((hex_distance - 0.76) / 0.20, 0.0, 1.0)
+    inside = np.clip((1.0 - hex_distance) / 0.24, 0.0, 1.0)
+
+    rng = np.random.default_rng(521)
+    cell_tint = rng.normal(0.0, 4.0, (rows, columns)).astype(np.float32)
+    tint = cell_tint[row % rows, column % columns]
+    broad = periodic_band_noise(size, 1.0, 12.0, 522)
+    fine = periodic_band_noise(size, 16.0, 120.0, 523)
+    highlight = 0.035 * inside + 0.012 * broad + 0.006 * fine
+    darken = 0.15 * rim
+    albedo = np.stack(
+        (
+            43.0 + tint + broad * 1.7 + fine * 0.7,
+            76.0 + tint * 1.5 + broad * 3.0 + fine * 1.0,
+            27.0 + tint * 0.55 + broad * 1.1 + fine * 0.4,
+        ),
+        axis=-1,
+    )
+    albedo *= (1.0 - darken + highlight)[..., None]
+    Image.fromarray(np.uint8(np.clip(albedo, 0.0, 255.0)), "RGB").save(ROOT / "mantis_eye_albedo.png", optimize=False, compress_level=6)
+
+    height = 0.50 + inside * 0.020 - rim * 0.014 + broad * 0.002 + fine * 0.001
+    gy, gx = np.gradient(height)
+    normals = np.stack((-gx * 18.0, -gy * 18.0, np.ones_like(height)), axis=-1)
+    normals /= np.maximum(np.linalg.norm(normals, axis=2, keepdims=True), 1e-8)
+    normal_rgb = np.uint8(np.clip(normals * 0.5 + 0.5, 0.0, 1.0) * 255.0)
+    Image.fromarray(normal_rgb, "RGB").save(ROOT / "mantis_eye_normal.png", optimize=False, compress_level=6)
+
+    roughness = np.clip(0.21 + rim * 0.12 + fine * 0.012, 0.18, 0.36)
+    Image.fromarray(np.uint8(roughness * 255.0), "L").save(ROOT / "mantis_eye_roughness.png", optimize=False, compress_level=6)
 
 
 def main() -> None:
@@ -127,7 +175,7 @@ def main() -> None:
     # A nearly neutral warm green lets each body part retain its own mint/olive tint.
     rgb = np.stack((height * 0.99, height, height * 0.94), axis=-1)
     albedo = np.uint8(np.clip(rgb * 255.0, 0, 255))
-    Image.fromarray(albedo, "RGB").save(ROOT / "mantis_cuticle_albedo.png", optimize=True)
+    Image.fromarray(albedo, "RGB").save(ROOT / "mantis_cuticle_albedo.png", optimize=False, compress_level=6)
 
     gray = np.asarray(Image.fromarray(albedo, "RGB").convert("L"), dtype=np.float32) / 255.0
     gy, gx = np.gradient(gray)
@@ -135,13 +183,14 @@ def main() -> None:
     normals = np.stack((-gx * strength, -gy * strength, np.ones_like(gray)), axis=-1)
     normals /= np.maximum(np.linalg.norm(normals, axis=2, keepdims=True), 1e-8)
     normal_rgb = np.uint8(np.clip(normals * 0.5 + 0.5, 0, 1) * 255)
-    Image.fromarray(normal_rgb, "RGB").save(ROOT / "mantis_cuticle_normal.png", optimize=True)
+    Image.fromarray(normal_rgb, "RGB").save(ROOT / "mantis_cuticle_normal.png", optimize=False, compress_level=6)
 
     roughness = np.clip(0.54 + (gray - gray.mean()) * 0.38 + middle * 0.012, 0.43, 0.66)
-    Image.fromarray(np.uint8(roughness * 255), "L").save(ROOT / "mantis_cuticle_roughness.png", optimize=True)
+    Image.fromarray(np.uint8(roughness * 255), "L").save(ROOT / "mantis_cuticle_roughness.png", optimize=False, compress_level=6)
+    build_compound_eye_maps()
     build_wing_maps()
 
-    print("Generated tileable cuticle maps and dedicated mint wing albedo, normal, and roughness maps in", ROOT)
+    print("Generated tileable cuticle maps, jade compound-eye maps, and dedicated mint wing PBR maps in", ROOT)
 
 
 if __name__ == "__main__":

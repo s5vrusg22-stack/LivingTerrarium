@@ -41,7 +41,7 @@ The adult mantis uses volumetric body meshes with PBR cuticle and wing maps,
 guided by the supplied green mantis photographs. Its tapered triangular head
 has a raised compound-eye line. The abdomen uses a 64 by 48 shell grid, the
 pronotum a 40 by 32 grid, and each wing a 48 by 18 double surface with modeled
-veins. Generated cuticle and wing maps are 1024 px; smaller habitat maps stay
+veins. Generated cuticle and wing maps are 1024 px; the jade eye atlas and habitat maps stay
 512 px for mobile memory use.
 
 The enclosure measures 7.2 by 5.8 by 5.2 scene units. A tall climbing trunk

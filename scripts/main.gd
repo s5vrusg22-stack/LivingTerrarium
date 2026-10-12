@@ -705,7 +705,7 @@ func _create_mantis() -> void:
     var mint := Color(0.48, 0.69, 0.43)
     var mint_light := Color(0.66, 0.80, 0.57)
     var mint_shadow := Color(0.28, 0.45, 0.29)
-    var eye_color := Color(0.065, 0.12, 0.038)
+    var eye_color := Color(0.075, 0.14, 0.046)
 
     abdomen = Node3D.new()
     abdomen.name = "AbdomenPivot"
@@ -765,18 +765,9 @@ func _create_mantis() -> void:
     # Prominent lateral compound eyes, small visible facets, and fine antennae.
     for side_index in range(2):
         var side: float = -1.0 if side_index == 0 else 1.0
-        _part(head_pivot, Vector3(side * 0.102, 0.02, -0.024), Vector3(0.059, 0.066, 0.061), eye_color)
-        for facet in range(42):
-            var row: int = int(facet / 7)
-            var column: int = facet % 7
-            var facet_y: float = -0.038 + float(row) * 0.0152
-            var facet_z: float = -0.050 + float(column) * 0.0167
-            var surface_factor: float = sqrt(maxf(0.05, 1.0 - pow(facet_y / 0.066, 2.0) - pow(facet_z / 0.061, 2.0)))
-            var facet_x: float = 0.102 + 0.059 * surface_factor + 0.003
-            var facet_color := Color(0.19, 0.34, 0.085).lerp(Color(0.37, 0.52, 0.16), float((row + column) % 4) / 8.0)
-            _part(head_pivot, Vector3(side * facet_x, 0.02 + facet_y, -0.024 + facet_z), Vector3(0.0045, 0.0052, 0.0052), facet_color)
-        # A small catchlight defines the rounded compound-eye surface at phone scale.
-        _part(head_pivot, Vector3(side * 0.151, 0.049, -0.075), Vector3(0.009, 0.012, 0.006), Color(0.71, 0.82, 0.44))
+        _part(head_pivot, Vector3(side * 0.094, 0.02, -0.024), Vector3(0.052, 0.058, 0.055), eye_color)
+        # Compound facets live in the eye atlas so they stay flush with the rounded eye shell.
+        _part(head_pivot, Vector3(side * 0.143, 0.045, -0.073), Vector3(0.0065, 0.009, 0.0045), Color(0.55, 0.67, 0.34))
         var feeler := Node3D.new()
         feeler.name = "Antenna_%d" % int(side)
         feeler.position = Vector3(side * 0.045, 0.075, -0.085)
@@ -882,8 +873,8 @@ func _create_triangular_head_volume(parent: Node3D, base_color: Color, dorsal_co
     for axial in range(AXIAL_STEPS + 1):
         var t: float = float(axial) / float(AXIAL_STEPS)
         var shape: float = pow(maxf(0.0, sin(PI * t)), 0.58)
-        var width: float = 0.012 + shape * (0.105 + 0.015 * sin(PI * t))
-        var height: float = 0.010 + shape * (0.070 + 0.006 * sin(PI * t))
+        var width: float = 0.010 + shape * (0.096 + 0.014 * sin(PI * t))
+        var height: float = 0.009 + shape * (0.063 + 0.005 * sin(PI * t))
         var center_y: float = 0.012 + 0.006 * sin(PI * t)
         var z: float = 0.106 - t * 0.224
         var dt: float = 1.0 / float(AXIAL_STEPS)
@@ -896,10 +887,10 @@ func _create_triangular_head_volume(parent: Node3D, base_color: Color, dorsal_co
             var point := Vector3(width * c, center_y + height * s, z)
             var shape_a: float = pow(maxf(0.0, sin(PI * ta)), 0.58)
             var shape_b: float = pow(maxf(0.0, sin(PI * tb)), 0.58)
-            var width_a: float = 0.012 + shape_a * (0.105 + 0.015 * sin(PI * ta))
-            var width_b: float = 0.012 + shape_b * (0.105 + 0.015 * sin(PI * tb))
-            var height_a: float = 0.010 + shape_a * (0.070 + 0.006 * sin(PI * ta))
-            var height_b: float = 0.010 + shape_b * (0.070 + 0.006 * sin(PI * tb))
+            var width_a: float = 0.010 + shape_a * (0.096 + 0.014 * sin(PI * ta))
+            var width_b: float = 0.010 + shape_b * (0.096 + 0.014 * sin(PI * tb))
+            var height_a: float = 0.009 + shape_a * (0.063 + 0.005 * sin(PI * ta))
+            var height_b: float = 0.009 + shape_b * (0.063 + 0.005 * sin(PI * tb))
             var center_a: float = 0.012 + 0.006 * sin(PI * ta)
             var center_b: float = 0.012 + 0.006 * sin(PI * tb)
             var point_a := Vector3(width_a * c, center_a + height_a * s, 0.106 - ta * 0.224)
@@ -1020,7 +1011,7 @@ func _create_abdomen_volume(parent: Node3D, base_color: Color, dorsal_color: Col
     for axial in range(AXIAL_STEPS + 1):
         var t: float = float(axial) / float(AXIAL_STEPS)
         var profile: float = pow(maxf(0.0, sin(PI * pow(t, 0.78))), 0.72)
-        var rx: float = 0.010 + profile * (0.135 + 0.048 * sin(PI * t))
+        var rx: float = 0.010 + profile * (0.115 + 0.040 * sin(PI * t))
         var ry: float = 0.010 + profile * (0.074 + 0.030 * sin(PI * t))
         var center_y: float = 0.164 + 0.018 * sin(PI * t) - 0.012 * t
         var z: float = -0.175 + t * 0.805
@@ -1034,8 +1025,8 @@ func _create_abdomen_volume(parent: Node3D, base_color: Color, dorsal_color: Col
             var p := Vector3(rx * c, center_y + ry * s, z)
             var profile_a: float = pow(maxf(0.0, sin(PI * pow(ta, 0.78))), 0.72)
             var profile_b: float = pow(maxf(0.0, sin(PI * pow(tb, 0.78))), 0.72)
-            var rx_a: float = 0.010 + profile_a * (0.135 + 0.048 * sin(PI * ta))
-            var rx_b: float = 0.010 + profile_b * (0.135 + 0.048 * sin(PI * tb))
+            var rx_a: float = 0.010 + profile_a * (0.115 + 0.040 * sin(PI * ta))
+            var rx_b: float = 0.010 + profile_b * (0.115 + 0.040 * sin(PI * tb))
             var ry_a: float = 0.010 + profile_a * (0.074 + 0.030 * sin(PI * ta))
             var ry_b: float = 0.010 + profile_b * (0.074 + 0.030 * sin(PI * tb))
             var center_a: float = 0.164 + 0.018 * sin(PI * ta) - 0.012 * ta
@@ -1100,7 +1091,7 @@ func _create_mantis_wing(parent: Node3D, side: float, hindwing: bool) -> void:
     var start_z: float = -0.015 if hindwing else -0.13
     var end_z: float = 0.57 if hindwing else 0.69
     var y: float = 0.245 if hindwing else 0.272
-    var max_width: float = 0.34 if hindwing else 0.18
+    var max_width: float = 0.34 if hindwing else 0.155
     var hinge := Vector3(side * 0.035, y, start_z)
     var wing_mesh := _make_volumetric_wing_mesh(segments, 18, side, end_z - start_z, max_width, hindwing)
     var wing_pivot := Node3D.new()
@@ -1329,7 +1320,7 @@ func _apply_pbr(mat: StandardMaterial3D, kind: String) -> void:
     if pbr_normal.has(kind):
         mat.normal_enabled = true
         mat.normal_texture = pbr_normal[kind]
-        mat.normal_scale = 0.55 if kind == "mantis_eye" else (0.38 if kind == "mantis_wing" else 0.65)
+        mat.normal_scale = 0.28 if kind == "mantis_eye" else (0.16 if kind == "mantis_wing" else 0.30)
     if pbr_roughness.has(kind):
         mat.roughness_texture = pbr_roughness[kind]
         mat.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED

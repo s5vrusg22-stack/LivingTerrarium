@@ -81,16 +81,16 @@ func _capture_reference_views() -> void:
         quit(1)
         return
     world_environment.environment.background_mode = Environment.BG_COLOR
-    world_environment.environment.background_color = Color(0.12, 0.14, 0.13)
+    world_environment.environment.background_color = Color(0.24, 0.27, 0.29)
     world_environment.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-    world_environment.environment.ambient_light_color = Color(0.78, 0.80, 0.76)
-    world_environment.environment.ambient_light_energy = 0.55
+    world_environment.environment.ambient_light_color = Color(0.90, 0.92, 0.90)
+    world_environment.environment.ambient_light_energy = 0.72
 
     var key_found := false
     for child in app.get_children():
         if child is DirectionalLight3D:
             var key := child as DirectionalLight3D
-            key.light_energy = 0.90
+            key.light_energy = 0.82
             key.rotation_degrees = Vector3(-42.0, -28.0, 0.0)
             key.shadow_enabled = true
             key_found = true
@@ -102,7 +102,7 @@ func _capture_reference_views() -> void:
     var fill := DirectionalLight3D.new()
     fill.name = "ReferenceFillLight"
     fill.rotation_degrees = Vector3(-28.0, 148.0, 0.0)
-    fill.light_energy = 0.28
+    fill.light_energy = 0.38
     fill.shadow_enabled = false
     app.add_child(fill)
 
@@ -114,7 +114,7 @@ func _capture_reference_views() -> void:
     floor.mesh = floor_mesh
     floor.position = Vector3(center.x, bounds.position.y - 0.025, center.z)
     var floor_material := StandardMaterial3D.new()
-    floor_material.albedo_color = Color(0.20, 0.22, 0.20)
+    floor_material.albedo_color = Color(0.30, 0.32, 0.34)
     floor_material.roughness = 0.96
     floor.material_override = floor_material
     floor.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

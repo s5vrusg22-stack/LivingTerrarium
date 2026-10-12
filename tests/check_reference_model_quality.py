@@ -58,5 +58,9 @@ for map_name in ["albedo", "normal", "roughness"]:
     with Image.open(texture_path) as texture:
         assert texture.size == (1024, 1024)
         assert texture.mode in ("RGB", "L")
-assert "build_wing_maps()" in (root / "tools/generate_mantis_cuticle_texture.py").read_text()
-print(f"Reference model checks passed: {head_vertices} head, {abdomen_vertices} abdomen, {prothorax_vertices} pronotum, {wing_vertices} wing vertices, with 1024px cuticle and wing maps.")
+generator = (root / "tools/generate_mantis_cuticle_texture.py").read_text()
+assert "build_wing_maps()" in generator
+assert "build_compound_eye_maps()" in generator
+assert "for facet in range(42):" not in main
+assert "mat.normal_scale = 0.28 if kind == \"mantis_eye\" else (0.16 if kind == \"mantis_wing\" else 0.30)" in main
+print(f"Reference model checks passed: {head_vertices} head, {abdomen_vertices} abdomen, {prothorax_vertices} pronotum, {wing_vertices} wing vertices, with 1024px cuticle/wing maps and a faceted jade eye atlas.")

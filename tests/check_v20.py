@@ -7,7 +7,7 @@ for marker in [
     'vertex_color_use_as_albedo = true', 'PackedColorArray()', 'var rock_material :=',
     '_apply_pbr(rock_material, "stone")', 'foot_anchors[i]', 'var frame_color :=',
     'func _create_feeder_insect(', 'three distinct leg pairs', '"hips": leg_hips',
-    'func _mantis_wing_profile(', 'var max_width: float = 0.34 if hindwing else 0.18',
+    'func _mantis_wing_profile(', 'var max_width: float = 0.34 if hindwing else 0.155',
     'FLIGHT_TAKEOFF_DURATION := 0.95', 'var launch_ease := launch_t * launch_t * (3.0 - 2.0 * launch_t)',
     'var flight_pose_blend: float', 'Keep all four walking feet on their resting contacts',
     'Cricket tympanum on the fore tibia', 'for tarsomere_index in range(3)',

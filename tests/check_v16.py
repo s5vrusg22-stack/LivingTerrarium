@@ -26,7 +26,7 @@ assert "func _make_volumetric_wing_mesh(" in main and "func _volumetric_wing_poi
 assert '"HindwingPivot" if hindwing else "ForewingPivot"' in main
 assert 'wing_pivots.append(wing_pivot)' in main and 'wing_pivot.rotation.z' in main
 assert "BaseMaterial3D.TRANSPARENCY_ALPHA" in main
-assert "surface_factor" in main and "for facet in range(42):" in main
+assert "for facet in range(42):" not in main and "var eye_color := Color(0.075, 0.14, 0.046)" in main
 assert "Antenna_%d" in main and "ocellus_side" in main
 assert "var mint := Color(0.48, 0.69, 0.43)" in main
 
