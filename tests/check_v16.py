@@ -26,7 +26,7 @@ assert 'wing_pivots.append(wing_pivot)' in main and 'wing_pivot.rotation.z' in m
 assert "BaseMaterial3D.TRANSPARENCY_ALPHA" in main
 assert "surface_factor" in main and "for facet in range(42):" in main
 assert "Antenna_%d" in main and "ocellus_side" in main
-assert "var mint := Color(0.42, 0.60, 0.24)" in main
+assert "var mint := Color(0.48, 0.69, 0.43)" in main
 
 assert "plant_clusters[rng.randi_range" in main
 assert "branch_clusters[branch_rng.randi_range" in main
@@ -41,4 +41,4 @@ assert "var stations := 24" in main and "for vein_index in range(25):" in main
 
 assert (root / "scenes/main.tscn").exists()
 assert len(list((root / "assets/textures").glob("*.png"))) >= 15
-print("Mantid/habitat and landscape zoom source checks passed (not an engine runtime test).")
+print("Mantid/habitat and landscape zoom source checks passed (not an engine/runtime test).")
