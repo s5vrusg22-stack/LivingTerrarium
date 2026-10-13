@@ -1473,7 +1473,7 @@ func _adjust_stream_temperature(amount: float) -> void:
 func _cache_mantis_environment_roots() -> void:
     mantis_environment_roots.clear()
     for child in get_children():
-        if child is Node3D and child not in [camera, animal, aquarium_system, butterfly_system, hermit_crab_system, stream_salamander_system]:
+        if child is Node3D and child not in [camera, animal, aquarium_system, blue_crayfish_habitat, butterfly_system, hermit_crab_system, stream_salamander_system]:
             mantis_environment_roots.append(child as Node3D)
 
 func _resize_ui() -> void:
