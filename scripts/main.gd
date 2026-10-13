@@ -1578,7 +1578,7 @@ func _leaf_mesh() -> ArrayMesh:
 func _create_animated_ecosystem() -> void:
     habitat_motion_root = Node3D.new()
     habitat_motion_root.name = "AnimatedEcosystem"
-    habitat_motion_root.scale = Vector3.ONE * HABITAT_LINEAR_SCALE
+    # Keep plant dimensions at a readable size; scale their positions into the larger enclosure.
     add_child(habitat_motion_root)
     var rng := RandomNumberGenerator.new()
     rng.seed = 17012026
@@ -1604,24 +1604,22 @@ func _create_animated_ecosystem() -> void:
         plant.name = "Plant_%02d" % i
         var plant_x := 0.0
         var plant_z := 0.0
-        if i % 5 == 0:
-            plant_x = rng.randf_range(-3.25, 3.25)
-            plant_z = rng.randf_range(-2.25, 2.25)
-        else:
-            match i % 4:
-                0:
-                    plant_x = rng.randf_range(-4.35, 4.35)
-                    plant_z = rng.randf_range(-3.08, -2.30)
-                1:
-                    plant_x = rng.randf_range(-4.35, 4.35)
-                    plant_z = rng.randf_range(2.30, 3.08)
-                2:
-                    plant_x = rng.randf_range(-4.52, -3.75)
-                    plant_z = rng.randf_range(-2.95, 2.95)
-                _:
-                    plant_x = rng.randf_range(3.75, 4.52)
-                    plant_z = rng.randf_range(-2.95, 2.95)
-        plant.position = Vector3(plant_x, -0.53, plant_z)
+        # Keep a clear central viewing and walking lane. Plants grow around the
+        # perimeter; only their horizontal positions expand with the enclosure.
+        match i % 4:
+            0:
+                plant_x = rng.randf_range(-4.35, 4.35)
+                plant_z = rng.randf_range(-3.08, -2.30)
+            1:
+                plant_x = rng.randf_range(-4.35, 4.35)
+                plant_z = rng.randf_range(2.30, 3.08)
+            2:
+                plant_x = rng.randf_range(-4.52, -3.75)
+                plant_z = rng.randf_range(-2.95, 2.95)
+            _:
+                plant_x = rng.randf_range(3.75, 4.52)
+                plant_z = rng.randf_range(-2.95, 2.95)
+        plant.position = Vector3(plant_x * HABITAT_LINEAR_SCALE, -0.53, plant_z * HABITAT_LINEAR_SCALE)
         habitat_motion_root.add_child(plant)
         var canopy_plant := i % 3 == 0
         var height := rng.randf_range(1.65, 3.15) if canopy_plant else rng.randf_range(0.72, 1.80)
@@ -1668,7 +1666,7 @@ func _create_animated_ecosystem() -> void:
         visual.scale = Vector3.ONE * rng.randf_range(0.003, 0.008)
         visual.material_override = mote_mat
         mote.add_child(visual)
-        mote.position = Vector3(rng.randf_range(-4.35, 4.35), rng.randf_range(-0.3, 3.10), rng.randf_range(-3.05, 3.05))
+        mote.position = Vector3(rng.randf_range(-4.35, 4.35) * HABITAT_LINEAR_SCALE, rng.randf_range(-0.3, 3.10), rng.randf_range(-3.05, 3.05) * HABITAT_LINEAR_SCALE)
         habitat_motion_root.add_child(mote)
         drifting_particles.append(mote)
         particle_origins.append(mote.position)

@@ -46,11 +46,15 @@ jobs:
           export/android/debug_keystore_user = "androiddebugkey"
           export/android/debug_keystore_pass = "android"
           SETTINGS
+      - name: Check recovered v8.3 baseline
+        run: python3 tests/check_v83_baseline.py
       - name: Import project
         shell: bash
         run: |
           set -euo pipefail
           godot --headless --path . --editor --import --quit
+      - name: Verify clear plant corridor in the running scene
+        run: godot --headless --path . --script res://tests/check_habitat_canopy.gd
       - name: Export Android debug APK
         shell: bash
         run: |
