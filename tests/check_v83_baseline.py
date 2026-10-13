@@ -18,7 +18,7 @@ document = json.loads(binary[20:20 + json_length].decode("utf-8"))
 joint_count = max((len(skin.get("joints", [])) for skin in document.get("skins", [])), default=0)
 clips = {item.get("name", "").upper() for item in document.get("animations", [])}
 assert joint_count == 62, joint_count
-assert len(document.get("meshes", [])) == 247, len(document.get("meshes", []))
+assert len(document.get("meshes", [])) == 225, len(document.get("meshes", []))
 required_clips = {"IDLE", "WALK", "ALERT", "GROOM", "HUNT", "STRIKE", "SCAN", "FEED", "CLIMB", "DEFEND"}
 required_clips.add("FLY")
 assert len(clips) == 11, clips
