@@ -22,6 +22,10 @@ const ROAM_HALF_X := HABITAT_HALF_X - 1.10
 const ROAM_HALF_Z := HABITAT_HALF_Z - 0.85
 const CAMERA_MIN_DISTANCE := 1.35
 const CAMERA_MAX_DISTANCE := 60.0
+const CAMERA_MOVE_SPEED := 4.5
+const CAMERA_BOOST_MULTIPLIER := 3.0
+const LIFE_STAGES: Array[String] = ["1령 약충", "2령 약충", "3령 약충", "4령 약충", "5령 약충", "6령 약충", "성체"]
+const NYMPH_SIZE_FACTORS: Array[float] = [0.23, 0.30, 0.40, 0.52, 0.67, 0.84]
 var hunger := 32.0
 var energy := 86.0
 var stress := 12.0
@@ -37,6 +41,8 @@ var notice: Label
 var orbit_yaw := 1.43
 var orbit_pitch := 0.26
 var orbit_distance := 3.15
+var camera_pan := Vector3.ZERO
+var camera_touch_directions: Dictionary = {}
 var pointer_last := Vector2.ZERO
 var touching := false
 var touch_points: Dictionary = {}
@@ -58,6 +64,10 @@ var habitat_framing := false
 var strike_time := 0.0
 var life_age := 0.0
 var molt_count := 0
+var life_stage := "성체"
+var stage_picker: OptionButton
+var juvenile_wing_buds: Node3D
+var rigged_wing_buds: Node3D
 var growth := 0.35
 var molt_progress := 0.0
 var prey_motion_clock := 0.0
@@ -94,9 +104,9 @@ var foot_contacts_enabled := true
 const WALKABLE_LAYER := 2
 var foot_contact_hits := 0
 var movement_blend := 0.0
-# Six selectable procedural animation clips: IDLE, WALK, ALERT, GROOM, HUNT, STRIKE.
-# MOLT is an additional lifecycle override. These are runtime poses, not GLB keyframes.
-const ANIMATIONS := ["IDLE", "WALK", "ALERT", "GROOM", "HUNT", "STRIKE", "SCAN", "FEED", "CLIMB", "DEFEND"]
+# Procedural fallback poses are retained for motion references; the canonical GLB
+# supplies its own animated FLY clip and remains the visible mantis model.
+const ANIMATIONS := ["IDLE", "WALK", "ALERT", "GROOM", "HUNT", "STRIKE", "SCAN", "FEED", "CLIMB", "DEFEND", "FLY"]
 const FRONT_LEG_VARIANT_COUNT := 100
 var animation_preview := "AUTO"
 var animation_clock := 0.0
@@ -171,6 +181,17 @@ var latest_mantis_player: AnimationPlayer
 var latest_mantis_clips: Dictionary = {}
 var latest_mantis_clip := ""
 var use_latest_mantis_visual := true
+var social_partner: Node3D
+var social_partner_player: AnimationPlayer
+var social_partner_clip := ""
+var manual_command := ""
+var command_timer := 0.0
+var command_elapsed := 0.0
+var command_origin_rotation := Quaternion.IDENTITY
+var flight_demo_active := false
+var flight_demo_clock := 0.0
+var flight_start_position := Vector3.ZERO
+var flight_start_rotation := Quaternion.IDENTITY
 # v2.6: scripted traversal of a real, collidable inclined branch.
 var climb_active := false
 var climb_progress := 0.0
@@ -257,6 +278,8 @@ func _ready() -> void:
     _initialize_photo_visual()
     _initialize_rigged_visual()
     _initialize_latest_mantis_visual()
+    _create_juvenile_wing_buds()
+    _apply_life_stage()
     planted_foot_heights.resize(6)
     planted_foot_heights.fill(-0.48)
     _initialize_foot_anchors()
@@ -354,7 +377,7 @@ func _initialize_latest_mantis_visual() -> void:
             latest_mantis_clips[normalized] = full_name
             var animation := library.get_animation(clip_name)
             if animation != null:
-                animation.loop_mode = Animation.LOOP_LINEAR if normalized in ["IDLE", "WALK", "ALERT", "GROOM", "FEED"] else Animation.LOOP_NONE
+                animation.loop_mode = Animation.LOOP_LINEAR if normalized in ["IDLE", "WALK", "ALERT", "GROOM", "FEED", "FLY"] else Animation.LOOP_NONE
     if latest_mantis_clips.is_empty():
         rigged_import_warnings.append("Latest mantis GLB has no animation clips")
         latest_mantis_visual.visible = false
@@ -544,11 +567,11 @@ func _apply_visual_mode() -> void:
             rigged_pose_driver.reset_offsets()
 
 func _toggle_visual_model() -> void:
-    use_latest_mantis_visual = not use_latest_mantis_visual
+    use_latest_mantis_visual = true
+    use_rigged_visual = false
     _apply_visual_mode()
     if notice != null:
-        var selected_model := "최신 모델" if use_latest_mantis_visual and not latest_mantis_clips.is_empty() else "기본 3D 모델"
-        notice.text = "사진 관찰 중 · 복귀할 3D 모델: " + selected_model if use_photo_visual else "3D 모델: " + selected_model
+        notice.text = "최신 사마귀 3D 모델을 사용합니다."
 
 func _toggle_photo_visual() -> void:
     if photo_visual == null:
@@ -1136,6 +1159,7 @@ func _create_ui() -> void:
     species_selector.add_item("알록달록 도롱뇽 · 계곡 개울")
     species_selector.item_selected.connect(_on_species_selected)
     root_ui.add_child(species_selector)
+    _create_camera_pad()
     ui_panel = PanelContainer.new()
     ui_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
     ui_panel.position = Vector2(16, 74)
@@ -1231,7 +1255,22 @@ func _create_ui() -> void:
     var mantis_heading := Label.new()
     mantis_heading.text = "사마귀 관리"
     mantis_controls.add_child(mantis_heading)
+    stage_picker = OptionButton.new()
+    stage_picker.name = "MantisLifeStage"
+    stage_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    for stage in LIFE_STAGES:
+        stage_picker.add_item(stage)
+    stage_picker.select(_life_stage_index())
+    stage_picker.item_selected.connect(_on_stage_selected)
+    mantis_controls.add_child(stage_picker)
     _button(mantis_controls, "먹이 추가", func(): _add_food())
+    _button(mantis_controls, "날갯짓", func(): _command_mantis("FLAP"))
+    _button(mantis_controls, "비행 시연", func(): _command_mantis("FLY"))
+    _button(mantis_controls, "위협 자세 시연", func(): _command_mantis("THREATEN"))
+    _button(mantis_controls, "싸움 시연 (무피해)", func(): _command_mantis("FIGHT"))
+    _button(mantis_controls, "짝짓기 시연", func(): _command_mantis("MATE"))
+    _button(mantis_controls, "수동 탈피", func(): _command_mantis("MOLT"))
+    _button(mantis_controls, "행동 종료", func(): _end_mantis_action())
     _button(mantis_controls, "바람 켜기/끄기", func(): wind_enabled = not wind_enabled; notice.text = "바람: " + ("켜짐" if wind_enabled else "꺼짐"))
     _button(mantis_controls, "생태계 상호작용 켜기/끄기", func(): habitat_interactions.active = not habitat_interactions.active; notice.text = "생태계 상호작용: " + ("켜짐" if habitat_interactions.active else "꺼짐"))
     _button(mantis_controls, "생태계 활동 기록", func(): notice.text = habitat_interactions.summary())
@@ -1240,7 +1279,6 @@ func _create_ui() -> void:
     animation_label.text = "애니메이션: AUTO"
     mantis_controls.add_child(animation_label)
     _button(mantis_controls, "첨부 사진 보기 / 3D 복귀", func(): _toggle_photo_visual())
-    _button(mantis_controls, "3D 모델 전환 (GLB / 기본)", func(): _toggle_visual_model())
     _button(mantis_controls, "실물 사진과 구조 비교", func(): _show_reference_overlay())
     _button(mantis_controls, "자동 행동 애니메이션", func(): _set_animation_preview("AUTO"))
     for clip in ANIMATIONS:
@@ -1273,10 +1311,10 @@ func _create_ui() -> void:
     edit_hint.text = "관찰 모드"
     mantis_controls.add_child(edit_hint)
     notice = Label.new()
-    notice.text = "드래그: 자유 회전 | 휠·두 손가락: 확대/축소 | F: 시점 재설정"
+    notice.text = "WASD/방향키: 카메라 이동 | Q/E: 높이 | Shift: 빠르게 | 드래그: 회전 | F: 재설정"
     column.add_child(notice)
     camera_hint = Label.new()
-    camera_hint.text = "드래그: 자유 회전 · 두 손가락: 확대/축소"
+    camera_hint.text = "WASD/방향키: 이동 · Q/E: 높이 · Shift: 빠르게 · 드래그: 회전"
     camera_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
     camera_hint.add_theme_color_override("font_color", Color(0.84, 0.90, 0.78, 0.92))
     root_ui.add_child(camera_hint)
@@ -1285,9 +1323,282 @@ func _create_ui() -> void:
 func _on_species_selected(index: int) -> void:
     _set_species_mode(index)
 
+func _on_stage_selected(index: int) -> void:
+    if index < 0 or index >= LIFE_STAGES.size():
+        return
+    if molting:
+        if stage_picker != null:
+            stage_picker.select(_life_stage_index())
+        notice.text = "탈피가 끝난 뒤 성장 단계를 바꿀 수 있습니다."
+        return
+    _end_mantis_action()
+    life_stage = LIFE_STAGES[index]
+    molt_count = mini(index, 6)
+    life_age = 0.0
+    _apply_life_stage()
+    _refresh()
+
+func _life_stage_index() -> int:
+    var index := LIFE_STAGES.find(life_stage)
+    return index if index >= 0 else LIFE_STAGES.size() - 1
+
+func _is_juvenile() -> bool:
+    return _life_stage_index() < 6
+
+func _apply_life_stage() -> void:
+    var stage_index := _life_stage_index()
+    var size_factor := NYMPH_SIZE_FACTORS[stage_index] if stage_index < 6 else 1.0
+    if animal != null:
+        animal.scale = Vector3.ONE * _growth_visual_scale() * size_factor
+    _apply_model_life_stage(latest_mantis_visual, juvenile_wing_buds, stage_index)
+    _apply_model_life_stage(rigged_visual, rigged_wing_buds, stage_index)
+    if stage_picker != null and stage_picker.selected != stage_index:
+        stage_picker.select(stage_index)
+
+func _apply_model_life_stage(model: Node3D, buds: Node3D, stage_index: int) -> void:
+    var is_juvenile := stage_index < 6
+    if model != null:
+        for candidate in model.find_children("*", "MeshInstance3D", true, false):
+            var part := candidate as MeshInstance3D
+            if part != null and (part.name.begins_with("Wing_") or part.name.begins_with("Hindwing_") or part.name.begins_with("WingVeinDetail_")):
+                part.visible = not is_juvenile
+    if buds != null:
+        buds.visible = is_juvenile
+        if is_juvenile:
+            var pad_factor := NYMPH_SIZE_FACTORS[stage_index] / NYMPH_SIZE_FACTORS[5]
+            for child in buds.get_children():
+                var bud := child as MeshInstance3D
+                if bud != null:
+                    bud.scale = Vector3(0.12 + 0.14 * pad_factor, 0.045 + 0.035 * pad_factor, 0.19 + 0.18 * pad_factor)
+
+func _create_juvenile_wing_buds() -> void:
+    juvenile_wing_buds = _create_wing_buds(latest_mantis_visual, "JuvenileWingBudModel")
+    rigged_wing_buds = _create_wing_buds(rigged_visual, "RiggedJuvenileWingBudModel")
+    _apply_life_stage()
+
+func _create_wing_buds(parent: Node3D, node_name: String) -> Node3D:
+    if parent == null:
+        return null
+    var buds := Node3D.new()
+    buds.name = node_name
+    parent.add_child(buds)
+    for side in [-1.0, 1.0]:
+        var bud := MeshInstance3D.new()
+        bud.name = "NymphWingBud_%d" % int(side)
+        var mesh := SphereMesh.new()
+        mesh.radial_segments = 16
+        mesh.rings = 8
+        bud.mesh = mesh
+        bud.scale = Vector3(0.18, 0.06, 0.30)
+        bud.position = Vector3(side * 0.105, 0.205, 0.13)
+        var material := StandardMaterial3D.new()
+        material.albedo_color = Color(0.48, 0.69, 0.43)
+        material.roughness = 0.58
+        bud.material_override = material
+        buds.add_child(bud)
+    return buds
+
+func _command_mantis(command: String) -> void:
+    if command == "END":
+        _end_mantis_action()
+        return
+    if molting and command != "MOLT":
+        notice.text = "탈피가 끝난 뒤 다른 행동을 시작할 수 있습니다."
+        return
+    if command == "MOLT":
+        if molting:
+            notice.text = "이미 탈피 중입니다."
+        elif not _is_juvenile():
+            notice.text = "성충은 마지막 탈피를 마쳤습니다."
+        else:
+            _end_mantis_action()
+            molting = true
+            molt_progress = 0.0
+            behavior = "탈피 시작"
+            notice.text = "탈피를 시작했습니다."
+        return
+    if command == "MATE" and _is_juvenile():
+        notice.text = "짝짓기 시연은 성체 단계에서 시작할 수 있습니다."
+        return
+    _end_mantis_action()
+    if command == "FLAP":
+        _set_animation_preview("FLY")
+        notice.text = "날개를 퍼덕이는 중입니다. 행동 종료로 멈출 수 있습니다."
+        return
+    if command == "FLY":
+        _set_animation_preview("FLY")
+        flight_demo_active = true
+        flight_demo_clock = 0.0
+        flight_start_position = animal.position
+        flight_start_rotation = animal.quaternion
+        notice.text = "짧은 비행 시연을 시작했습니다."
+        return
+    if command in ["THREATEN", "FIGHT", "MATE"]:
+        if not _spawn_social_partner(command):
+            notice.text = "상대 개체를 불러오지 못했습니다."
+            return
+        command_origin_rotation = animal.quaternion
+        manual_command = command
+        command_elapsed = 0.0
+        command_timer = 8.0 if command == "THREATEN" else 9.0 if command == "FIGHT" else 12.0
+        notice.text = "상대와 피해 없는 행동 시연을 시작했습니다."
+        return
+
+func _spawn_social_partner(command: String) -> bool:
+    _clear_social_partner()
+    var instance := LATEST_MANTIS_SCENE.instantiate()
+    if not instance is Node3D:
+        return false
+    social_partner = instance as Node3D
+    social_partner.name = "LatestMantisSocialPartner"
+    add_child(social_partner)
+    social_partner.position = animal.position + Vector3(0.92, 0.0, -0.40)
+    social_partner.scale = animal.scale * (0.80 if command == "MATE" else 0.94)
+    _style_rigged_materials(social_partner)
+    var stage_index := _life_stage_index()
+    var buds: Node3D = null
+    if stage_index < 6:
+        buds = _create_wing_buds(social_partner, "SocialPartnerWingBuds")
+    _apply_model_life_stage(social_partner, buds, stage_index)
+    social_partner_player = _find_rigged_player(social_partner)
+    social_partner_clip = ""
+    _play_social_partner_clip("IDLE")
+    return true
+
+func _play_social_partner_clip(clip: String) -> void:
+    if social_partner_player == null:
+        return
+    var resolved := clip if latest_mantis_clips.has(clip) else "IDLE"
+    var animation_name := String(latest_mantis_clips.get(resolved, ""))
+    if animation_name.is_empty() or not social_partner_player.has_animation(animation_name):
+        return
+    if social_partner_clip != resolved:
+        social_partner_player.play(animation_name, 0.18)
+        social_partner_clip = resolved
+
+func _advance_social_display() -> void:
+    if social_partner == null or not is_instance_valid(social_partner):
+        _end_mantis_action()
+        return
+    var face := Vector3(-sin(animal.rotation.y), 0.0, -cos(animal.rotation.y))
+    var spacing := 0.78 if manual_command == "MATE" else 0.96
+    var approach := 0.5 + 0.5 * sin(command_elapsed * 1.25)
+    var offset := face * lerpf(spacing + 0.18, spacing - 0.12, approach)
+    social_partner.position = animal.position + offset
+    social_partner.rotation.y = animal.rotation.y + PI
+    if manual_command == "THREATEN":
+        _play_social_partner_clip("DEFEND")
+        behavior = "서로 위협 자세를 보임"
+    elif manual_command == "FIGHT":
+        var strike_phase := int(floor(command_elapsed / 1.1)) % 2 == 0
+        _play_social_partner_clip("DEFEND" if strike_phase else "STRIKE")
+        behavior = "앞다리로 겨루는 중 · 무피해 시연"
+    else:
+        _play_social_partner_clip("IDLE")
+        animal.rotation.y = lerp_angle(animal.rotation.y, atan2(-offset.x, -offset.z), 0.04)
+        behavior = "짝짓기 행동 시연"
+    if command_timer <= 0.0:
+        _end_mantis_action()
+
+func _clear_social_partner() -> void:
+    if social_partner != null and is_instance_valid(social_partner):
+        social_partner.queue_free()
+    social_partner = null
+    social_partner_player = null
+    social_partner_clip = ""
+
+func _end_mantis_action() -> void:
+    var had_flight := flight_demo_active
+    var had_social := not manual_command.is_empty()
+    manual_command = ""
+    command_timer = 0.0
+    flight_demo_active = false
+    if had_flight and animal != null:
+        animal.position = flight_start_position
+        animal.quaternion = flight_start_rotation
+    if had_social and animal != null:
+        animal.quaternion = command_origin_rotation
+    _clear_social_partner()
+    if animation_preview == "FLY":
+        _set_animation_preview("AUTO")
+    if had_flight or had_social:
+        behavior = "행동 종료 · 주변 탐색"
+
+func _advance_flight(dt: float) -> void:
+    flight_demo_clock += dt
+    var t := clampf(flight_demo_clock / 5.0, 0.0, 1.0)
+    var eased := t * t * (3.0 - 2.0 * t)
+    animal.position = flight_start_position + Vector3(sin(eased * TAU) * 0.58, sin(eased * PI) * 0.62, -0.82 * eased)
+    var tangent := Vector3(cos(eased * TAU) * 0.58 * TAU, 0.0, -0.82)
+    animal.rotation.y = lerp_angle(animal.rotation.y, atan2(-tangent.x, -tangent.z), clampf(dt * 2.4, 0.0, 1.0))
+    behavior = "비행 시연"
+    if t >= 1.0:
+        animal.position = flight_start_position
+        animal.quaternion = flight_start_rotation
+        flight_demo_active = false
+        _set_animation_preview("AUTO")
+        behavior = "착지 후 탐색"
+
+func _process_camera_navigation(delta: float) -> void:
+    if camera == null:
+        return
+    var camera_right := Vector3(cos(orbit_yaw), 0.0, -sin(orbit_yaw))
+    var camera_forward := Vector3(-sin(orbit_yaw), 0.0, -cos(orbit_yaw))
+    var movement := Vector3.ZERO
+    if Input.is_key_pressed(KEY_LEFT) or Input.is_key_pressed(KEY_A) or bool(camera_touch_directions.get("left", false)):
+        movement -= camera_right
+    if Input.is_key_pressed(KEY_RIGHT) or Input.is_key_pressed(KEY_D) or bool(camera_touch_directions.get("right", false)):
+        movement += camera_right
+    if Input.is_key_pressed(KEY_UP) or Input.is_key_pressed(KEY_W) or bool(camera_touch_directions.get("up", false)):
+        movement += camera_forward
+    if Input.is_key_pressed(KEY_DOWN) or Input.is_key_pressed(KEY_S) or bool(camera_touch_directions.get("down", false)):
+        movement -= camera_forward
+    if Input.is_key_pressed(KEY_Q):
+        movement.y += 1.0
+    if Input.is_key_pressed(KEY_E):
+        movement.y -= 1.0
+    var speed := CAMERA_MOVE_SPEED * (CAMERA_BOOST_MULTIPLIER if Input.is_key_pressed(KEY_SHIFT) else 1.0)
+    if movement.length_squared() > 0.0:
+        camera_pan += movement.normalized() * speed * delta
+        _update_camera()
+    if Input.is_key_pressed(KEY_PAGEUP):
+        orbit_distance = maxf(CAMERA_MIN_DISTANCE, orbit_distance - speed * delta)
+        _update_camera()
+    elif Input.is_key_pressed(KEY_PAGEDOWN):
+        orbit_distance = minf(CAMERA_MAX_DISTANCE, orbit_distance + speed * delta)
+        _update_camera()
+
+func _create_camera_pad() -> void:
+    var pad := GridContainer.new()
+    pad.name = "CameraDirectionPad"
+    pad.columns = 3
+    pad.anchor_left = 1.0
+    pad.anchor_top = 1.0
+    pad.anchor_right = 1.0
+    pad.anchor_bottom = 1.0
+    pad.offset_left = -182.0
+    pad.offset_top = -176.0
+    pad.offset_right = -16.0
+    pad.offset_bottom = -12.0
+    pad.add_theme_constant_override("h_separation", 4)
+    pad.add_theme_constant_override("v_separation", 4)
+    root_ui.add_child(pad)
+    for key in ["", "up", "", "left", "center", "right", "", "down", ""]:
+        var direction_key: String = key
+        var button := Button.new()
+        button.text = "↑" if direction_key == "up" else "↓" if direction_key == "down" else "←" if direction_key == "left" else "→" if direction_key == "right" else "•" if direction_key == "center" else ""
+        button.custom_minimum_size = Vector2(50.0, 48.0)
+        button.disabled = direction_key == "" or direction_key == "center"
+        if not button.disabled:
+            button.button_down.connect(func(): camera_touch_directions[direction_key] = true)
+            button.button_up.connect(func(): camera_touch_directions.erase(direction_key))
+        pad.add_child(button)
+
 func _set_species_mode(index: int, show_message: bool = true) -> void:
     if index < 0 or index > 5:
         index = 0
+    if index != 0 and (not manual_command.is_empty() or flight_demo_active):
+        _end_mantis_action()
     current_species = ["mantis", "fish", "crayfish", "butterfly", "hermit_crab", "stream_salamander"][index]
     var viewing_fish := current_species == "fish"
     var viewing_crayfish := current_species == "crayfish"
@@ -1812,10 +2123,13 @@ func _button(parent: VBoxContainer, label_text: String, callback: Callable) -> v
     parent.add_child(button)
 
 func _process(delta: float) -> void:
+    _process_camera_navigation(delta)
     if rigged_player != null and use_rigged_visual and rigged_available:
         rigged_player.speed_scale = 0.0 if simulation_paused else 1.0
     if latest_mantis_player != null and use_latest_mantis_visual:
         latest_mantis_player.speed_scale = 0.0 if simulation_paused else 1.0
+    if social_partner_player != null:
+        social_partner_player.speed_scale = 0.0 if simulation_paused else 1.0
     if use_photo_visual:
         _update_photo_visual(0.0 if simulation_paused else minf(delta, 0.1))
     if simulation_paused:
@@ -1875,6 +2189,9 @@ func _process(delta: float) -> void:
     _move_prey(dt)
     climb_cooldown = maxf(0.0, climb_cooldown - dt)
     target_prey = _nearest_prey()
+    if not manual_command.is_empty():
+        command_elapsed += dt
+        command_timer = maxf(0.0, command_timer - dt)
     if molting:
         molt_progress += dt
         behavior = "탈피 중"
@@ -1883,10 +2200,14 @@ func _process(delta: float) -> void:
             molt_progress = 0.0
             molt_count += 1
             growth = minf(1.0, growth + 0.13)
-            animal.scale = Vector3.ONE * _growth_visual_scale()
+            if _is_juvenile():
+                var next_stage := mini(_life_stage_index() + 1, 6)
+                life_stage = LIFE_STAGES[next_stage]
+                molt_count = next_stage
+            _apply_life_stage()
             hunger = minf(100.0, hunger + 12.0)
             energy = maxf(15.0, energy - 22.0)
-    elif life_age > 150.0 * float(molt_count + 1) and molt_count < 5 and hunger < 65.0 and stress < 40.0:
+    elif _is_juvenile() and life_age > 150.0 * float(molt_count + 1) and molt_count < 6 and hunger < 65.0 and stress < 40.0:
         molting = true
         molt_progress = 0.0
     hunger = minf(100.0, hunger + dt * 0.22)
@@ -1894,6 +2215,10 @@ func _process(delta: float) -> void:
     stress = clampf(stress + (dt * 0.75 if temperature < 21.0 or temperature > 31.0 or humidity < 40.0 else -dt * 0.15), 0.0, 100.0)
     if molting:
         pass
+    elif not manual_command.is_empty():
+        _advance_social_display()
+    elif flight_demo_active:
+        _advance_flight(dt)
     elif climb_active:
         _advance_climb(dt)
     elif stress > 65.0:
@@ -2041,6 +2366,7 @@ func _orbit(motion: Vector2) -> void:
     orbit_pitch = clampf(orbit_pitch + motion.y * 0.006, -1.52, 1.52)
 
 func _set_camera_preset(close_view: bool) -> void:
+    camera_pan = Vector3.ZERO
     follow_animal = close_view
     habitat_framing = not close_view
     orbit_yaw = 1.43 if close_view else 0.0
@@ -2089,6 +2415,7 @@ func _update_camera() -> void:
         center = stream_salamander_system.to_global(stream_salamander_system.call("focus_position")) if follow_animal else Vector3(0, -0.06, 0)
     else:
         center = animal.position + Vector3(0, 0.35, 0) if follow_animal and animal != null else Vector3(0, 0.48 if habitat_framing else 0.0, 0)
+    center += camera_pan
     camera.position = center + Vector3(sin(orbit_yaw) * cos(orbit_pitch), sin(orbit_pitch), cos(orbit_yaw) * cos(orbit_pitch)) * orbit_distance
     camera.look_at(center, Vector3.UP)
 
@@ -2128,10 +2455,10 @@ func _refresh() -> void:
         var flow_text := "켜짐" if stream_salamander_system != null and bool(stream_salamander_system.get("flow_enabled")) else "꺼짐"
         status.text = "계곡 도롱뇽: %d마리 | 은신처: 젖은 바위틈\n개울 물살: %s | 온도: %.1f°C\n습도: %.0f%%\n행동: %s%s" % [salamander_count, flow_text, salamander_temp, salamander_humidity, salamander_activity, " (정지)" if simulation_paused else ""]
         return
-    status.text = "온도: %.1f°C | 습도: %.1f%%\n배고픔: %.0f | 체력: %.0f\n스트레스: %.0f | 먹이: %d\n탈피: %d회 | 성장: %.0f%%\n행동: %s%s" % [temperature, humidity, hunger, energy, stress, food_count, molt_count, growth * 100.0, behavior, " (정지)" if simulation_paused else ""]
+    status.text = "%s\n온도: %.1f°C | 습도: %.1f%%\n배고픔: %.0f | 체력: %.0f\n스트레스: %.0f | 먹이: %d\n탈피: %d회 | 성장: %.0f%%\n행동: %s%s" % [life_stage, temperature, humidity, hunger, energy, stress, food_count, molt_count, growth * 100.0, behavior, " (정지)" if simulation_paused else ""]
 
 func _save_state(show_message: bool = true) -> void:
-    var data := {"version": 6, "decorations": decoration_data, "life_age": life_age, "molt_count": molt_count, "growth": growth, "hunger": hunger, "energy": energy, "stress": stress, "humidity": humidity, "temperature": temperature, "food_count": food_count, "prey_positions": _prey_positions(), "animal_position": [animal.position.x, animal.position.y, animal.position.z]}
+    var data := {"version": 7, "life_stage": life_stage, "decorations": decoration_data, "life_age": life_age, "molt_count": molt_count, "growth": growth, "hunger": hunger, "energy": energy, "stress": stress, "humidity": humidity, "temperature": temperature, "food_count": food_count, "prey_positions": _prey_positions(), "animal_position": [animal.position.x, animal.position.y, animal.position.z]}
     # Keep a last-known-good copy before replacing the main save.
     if FileAccess.file_exists(SAVE_PATH):
         var previous := FileAccess.get_file_as_string(SAVE_PATH)
@@ -2155,7 +2482,7 @@ func _load_state(show_message: bool) -> void:
     for candidate in candidates:
         if FileAccess.file_exists(candidate):
             var candidate_data: Variant = JSON.parse_string(FileAccess.get_file_as_string(candidate))
-            if candidate_data is Dictionary and int(candidate_data.get("version", 0)) in [2, 3, 4, 5, 6]:
+            if candidate_data is Dictionary and int(candidate_data.get("version", 0)) in [2, 3, 4, 5, 6, 7]:
                 path = candidate
                 break
     if path.is_empty():
@@ -2168,7 +2495,7 @@ func _load_state(show_message: bool) -> void:
             notice.text = "불러오기 실패"
         return
     var parsed: Variant = JSON.parse_string(file.get_as_text())
-    if not (parsed is Dictionary) or int(parsed.get("version", 0)) not in [2, 3, 4, 5, 6]:
+    if not (parsed is Dictionary) or int(parsed.get("version", 0)) not in [2, 3, 4, 5, 6, 7]:
         if show_message:
             notice.text = "저장 파일 형식이 맞지 않습니다."
         return
@@ -2183,9 +2510,12 @@ func _load_state(show_message: bool) -> void:
                 if kind in ["rock", "wood"]:
                     _add_decoration(kind, Vector3(x, -0.50, z))
     life_age = maxf(0.0, float(parsed.get("life_age", 0.0)))
-    molt_count = clampi(int(parsed.get("molt_count", 0)), 0, 5)
+    life_stage = String(parsed.get("life_stage", "성체"))
+    if not LIFE_STAGES.has(life_stage):
+        life_stage = "성체"
+    molt_count = clampi(int(parsed.get("molt_count", 0)), 0, 6)
     growth = clampf(float(parsed.get("growth", 0.35)), 0.35, 1.0)
-    animal.scale = Vector3.ONE * _growth_visual_scale()
+    _apply_life_stage()
     hunger = clampf(float(parsed.get("hunger", 32.0)), 0.0, 100.0)
     energy = clampf(float(parsed.get("energy", 86.0)), 0.0, 100.0)
     stress = clampf(float(parsed.get("stress", 12.0)), 0.0, 100.0)
@@ -2206,6 +2536,8 @@ func _load_state(show_message: bool) -> void:
     var pos: Variant = parsed.get("animal_position", [])
     if pos is Array and pos.size() == 3:
         animal.position = Vector3(clampf(float(pos[0]), -ROAM_HALF_X, ROAM_HALF_X), -0.38, clampf(float(pos[2]), -ROAM_HALF_Z, ROAM_HALF_Z))
+    if stage_picker != null:
+        stage_picker.select(_life_stage_index())
     if show_message:
         notice.text = "불러오기 완료" + (" (백업 복구)" if path == BACKUP_PATH else "")
     _refresh()
@@ -2326,15 +2658,20 @@ func _set_frontleg_animation(index: int) -> void:
         if rigged_pose_driver != null:
             rigged_pose_driver.stop_front_leg_animation()
         use_latest_mantis_visual = true
+        use_rigged_visual = false
         _apply_visual_mode()
         if frontleg_animation_label != null:
             frontleg_animation_label.text = "앞다리 동작: 최신 모델 기본 포획 자세"
         return
+    if not rigged_available or rigged_pose_driver == null:
+        notice.text = "최신 모델의 앞다리 리그를 불러오지 못했습니다."
+        return
     selected_frontleg_animation = posmod(index, FRONT_LEG_VARIANT_COUNT)
     if use_latest_mantis_visual:
         use_latest_mantis_visual = false
+        use_rigged_visual = true
         _apply_visual_mode()
-        notice.text = "세부 앞다리 관절 시연을 위해 전체 스킨 리그 모델로 전환했습니다."
+        notice.text = "최신 GLB에서 세부 앞다리 관절 시연을 재생합니다."
     if rigged_pose_driver != null:
         rigged_pose_driver.play_front_leg_animation(selected_frontleg_animation)
         if frontleg_animation_label != null:
@@ -2355,6 +2692,13 @@ func _restart_frontleg_animation() -> void:
 func _resolve_animation() -> String:
     if molting:
         return "MOLT"
+    match manual_command:
+        "THREATEN":
+            return "DEFEND"
+        "FIGHT":
+            return "STRIKE" if int(floor(command_elapsed / 1.1)) % 2 == 0 else "DEFEND"
+        "MATE":
+            return "IDLE"
     if animation_preview != "AUTO":
         return animation_preview
     if strike_time > 0.0:
