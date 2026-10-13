@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -46,6 +46,24 @@ jobs:
           export/android/debug_keystore_user = "androiddebugkey"
           export/android/debug_keystore_pass = "android"
           SETTINGS
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Generate canonical latest mantis model
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y blender python3-numpy xvfb libgl1-mesa-dri
+          python -m pip install --disable-pip-version-check numpy pillow
+          blender_pythonpath="$(python -c 'import pathlib, numpy; print(pathlib.Path(numpy.__file__).parent.parent)')"
+          env -u LD_LIBRARY_PATH PATH=/usr/bin:/bin PYTHONPATH="$blender_pythonpath" blender --background --python tools/generate_latest_mantis_blender.py > /tmp/mantis-latest-model.log 2>&1
+          if rg -n 'Traceback|ModuleNotFoundError|Error: Python' /tmp/mantis-latest-model.log; then
+            tail -80 /tmp/mantis-latest-model.log
+            exit 1
+          fi
+          tail -8 /tmp/mantis-latest-model.log
+          test -s assets/models/mantis_latest.glb
       - name: Check recovered v8.3 baseline
         run: python3 tests/check_v83_baseline.py
       - name: Import project
@@ -65,6 +83,18 @@ jobs:
           godot --headless --path . --export-debug Android build/LivingTerrarium3D-v8.3-ARM64.apk
           test -s build/LivingTerrarium3D-v8.3-ARM64.apk
           sha256sum build/LivingTerrarium3D-v8.3-ARM64.apk > build/SHA256SUMS.txt
+      - name: Commit generated latest mantis model
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet -- assets/models/mantis_latest.glb; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add assets/models/mantis_latest.glb
+            git commit -m "Regenerate canonical latest mantis model"
+            git push origin HEAD:main
+          fi
       - name: Upload APK and checksum
         if: always()
         uses: actions/upload-artifact@v4

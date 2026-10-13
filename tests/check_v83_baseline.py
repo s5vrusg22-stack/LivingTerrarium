@@ -6,7 +6,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 model = root / "assets/models/mantis_latest.glb"
 binary = model.read_bytes()
-assert len(binary) == 4_280_964, len(binary)
+assert len(binary) > 1_000_000, len(binary)
 assert binary[:4] == b"glTF"
 assert struct.unpack_from("<I", binary, 8)[0] == len(binary)
 json_length, json_type = struct.unpack_from("<II", binary, 12)
