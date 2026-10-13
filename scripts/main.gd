@@ -143,6 +143,7 @@ const PHOTO_SIDE_CUTOUT: Texture2D = preload("res://assets/photo_cutouts/mantis_
 const PHOTO_DORSAL_CUTOUT: Texture2D = preload("res://assets/photo_cutouts/mantis_dorsal_photo.png")
 const LATEST_MANTIS_MODEL_SCALE := 1.0
 const AQUARIUM_SYSTEM_SCRIPT = preload("res://scripts/aquarium_system.gd")
+const BLUE_CRAYFISH_HABITAT_SCRIPT = preload("res://scripts/blue_crayfish_habitat.gd")
 const BUTTERFLY_SYSTEM_SCRIPT = preload("res://scripts/butterfly_system.gd")
 const HERMIT_CRAB_SYSTEM_SCRIPT = preload("res://scripts/hermit_crab_system.gd")
 const STREAM_SALAMANDER_SYSTEM_SCRIPT = preload("res://scripts/stream_valley_system.gd")
@@ -204,6 +205,7 @@ var aquarium_system: Node3D
 var butterfly_system: Node3D
 var hermit_crab_system: Node3D
 var stream_salamander_system: Node3D
+var blue_crayfish_habitat: Node3D
 var mantis_environment_roots: Array[Node3D] = []
 var current_species := "mantis"
 var species_selector: OptionButton
@@ -226,6 +228,12 @@ func _ready() -> void:
     aquarium_system.name = "AquariumSystem"
     aquarium_system.visible = false
     add_child(aquarium_system)
+    blue_crayfish_habitat = BLUE_CRAYFISH_HABITAT_SCRIPT.new()
+    blue_crayfish_habitat.name = "BlueCrayfishHabitat"
+    blue_crayfish_habitat.visible = false
+    blue_crayfish_habitat.set("paused", simulation_paused)
+    blue_crayfish_habitat.set_process(false)
+    add_child(blue_crayfish_habitat)
     butterfly_system = BUTTERFLY_SYSTEM_SCRIPT.new()
     butterfly_system.name = "ButterflyGardenSystem"
     butterfly_system.visible = false
@@ -1165,8 +1173,8 @@ func _create_ui() -> void:
     crayfish_controls.add_child(crayfish_heading)
     _button(crayfish_controls, "가재 굴 밖으로 유도", func(): _encourage_crayfish())
     _button(crayfish_controls, "활동 중인 가재 굴로 보내기", func(): _retreat_crayfish())
-    _button(crayfish_controls, "여과기 물살 켜기/끄기", func(): _toggle_aquarium_flow())
-    _button(crayfish_controls, "일시정지 / 재개", func(): simulation_paused = not simulation_paused; _refresh())
+    _button(crayfish_controls, "여과기 켜기 / 끄기", func(): _toggle_crayfish_filter())
+    _button(crayfish_controls, "일시정지 / 재개", func(): _toggle_crayfish_pause())
 
     butterfly_controls = VBoxContainer.new()
     column.add_child(butterfly_controls)
@@ -1281,7 +1289,6 @@ func _set_species_mode(index: int, show_message: bool = true) -> void:
     if index < 0 or index > 5:
         index = 0
     current_species = ["mantis", "fish", "crayfish", "butterfly", "hermit_crab", "stream_salamander"][index]
-    var viewing_aquarium := current_species in ["fish", "crayfish"]
     var viewing_fish := current_species == "fish"
     var viewing_crayfish := current_species == "crayfish"
     var viewing_butterfly := current_species == "butterfly"
@@ -1290,9 +1297,13 @@ func _set_species_mode(index: int, show_message: bool = true) -> void:
     if animal != null:
         animal.visible = current_species == "mantis"
     if aquarium_system != null:
-        aquarium_system.visible = viewing_aquarium
-        if viewing_aquarium:
-            aquarium_system.call("set_species_view", current_species)
+        aquarium_system.visible = viewing_fish
+        if viewing_fish:
+            aquarium_system.call("set_species_view", "fish")
+    if blue_crayfish_habitat != null:
+        blue_crayfish_habitat.visible = viewing_crayfish
+        blue_crayfish_habitat.set("paused", simulation_paused)
+        blue_crayfish_habitat.set_process(viewing_crayfish and not simulation_paused)
     if butterfly_system != null:
         butterfly_system.visible = viewing_butterfly
     if hermit_crab_system != null:
@@ -1316,12 +1327,11 @@ func _set_species_mode(index: int, show_message: bool = true) -> void:
         mantis_controls.visible = current_species == "mantis"
     if species_selector != null and species_selector.selected != index:
         species_selector.select(index)
-    if viewing_aquarium or viewing_butterfly or viewing_hermit_crab or viewing_stream_salamander:
+    if viewing_fish or viewing_crayfish or viewing_butterfly or viewing_hermit_crab or viewing_stream_salamander:
         _set_camera_preset(false)
         follow_animal = false
         habitat_framing = true
         if viewing_crayfish:
-            orbit_distance = minf(orbit_distance, 7.4)
             orbit_pitch = 0.24
         elif viewing_butterfly:
             orbit_distance = maxf(orbit_distance, 5.1)
@@ -1334,7 +1344,7 @@ func _set_species_mode(index: int, show_message: bool = true) -> void:
             orbit_pitch = 0.28
         if show_message:
             if viewing_crayfish:
-                notice.text = "가재가 굴에서 쉬다가 나와 활동하는 바위 수조입니다."
+                notice.text = "파란가재가 바위 틈 굴에서 쉬다가 나와 활동하는 수조입니다."
             elif viewing_butterfly:
                 notice.text = "호랑나비가 꽃을 찾아 날아다니고 꿀을 먹는 꽃밭입니다."
             elif viewing_hermit_crab:
@@ -1349,18 +1359,35 @@ func _set_species_mode(index: int, show_message: bool = true) -> void:
             notice.text = "사마귀 사육장으로 돌아왔습니다."
     _update_camera()
     _refresh()
-
 func _add_aquarium_fish() -> void:
     var added := bool(aquarium_system.call("add_fish"))
     notice.text = "물고기를 추가했습니다." if added else "물고기는 최대 24마리까지 넣을 수 있습니다."
 func _encourage_crayfish() -> void:
-    aquarium_system.call("encourage_crayfish")
+    if blue_crayfish_habitat == null:
+        return
+    blue_crayfish_habitat.call("lure_out")
     _refresh()
-    notice.text = "가재가 바위 틈 굴에서 나오도록 유도했습니다."
+    notice.text = "파란가재가 바위 틈 굴에서 나오도록 유도했습니다."
 func _retreat_crayfish() -> void:
-    aquarium_system.call("retreat_crayfish")
+    if blue_crayfish_habitat == null:
+        return
+    blue_crayfish_habitat.call("return_to_burrow")
     _refresh()
-    notice.text = "가재가 굴로 돌아가도록 유도했습니다."
+    notice.text = "파란가재가 바위 틈 굴로 돌아가도록 했습니다."
+
+func _toggle_crayfish_filter() -> void:
+    if blue_crayfish_habitat == null:
+        return
+    blue_crayfish_habitat.call("toggle_filter")
+    var enabled := bool(blue_crayfish_habitat.get("filter_enabled"))
+    notice.text = "여과기: " + ("켜짐" if enabled else "꺼짐")
+    _refresh()
+
+func _toggle_crayfish_pause() -> void:
+    simulation_paused = not simulation_paused
+    if blue_crayfish_habitat != null:
+        blue_crayfish_habitat.set("paused", simulation_paused)
+        blue_crayfish_habitat.set_process(current_species == "crayfish" and not simulation_paused)
     _refresh()
 
 func _remove_aquarium_fish() -> void:
@@ -1799,8 +1826,13 @@ func _process(delta: float) -> void:
         _animate_ecosystem(dt)
     if habitat_interactions != null and current_species not in ["butterfly", "hermit_crab", "stream_salamander"]:
         habitat_interactions.simulate(dt)
-    if current_species in ["fish", "crayfish"]:
+    if current_species == "fish":
         aquarium_system.call("simulate", dt)
+        if int(elapsed * 2.0) != int((elapsed - dt) * 2.0):
+            _refresh()
+        _update_camera()
+        return
+    if current_species == "crayfish":
         if int(elapsed * 2.0) != int((elapsed - dt) * 2.0):
             _refresh()
         _update_camera()
@@ -2028,8 +2060,10 @@ func _set_camera_preset(close_view: bool) -> void:
 
 func _current_habitat_size() -> Vector3:
     match current_species:
-        "fish", "crayfish":
+        "fish":
             return Vector3(4.45, 1.35, 3.0)
+        "crayfish":
+            return Vector3(8.5, 3.55, 5.55)
         "butterfly":
             return Vector3(4.55, 1.55, 3.10)
         "hermit_crab":
@@ -2043,8 +2077,10 @@ func _update_camera() -> void:
     if camera == null:
         return
     var center: Vector3
-    if current_species in ["fish", "crayfish"]:
-        center = Vector3(-0.62, -0.16, -0.28) if current_species == "crayfish" else Vector3(0, -0.04, 0)
+    if current_species == "fish":
+        center = Vector3(0, -0.04, 0)
+    elif current_species == "crayfish":
+        center = Vector3(0, 1.45, 0)
     elif current_species == "butterfly":
         center = butterfly_system.call("focus_position") if follow_animal else Vector3(0, 0.30, 0)
     elif current_species == "hermit_crab":
@@ -2065,9 +2101,7 @@ func _refresh() -> void:
         status.text = "열대어: %d마리 | 수초: 13군락\n여과기 물살: %s\n수조 물 높이: 90cm\n행동: 무리 지어 유영%s" % [fish_total, flow_text, " (정지)" if simulation_paused else ""]
         return
     if current_species == "crayfish":
-        var crayfish_activity := String(aquarium_system.call("crayfish_status")) if aquarium_system != null else "굴 안에서 휴식"
-        var flow_text := "켜짐" if aquarium_system != null and bool(aquarium_system.get("flow_enabled")) else "꺼짐"
-        status.text = "가재: 1마리 | 은신처: 바위 틈 굴\n행동: %s\n여과기 물살: %s | 수초: 13군락%s" % [crayfish_activity, flow_text, " (정지)" if simulation_paused else ""]
+        status.text = String(blue_crayfish_habitat.call("status_text")) if blue_crayfish_habitat != null else "파란가재 서식지를 불러오는 중"
         return
     if current_species == "butterfly":
         var butterfly_activity := String(butterfly_system.call("activity_status")) if butterfly_system != null else "정지"

@@ -75,6 +75,8 @@ jobs:
         run: godot --headless --path . --script res://tests/check_habitat_canopy.gd
       - name: Verify the latest mantis is selected and visible
         run: godot --headless --path . --script res://tests/check_mantis_model_default.gd
+      - name: Verify the modeled blue crayfish is selected and visible
+        run: godot --headless --path . --script res://tests/check_blue_yabby_integration.gd
       - name: Export Android debug APK
         shell: bash
         run: |
