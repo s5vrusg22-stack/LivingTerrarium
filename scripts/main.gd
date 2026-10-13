@@ -535,12 +535,14 @@ func _find_rigged_skeleton(root: Node) -> Skeleton3D:
     return null
 
 func _apply_visual_mode() -> void:
-    var show_photo := use_photo_visual and photo_visual != null
-    var show_latest := not show_photo and use_latest_mantis_visual and latest_mantis_visual != null and not latest_mantis_clips.is_empty()
-    var show_rigged := not show_photo and not show_latest and use_rigged_visual and rigged_available
+    # Lock the displayed animal to the recovered canonical GLB.
+    use_photo_visual = false
+    var show_photo := false
+    var show_latest := use_latest_mantis_visual and latest_mantis_visual != null and not latest_mantis_clips.is_empty()
+    var show_rigged := not show_latest and use_rigged_visual and rigged_available
     for part in procedural_meshes:
         if is_instance_valid(part):
-            part.visible = not show_rigged and not show_latest and not show_photo
+            part.visible = false
     if rigged_visual != null:
         rigged_visual.visible = show_rigged
     if latest_mantis_visual != null:
@@ -567,22 +569,12 @@ func _apply_visual_mode() -> void:
             rigged_pose_driver.reset_offsets()
 
 func _toggle_visual_model() -> void:
+    use_photo_visual = false
     use_latest_mantis_visual = true
     use_rigged_visual = false
     _apply_visual_mode()
     if notice != null:
         notice.text = "최신 사마귀 3D 모델을 사용합니다."
-
-func _toggle_photo_visual() -> void:
-    if photo_visual == null:
-        if notice != null:
-            notice.text = "원본 사진을 불러오지 못했습니다."
-        return
-    use_photo_visual = not use_photo_visual
-    _apply_visual_mode()
-    _update_photo_visual(0.0)
-    if notice != null:
-        notice.text = "사용자 원본 사진 오려내기 모드입니다. 위에서 보면 등면, 옆에서 보면 측면 사진이 표시됩니다." if use_photo_visual else "상세 관절형 3D 모델로 복귀했습니다."
 
 func _play_latest_mantis_clip(clip: String) -> void:
     if latest_mantis_player == null or latest_mantis_clips.is_empty():
@@ -1278,7 +1270,6 @@ func _create_ui() -> void:
     animation_label = Label.new()
     animation_label.text = "애니메이션: AUTO"
     mantis_controls.add_child(animation_label)
-    _button(mantis_controls, "첨부 사진 보기 / 3D 복귀", func(): _toggle_photo_visual())
     _button(mantis_controls, "실물 사진과 구조 비교", func(): _show_reference_overlay())
     _button(mantis_controls, "자동 행동 애니메이션", func(): _set_animation_preview("AUTO"))
     for clip in ANIMATIONS:

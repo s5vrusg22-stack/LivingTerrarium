@@ -21,9 +21,27 @@ func _verify_mantis_simulation() -> void:
         _fail("The latest mantis GLB is missing or hidden")
         return
     var clips: Dictionary = app.get("latest_mantis_clips")
-    if clips.size() < 10 or not clips.has("FLY"):
-        _fail("Expected the current GLB animation set to include FLY")
+    if clips.size() != 11 or not clips.has("FLY"):
+        _fail("Expected the recovered canonical GLB animation set, including FLY")
         return
+    if app.get("use_photo_visual") != false:
+        _fail("A photo cutout was selected instead of the canonical GLB")
+        return
+    var rigged := app.get("rigged_visual") as Node3D
+    if rigged != null and rigged.visible:
+        _fail("A second mantis visual is visible alongside the canonical GLB")
+        return
+    var photo := app.get("photo_visual") as Sprite3D
+    var dorsal_photo := app.get("photo_visual_dorsal") as Sprite3D
+    if (photo != null and photo.visible) or (dorsal_photo != null and dorsal_photo.visible):
+        _fail("A photo cutout is visible instead of the canonical GLB")
+        return
+    var procedural: Array = app.get("procedural_meshes")
+    for fallback in procedural:
+        var mesh_instance := fallback as MeshInstance3D
+        if mesh_instance != null and mesh_instance.visible:
+            _fail("A procedural fallback mesh is visible instead of the canonical GLB")
+            return
 
     var stage_picker := app.get("stage_picker") as OptionButton
     if stage_picker == null or stage_picker.item_count != 7:
@@ -89,7 +107,7 @@ func _verify_mantis_simulation() -> void:
     var buttons: Array = app.find_children("*", "Button", true, false)
     for button_node in buttons:
         var button := button_node as Button
-        if button != null and button.text == "3D 모델 전환 (GLB / 기본)":
+        if button != null and button.text in ["3D 모델 전환 (GLB / 기본)", "첨부 사진 보기 / 3D 복귀"]:
             _fail("Obsolete procedural model switch is still exposed")
             return
 
