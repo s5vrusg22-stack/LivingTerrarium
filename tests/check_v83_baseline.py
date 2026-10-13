@@ -8,7 +8,8 @@ root = Path(__file__).resolve().parents[1]
 model = root / "assets/models/mantis_latest.glb"
 binary = model.read_bytes()
 assert len(binary) == 4_280_964, len(binary)
-assert hashlib.sha256(binary).hexdigest() == "8580a9c00936b436f121db546f5a758e5d306fa829e1b4198ec663ccc1e9a3c2"
+git_blob_sha = hashlib.sha1(b"blob " + str(len(binary)).encode("ascii") + b"\\0" + binary).hexdigest()
+assert git_blob_sha == "4536831ef5925acd706a9f607f30d31043e4173c", git_blob_sha
 assert binary[:4] == b"glTF"
 assert struct.unpack_from("<I", binary, 8)[0] == len(binary)
 json_length, json_type = struct.unpack_from("<II", binary, 12)

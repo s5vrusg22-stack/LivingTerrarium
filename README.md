@@ -9,8 +9,9 @@ The app's canonical mantis model is
 `assets/models/mantis_latest.glb`. It is restored from the approved 4,280,964-byte
 model (62 joints, 247 meshes, and 11 animation clips). The Android workflow
 imports this exact file as-is; it does not regenerate or replace the model.
-The baseline check pins the model's SHA-256 and rejects obsolete mantis model
-files.
+The baseline check pins the model's Git object ID
+(`4536831ef5925acd706a9f607f30d31043e4173c`) and rejects obsolete mantis
+model files.
 
 Build the Android ARM64 APK with `tools/build_android_apk.sh` and Godot 4.3,
 Android export templates, and the Android SDK. Run

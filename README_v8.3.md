@@ -3,7 +3,7 @@
 ## Canonical mantis model
 
 - The app uses only `assets/models/mantis_latest.glb` as its canonical mantis model.
-- This is the recovered, previously approved 4,280,964-byte GLB with 62 joints, 247 meshes, and 11 animation clips.
+- This is the recovered, previously approved 4,280,964-byte GLB with 62 joints, 247 meshes, and 11 animation clips. Its Git object ID is `4536831ef5925acd706a9f607f30d31043e4173c`.
 - The Android workflow imports this exact binary. It no longer runs a Blender model generator or commits regenerated model files.
 - The obsolete `mantis_detailed.glb` and `mantis_v7_animated.glb` assets, their import sidecars, and their preview scenes have been removed.
 - Procedural meshes and photo cutouts are disabled as visible mantis alternatives. The runtime check requires the canonical GLB to load and remain visible.
