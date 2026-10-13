@@ -55,6 +55,8 @@ jobs:
           godot --headless --path . --editor --import --quit
       - name: Verify clear plant corridor in the running scene
         run: godot --headless --path . --script res://tests/check_habitat_canopy.gd
+      - name: Verify the latest mantis is selected and visible
+        run: godot --headless --path . --script res://tests/check_mantis_model_default.gd
       - name: Export Android debug APK
         shell: bash
         run: |

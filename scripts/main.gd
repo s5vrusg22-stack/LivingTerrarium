@@ -137,11 +137,11 @@ const FOOT_SWING_DURATION := 0.23
 
 # v2.4: imported skinned GLB is the visible model; the existing procedural
 # hierarchy remains an invisible motion/IK fallback and physics reference.
-const RIGGED_MANTIS_SCENE: PackedScene = preload("res://assets/models/mantis_rigged.glb")
-const LATEST_MANTIS_SCENE: PackedScene = preload("res://assets/models/mantis_v7_animated.glb")
+const RIGGED_MANTIS_SCENE: PackedScene = preload("res://assets/models/mantis_latest.glb")
+const LATEST_MANTIS_SCENE: PackedScene = preload("res://assets/models/mantis_latest.glb")
 const PHOTO_SIDE_CUTOUT: Texture2D = preload("res://assets/photo_cutouts/mantis_side_photo.png")
 const PHOTO_DORSAL_CUTOUT: Texture2D = preload("res://assets/photo_cutouts/mantis_dorsal_photo.png")
-const LATEST_MANTIS_MODEL_SCALE := 0.65
+const LATEST_MANTIS_MODEL_SCALE := 1.0
 const AQUARIUM_SYSTEM_SCRIPT = preload("res://scripts/aquarium_system.gd")
 const BUTTERFLY_SYSTEM_SCRIPT = preload("res://scripts/butterfly_system.gd")
 const HERMIT_CRAB_SYSTEM_SCRIPT = preload("res://scripts/hermit_crab_system.gd")
@@ -149,7 +149,7 @@ const STREAM_SALAMANDER_SYSTEM_SCRIPT = preload("res://scripts/stream_valley_sys
 var rigged_visual: Node3D
 var rigged_player: AnimationPlayer
 var rigged_clip := ""
-var use_rigged_visual := true
+var use_rigged_visual := false
 var rigged_available := false
 var rigged_clips: Dictionary = {}
 var procedural_meshes: Array[MeshInstance3D] = []
@@ -169,7 +169,7 @@ var latest_mantis_visual: Node3D
 var latest_mantis_player: AnimationPlayer
 var latest_mantis_clips: Dictionary = {}
 var latest_mantis_clip := ""
-var use_latest_mantis_visual := false
+var use_latest_mantis_visual := true
 # v2.6: scripted traversal of a real, collidable inclined branch.
 var climb_active := false
 var climb_progress := 0.0
@@ -323,7 +323,7 @@ func _initialize_latest_mantis_visual() -> void:
         rigged_import_warnings.append("Latest mantis GLB root is not Node3D")
         return
     latest_mantis_visual = imported as Node3D
-    latest_mantis_visual.name = "MantisV7LatestModel"
+    latest_mantis_visual.name = "LatestMantisModel"
     latest_mantis_visual.position = Vector3.ZERO
     latest_mantis_visual.rotation = Vector3.ZERO
     latest_mantis_visual.scale = Vector3.ONE * LATEST_MANTIS_MODEL_SCALE
@@ -539,7 +539,7 @@ func _toggle_visual_model() -> void:
     use_latest_mantis_visual = not use_latest_mantis_visual
     _apply_visual_mode()
     if notice != null:
-        var selected_model := "최신 V7 모델" if use_latest_mantis_visual and not latest_mantis_clips.is_empty() else "전체 관절 리그 모델"
+        var selected_model := "최신 모델" if use_latest_mantis_visual and not latest_mantis_clips.is_empty() else "기본 3D 모델"
         notice.text = "사진 관찰 중 · 복귀할 3D 모델: " + selected_model if use_photo_visual else "3D 모델: " + selected_model
 
 func _toggle_photo_visual() -> void:

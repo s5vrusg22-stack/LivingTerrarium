@@ -24,7 +24,7 @@ import upgrade_mantis_glb as glb
 
 
 PROJECT = Path(__file__).resolve().parents[1]
-MODEL = PROJECT / "assets/models/mantis_rigged.glb"
+MODEL = PROJECT / "assets/models/mantis_latest.glb"
 OUT = PROJECT / "previews"
 MODEL_SCALE = 1.18 + 0.35 * 0.45  # Current habitat scale at the default growth.
 

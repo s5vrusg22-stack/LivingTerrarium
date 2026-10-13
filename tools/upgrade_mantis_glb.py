@@ -18,7 +18,7 @@ from pathlib import Path
 
 
 PROJECT = Path(__file__).resolve().parents[1]
-MODEL = PROJECT / "assets" / "models" / "mantis_rigged.glb"
+MODEL = PROJECT / "assets" / "models" / "mantis_latest.glb"
 
 GLB_MAGIC = 0x46546C67
 JSON_CHUNK = 0x4E4F534A
