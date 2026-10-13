@@ -24,8 +24,12 @@ func _verify_blue_yabby() -> void:
     app.call("_set_species_mode", 2, false)
     await process_frame
     var habitat := app.get("blue_crayfish_habitat") as Node3D
-    if habitat == null or not habitat.visible:
-        _fail("Selecting crayfish did not show the blue crayfish habitat")
+    print("Blue yabby debug: species=", app.get("current_species"), " habitat_null=", habitat == null, " habitat_visible=", habitat.visible if habitat != null else false)
+    if habitat == null:
+        _fail("The main scene did not create the blue crayfish habitat")
+        return
+    if not habitat.visible:
+        _fail("Selecting crayfish left the blue crayfish habitat hidden")
         return
     var aquarium := app.get("aquarium_system") as Node3D
     if aquarium == null or aquarium.visible:
