@@ -164,8 +164,9 @@ func _build_rocks_and_burrow() -> void:
 func _build_plants() -> void:
 	var leaf_mat := _material(Color(0.11, 0.37, 0.22), 0.78)
 	var stem_mat := _material(Color(0.19, 0.34, 0.19), 0.82)
+	var plant_positions: Array[float] = [-3.25, -2.65, -1.80, 1.90, 2.66, 3.30, 0.0]
 	for clump in range(7):
-		var base_x := [-3.25, -2.65, -1.80, 1.90, 2.66, 3.30, 0.0][clump]
+		var base_x: float = plant_positions[clump]
 		var base_z := -1.90 if clump % 2 == 0 else -0.68
 		for leaf in range(5):
 			var angle := TAU * float(leaf) / 5.0 + rng.randf_range(-0.18, 0.18)
