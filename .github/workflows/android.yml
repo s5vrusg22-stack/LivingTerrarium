@@ -74,8 +74,9 @@ jobs:
           godot --headless --path . --export-debug Android build/LivingTerrarium3D-v8.3-ARM64.apk
           test -s build/LivingTerrarium3D-v8.3-ARM64.apk
           sha256sum build/LivingTerrarium3D-v8.3-ARM64.apk > build/SHA256SUMS.txt
+      - name: Verify Base 1 is packaged in APK
+        run: python3 tests/check_v83_apk.py build/LivingTerrarium3D-v8.3-ARM64.apk
       - name: Upload APK and checksum
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: LivingTerrarium3D-v8.3-ARM64-apk
