@@ -5,7 +5,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 model = root / "assets/models/mantis_v7_animated.glb"
 data = model.read_bytes()
-git_blob_sha = sha1(b"blob " + str(len(data)).encode("ascii") + b"\\0" + data).hexdigest()
+git_blob_sha = sha1(b"blob " + str(len(data)).encode("ascii") + bytes([0]) + data).hexdigest()
 assert git_blob_sha == "11f382981fb1afd2b0506a8ddee16b52a55c8259", git_blob_sha
 assert (root / "assets/models/mantis_v7_animated.glb.import").is_file()
 
