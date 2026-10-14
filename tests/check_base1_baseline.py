@@ -24,6 +24,10 @@ for required in (
     "Do not add a fallback",
     "Never substitute another mantis",
     "Never change the expected SHA merely to make a failing check pass.",
+    "## Mandatory gate before any mantis modeling",
+    "`bash tools/start_mantis_model_edit.sh`",
+    "`python3 tools/finalize_model_change.py --summary",
+    "A changed model without a matching lineage record fails CI.",
 ):
     assert required in agent_rules, f"AGENTS.md is missing required source rule: {required}"
 assert approved_git_blob_sha in readme
@@ -63,6 +67,12 @@ for legacy_file in legacy_model_files:
     assert not (models / legacy_file).exists(), f"Prohibited model file exists: {legacy_file}"
 
 assert 'python3 tests/check_base1_baseline.py' in workflow
+assert 'model-baseline-guard:' in workflow
+assert 'needs: model-baseline-guard' in workflow
+assert 'python3 tests/check_model_lineage.py' in workflow
+assert (root / 'tests/check_model_lineage.py').is_file()
+assert (root / 'tools/start_mantis_model_edit.sh').is_file()
+assert (root / 'tools/finalize_model_change.py').is_file()
 assert 'godot --headless --path . --script res://tests/check_mantis_model_default.gd' in workflow
 assert 'python3 tests/check_base1_apk.py build/LivingTerrarium3D-Base1-v1.0.0-ARM64.apk' in workflow
 
