@@ -178,6 +178,7 @@ func _verify_mantis_simulation() -> void:
     if str(app.get("manual_command")) != "FIGHT":
         _fail("Fight demonstration did not start")
         return
+    app.call("_on_stage_selected", 6)
     app.call("_command_mantis", "MATE")
     if str(app.get("manual_command")) != "MATE":
         _fail("Adult mating demonstration did not start")
