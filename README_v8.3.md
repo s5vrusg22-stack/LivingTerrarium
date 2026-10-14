@@ -1,12 +1,12 @@
 # Living Terrarium 3D v8.3
 
-## Canonical mantis model
+## Base 1 mantis model
 
-- The app uses only `assets/models/mantis_latest.glb` as its canonical mantis model.
-- This is the recovered, previously approved 4,280,964-byte GLB with 62 joints, 225 meshes, and 11 animation clips. Its Git object ID is `4536831ef5925acd706a9f607f30d31043e4173c`.
+- **Base 1** is the app's sole mantis model. Its repository file is `assets/models/mantis_v7_animated.glb` (V7).
+- Base 1 is the 2,779,044-byte model from the known-good APK. Its Git blob SHA is `11f382981fb1afd2b0506a8ddee16b52a55c8259`.
 - The Android workflow imports this exact binary. It no longer runs a Blender model generator or commits regenerated model files.
-- The obsolete `mantis_detailed.glb` and `mantis_v7_animated.glb` assets, their import sidecars, and their preview scenes have been removed.
-- Procedural meshes and photo cutouts are disabled as visible mantis alternatives. The runtime check requires the canonical GLB to load and remain visible.
+- All alternate mantis GLB files, including `mantis_latest.glb`, and its regeneration tool have been removed. The build checks Base 1's exact Git blob and requires it to be the only mantis GLB before export.
+- Procedural meshes and photo cutouts are disabled as visible mantis alternatives. The runtime check requires Base 1 (V7) to load and remain visible.
 
 ## Recovery record
 

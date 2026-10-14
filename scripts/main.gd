@@ -147,8 +147,8 @@ const FOOT_SWING_DURATION := 0.23
 
 # v2.4: imported skinned GLB is the visible model; the existing procedural
 # hierarchy remains an invisible motion/IK fallback and physics reference.
-const RIGGED_MANTIS_SCENE: PackedScene = preload("res://assets/models/mantis_latest.glb")
-const LATEST_MANTIS_SCENE: PackedScene = preload("res://assets/models/mantis_latest.glb")
+const RIGGED_MANTIS_SCENE: PackedScene = preload("res://assets/models/mantis_v7_animated.glb")
+const LATEST_MANTIS_SCENE: PackedScene = preload("res://assets/models/mantis_v7_animated.glb")
 const PHOTO_SIDE_CUTOUT: Texture2D = preload("res://assets/photo_cutouts/mantis_side_photo.png")
 const PHOTO_DORSAL_CUTOUT: Texture2D = preload("res://assets/photo_cutouts/mantis_dorsal_photo.png")
 const LATEST_MANTIS_MODEL_SCALE := 1.0

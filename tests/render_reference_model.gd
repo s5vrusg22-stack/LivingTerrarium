@@ -30,8 +30,8 @@ func _capture_reference_views() -> void:
         push_error("The scene did not initialize its mantis, camera, or UI.")
         quit(1)
         return
-    if app.rigged_visual == null or not app.rigged_visual.visible:
-        push_error("The canonical latest mantis GLB is not the visible model.")
+    if app.latest_mantis_visual == null or not app.latest_mantis_visual.visible:
+        push_error("Base 1 (V7) GLB is not the visible model.")
         quit(1)
         return
     var mesh_instances: Array = []
@@ -39,25 +39,10 @@ func _capture_reference_views() -> void:
         var part := candidate as MeshInstance3D
         if part != null and part.is_visible_in_tree():
             mesh_instances.append(part)
-    if mesh_instances.size() < 30:
+    if mesh_instances.is_empty():
         push_error("The visible mantis hierarchy is incomplete: %d mesh instances." % mesh_instances.size())
         quit(1)
         return
-
-    # Render two walking pairs and the specialized raptorial pair; the asset's
-    # redundant third walking pair stays hidden without removing its rig bones.
-    for hidden_name in ["Coxa_L2", "Joint_L2", "Tibia_L2", "Coxa_R2", "Joint_R2", "Tibia_R2"]:
-        var hidden_leg := app.rigged_visual.find_child(hidden_name, true, false) as MeshInstance3D
-        if hidden_leg == null or hidden_leg.visible:
-            push_error("The extra walking-leg pair should be hidden: %s" % hidden_name)
-            quit(1)
-            return
-    for retained_name in ["Coxa_L0", "Tibia_L0", "Coxa_L1", "Tibia_L1", "Coxa_R0", "Tibia_R0", "Coxa_R1", "Tibia_R1", "ForeFemur_L", "ForeTibia_L", "ForeFemur_R", "ForeTibia_R"]:
-        var retained_leg := app.rigged_visual.find_child(retained_name, true, false) as MeshInstance3D
-        if retained_leg == null or not retained_leg.visible:
-            push_error("A required mantis leg segment is missing: %s" % retained_name)
-            quit(1)
-            return
 
     app.simulation_paused = true
     app.wind_enabled = false

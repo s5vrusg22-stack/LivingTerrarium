@@ -53,11 +53,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - name: Rebuild the photo details from the approved v8.3 source
-        run: python3 tools/refine_v83_mantis_glb.py
-      - name: Ensure the committed canonical model is reproducible
-        run: git diff --exit-code -- assets/models/mantis_latest.glb
-      - name: Check v8.3 canonical model and project
+      - name: Check Base 1 (V7) and project
         run: python3 tests/check_v83_baseline.py
       - name: Import project
         shell: bash
@@ -66,7 +62,7 @@ jobs:
           godot --headless --path . --editor --import --quit
       - name: Verify clear plant corridor in the running scene
         run: godot --headless --path . --script res://tests/check_habitat_canopy.gd
-      - name: Verify the latest mantis is selected and visible
+      - name: Verify Base 1 (V7) is selected and visible
         run: godot --headless --path . --script res://tests/check_mantis_model_default.gd
       - name: Verify the modeled blue crayfish is selected and visible
         run: godot --headless --path . --script res://tests/check_blue_yabby_integration.gd

@@ -14,11 +14,11 @@ func _verify_mantis_simulation() -> void:
     await process_frame
 
     if app.get("use_latest_mantis_visual") != true:
-        _fail("The latest mantis is not selected by default")
+        _fail("Base 1 is not selected by default")
         return
     var model := app.get("latest_mantis_visual") as Node3D
     if model == null or not model.visible:
-        _fail("The latest mantis GLB is missing or hidden")
+        _fail("Base 1 (V7) is missing or hidden")
         return
     if app.get("follow_animal") != true or app.get("habitat_framing") != false:
         _fail("Startup camera does not focus on the approved mantis")
@@ -26,34 +26,28 @@ func _verify_mantis_simulation() -> void:
     if not is_equal_approx(float(app.get("orbit_distance")), 2.80):
         _fail("Startup camera is too far away to inspect the mantis model")
         return
-    var left_wing := model.find_child("WingVeinDetail_Fine_L", true, false) as MeshInstance3D
-    var right_wing := model.find_child("WingVeinDetail_Fine_R", true, false) as MeshInstance3D
-    var left_eye := model.find_child("PhotoEyeFacet_L", true, false) as MeshInstance3D
-    var right_eye := model.find_child("PhotoEyeFacet_R", true, false) as MeshInstance3D
-    if left_wing == null or right_wing == null or left_eye == null or right_eye == null:
-        _fail("The v8.3 photo-refinement details are missing")
-        return
     var clips: Dictionary = app.get("latest_mantis_clips")
-    if clips.size() != 11 or not clips.has("FLY"):
-        _fail("Expected the recovered canonical GLB animation set, including FLY")
+    if clips.is_empty():
+        _fail("Base 1 (V7) imported without any animation clips")
         return
+    print("Base 1 animation clips (V7): ", clips.keys())
     if app.get("use_photo_visual") != false:
-        _fail("A photo cutout was selected instead of the canonical GLB")
+        _fail("A photo cutout was selected instead of the Base 1 GLB")
         return
     var rigged := app.get("rigged_visual") as Node3D
     if rigged != null and rigged.visible:
-        _fail("A second mantis visual is visible alongside the canonical GLB")
+        _fail("A second mantis visual is visible alongside the Base 1 GLB")
         return
     var photo := app.get("photo_visual") as Sprite3D
     var dorsal_photo := app.get("photo_visual_dorsal") as Sprite3D
     if (photo != null and photo.visible) or (dorsal_photo != null and dorsal_photo.visible):
-        _fail("A photo cutout is visible instead of the canonical GLB")
+        _fail("A photo cutout is visible instead of the Base 1 GLB")
         return
     var procedural: Array = app.get("procedural_meshes")
     for fallback in procedural:
         var mesh_instance := fallback as MeshInstance3D
         if mesh_instance != null and mesh_instance.visible:
-            _fail("A procedural fallback mesh is visible instead of the canonical GLB")
+            _fail("A procedural fallback mesh is visible instead of the Base 1 GLB")
             return
 
     var stage_picker := app.get("stage_picker") as OptionButton
@@ -70,12 +64,9 @@ func _verify_mantis_simulation() -> void:
     if buds == null or not buds.visible:
         _fail("Juvenile wing buds were not shown")
         return
-    if left_wing.visible or right_wing.visible:
-        _fail("Adult wing packs were not hidden for the first instar")
-        return
     app.call("_on_stage_selected", 6)
-    if str(app.get("life_stage")) != "성체" or buds.visible or not left_wing.visible or not right_wing.visible:
-        _fail("Adult stage did not restore the adult wing state")
+    if str(app.get("life_stage")) != "성체" or buds.visible:
+        _fail("Adult stage did not hide the juvenile wing buds")
         return
 
     app.call("_command_mantis", "FLAP")
@@ -127,7 +118,7 @@ func _verify_mantis_simulation() -> void:
             _fail("Obsolete procedural model switch is still exposed")
             return
 
-    print("Mantis simulation check passed: latest GLB, six instars, flight and social behavior, and free camera")
+    print("Mantis simulation check passed: Base 1 (V7) GLB, six instars, flight and social behavior, and free camera")
     quit()
 
 func _fail(message: String) -> void:
