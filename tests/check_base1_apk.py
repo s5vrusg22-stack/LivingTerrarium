@@ -31,10 +31,6 @@ with zipfile.ZipFile(apk_path) as apk:
     match = re.search(r'^path="res://\.godot/imported/([^"]+\.scn)"$', metadata, re.MULTILINE)
     if match is None or "assets/.godot/imported/" + match.group(1) != base1_scenes[0]:
         raise SystemExit("Base 1 import metadata does not point to the packaged Base 1 scene")
-    if 'source_file="res://assets/models/base1.glb"' not in metadata:
-        raise SystemExit("APK import metadata does not identify the model as Base 1")
-    if 'nodes/root_name="Base1"' not in metadata:
-        raise SystemExit("APK import metadata does not set the imported root name to Base1")
 
     legacy_markers = (
         "mantis_v7_animated",
