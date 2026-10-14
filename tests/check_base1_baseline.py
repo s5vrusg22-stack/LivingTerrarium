@@ -24,7 +24,7 @@ for required in (
     "Do not add a fallback",
     "Never substitute another mantis",
     "Never change the expected SHA merely to make a failing check pass.",
-    "The user-defined term “Base 1” means the current GitHub V7 model",
+    "**Base 1 is the current GitHub V7 mantis model.**",
     "## Mandatory gate before any mantis modeling",
     "`bash tools/start_mantis_model_edit.sh`",
     "`python3 tools/finalize_model_change.py --summary",
