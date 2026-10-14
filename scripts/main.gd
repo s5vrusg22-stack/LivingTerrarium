@@ -147,11 +147,11 @@ const FOOT_SWING_DURATION := 0.23
 
 # v2.4: imported skinned GLB is the visible model; the existing procedural
 # hierarchy remains an invisible motion/IK fallback and physics reference.
-const RIGGED_MANTIS_SCENE: PackedScene = preload("res://assets/models/mantis_v7_animated.glb")
-const LATEST_MANTIS_SCENE: PackedScene = preload("res://assets/models/mantis_v7_animated.glb")
+const BASE1_RIGGED_SCENE: PackedScene = preload("res://assets/models/base1.glb")
+const BASE1_MANTIS_SCENE: PackedScene = preload("res://assets/models/base1.glb")
 const PHOTO_SIDE_CUTOUT: Texture2D = preload("res://assets/photo_cutouts/mantis_side_photo.png")
 const PHOTO_DORSAL_CUTOUT: Texture2D = preload("res://assets/photo_cutouts/mantis_dorsal_photo.png")
-const LATEST_MANTIS_MODEL_SCALE := 1.0
+const BASE1_MANTIS_MODEL_SCALE := 1.0
 const AQUARIUM_SYSTEM_SCRIPT = preload("res://scripts/aquarium_system.gd")
 const BLUE_CRAYFISH_HABITAT_SCRIPT = preload("res://scripts/blue_crayfish_habitat.gd")
 const BUTTERFLY_SYSTEM_SCRIPT = preload("res://scripts/butterfly_system.gd")
@@ -176,11 +176,11 @@ var rigged_pose_driver: RiggedPoseDriver
 var rigged_skeleton: Skeleton3D
 var rigged_ik_enabled := true
 var rigged_pose_status := "not initialized"
-var latest_mantis_visual: Node3D
-var latest_mantis_player: AnimationPlayer
-var latest_mantis_clips: Dictionary = {}
-var latest_mantis_clip := ""
-var use_latest_mantis_visual := true
+var base1_mantis_visual: Node3D
+var base1_mantis_player: AnimationPlayer
+var base1_mantis_clips: Dictionary = {}
+var base1_mantis_clip := ""
+var use_base1_mantis_visual := true
 var social_partner: Node3D
 var social_partner_player: AnimationPlayer
 var social_partner_clip := ""
@@ -277,7 +277,7 @@ func _ready() -> void:
     _create_mantis()
     _initialize_photo_visual()
     _initialize_rigged_visual()
-    _initialize_latest_mantis_visual()
+    _initialize_base1_mantis_visual()
     _create_juvenile_wing_buds()
     _apply_life_stage()
     planted_foot_heights.resize(6)
@@ -294,7 +294,7 @@ func _ready() -> void:
     _sync_prey()
     _cache_mantis_environment_roots()
     _set_species_mode(0, false)
-    # Start on the approved v8.3 mantis so its model details are visible.
+    # Start on the approved Base 1 model so its model details are visible.
     # The habitat overview remains available from the management menu.
     _set_camera_preset(true)
     _refresh()
@@ -303,12 +303,12 @@ func _initialize_rigged_visual() -> void:
     # Keep procedural geometry available if GLB import or clip discovery fails.
     procedural_meshes.clear()
     _collect_procedural_meshes(animal)
-    var imported := RIGGED_MANTIS_SCENE.instantiate()
+    var imported := BASE1_RIGGED_SCENE.instantiate()
     if not imported is Node3D:
         rigged_import_warnings.append("GLB root is not Node3D")
         return
     rigged_visual = imported as Node3D
-    rigged_visual.name = "RiggedMantisVisual"
+    rigged_visual.name = "Base1RiggedVisual"
     animal.add_child(rigged_visual)
     _style_rigged_materials(rigged_visual)
     # Both models share the animal-local origin and move with the same AI root.
@@ -350,25 +350,25 @@ func _initialize_rigged_visual() -> void:
         if not use_photo_visual:
             _play_rigged_clip("IDLE")
 
-func _initialize_latest_mantis_visual() -> void:
-    var imported := LATEST_MANTIS_SCENE.instantiate()
+func _initialize_base1_mantis_visual() -> void:
+    var imported := BASE1_MANTIS_SCENE.instantiate()
     if not imported is Node3D:
-        rigged_import_warnings.append("Latest mantis GLB root is not Node3D")
+        rigged_import_warnings.append("Base 1 GLB root is not Node3D")
         return
-    latest_mantis_visual = imported as Node3D
-    latest_mantis_visual.name = "LatestMantisModel"
-    latest_mantis_visual.position = Vector3.ZERO
-    latest_mantis_visual.rotation = Vector3.ZERO
-    latest_mantis_visual.scale = Vector3.ONE * LATEST_MANTIS_MODEL_SCALE
-    animal.add_child(latest_mantis_visual)
-    _style_rigged_materials(latest_mantis_visual)
-    latest_mantis_player = _find_rigged_player(latest_mantis_visual)
-    if latest_mantis_player == null:
-        rigged_import_warnings.append("Latest mantis GLB has no AnimationPlayer")
-        latest_mantis_visual.visible = false
+    base1_mantis_visual = imported as Node3D
+    base1_mantis_visual.name = "Base1"
+    base1_mantis_visual.position = Vector3.ZERO
+    base1_mantis_visual.rotation = Vector3.ZERO
+    base1_mantis_visual.scale = Vector3.ONE * BASE1_MANTIS_MODEL_SCALE
+    animal.add_child(base1_mantis_visual)
+    _style_rigged_materials(base1_mantis_visual)
+    base1_mantis_player = _find_rigged_player(base1_mantis_visual)
+    if base1_mantis_player == null:
+        rigged_import_warnings.append("Base 1 GLB has no AnimationPlayer")
+        base1_mantis_visual.visible = false
         return
-    for library_name in latest_mantis_player.get_animation_library_list():
-        var library := latest_mantis_player.get_animation_library(library_name)
+    for library_name in base1_mantis_player.get_animation_library_list():
+        var library := base1_mantis_player.get_animation_library(library_name)
         if library == null:
             continue
         for clip_name in library.get_animation_list():
@@ -376,34 +376,34 @@ func _initialize_latest_mantis_visual() -> void:
             if not String(library_name).is_empty():
                 full_name = String(library_name) + "/" + full_name
             var normalized := String(clip_name).to_upper()
-            latest_mantis_clips[normalized] = full_name
+            base1_mantis_clips[normalized] = full_name
             var animation := library.get_animation(clip_name)
             if animation != null:
                 animation.loop_mode = Animation.LOOP_LINEAR if normalized in ["IDLE", "WALK", "ALERT", "GROOM", "FEED", "FLY"] else Animation.LOOP_NONE
-    if latest_mantis_clips.is_empty():
-        rigged_import_warnings.append("Latest mantis GLB has no animation clips")
-        latest_mantis_visual.visible = false
+    if base1_mantis_clips.is_empty():
+        rigged_import_warnings.append("Base 1 GLB has no animation clips")
+        base1_mantis_visual.visible = false
         return
     _apply_visual_mode()
-    _play_latest_mantis_clip("IDLE")
+    _play_base1_mantis_clip("IDLE")
 
 func _initialize_photo_visual() -> void:
     # Use the user's cropped, pixel-preserving side and dorsal photos in-world.
     photo_visual = Sprite3D.new()
-    photo_visual.name = "LatestMantisSidePhotoCutout"
+    photo_visual.name = "Base1MantisSidePhotoCutout"
     photo_visual.texture = PHOTO_SIDE_CUTOUT
-    photo_visual.position = Vector3(0.0, 1.05, 0.53) * LATEST_MANTIS_MODEL_SCALE
-    photo_visual.pixel_size = 3.33 * LATEST_MANTIS_MODEL_SCALE / float(PHOTO_SIDE_CUTOUT.get_width())
+    photo_visual.position = Vector3(0.0, 1.05, 0.53) * BASE1_MANTIS_MODEL_SCALE
+    photo_visual.pixel_size = 3.33 * BASE1_MANTIS_MODEL_SCALE / float(PHOTO_SIDE_CUTOUT.get_width())
     photo_visual.billboard = BaseMaterial3D.BILLBOARD_ENABLED
     photo_visual.shaded = false
     photo_visual.visible = false
     animal.add_child(photo_visual)
 
     photo_visual_dorsal = Sprite3D.new()
-    photo_visual_dorsal.name = "LatestMantisDorsalPhoto"
+    photo_visual_dorsal.name = "Base1MantisDorsalPhoto"
     photo_visual_dorsal.texture = PHOTO_DORSAL_CUTOUT
-    photo_visual_dorsal.position = Vector3(0.0, 1.30, 0.47) * LATEST_MANTIS_MODEL_SCALE
-    photo_visual_dorsal.pixel_size = 3.33 * LATEST_MANTIS_MODEL_SCALE / float(PHOTO_DORSAL_CUTOUT.get_height())
+    photo_visual_dorsal.position = Vector3(0.0, 1.30, 0.47) * BASE1_MANTIS_MODEL_SCALE
+    photo_visual_dorsal.pixel_size = 3.33 * BASE1_MANTIS_MODEL_SCALE / float(PHOTO_DORSAL_CUTOUT.get_height())
     photo_visual_dorsal.rotation_degrees.x = -90.0
     photo_visual_dorsal.billboard = BaseMaterial3D.BILLBOARD_DISABLED
     photo_visual_dorsal.shaded = false
@@ -452,8 +452,8 @@ func _update_photo_visual(delta: float) -> void:
         "GROOM", "FEED":
             offset.y = sin(phase) * 0.010
             offset.x = sin(phase * 0.5) * 0.012
-    photo_visual.position = (Vector3(0.0, 1.05, 0.53) + offset) * LATEST_MANTIS_MODEL_SCALE
-    photo_visual_dorsal.position = (Vector3(0.0, 1.30, 0.47) + offset) * LATEST_MANTIS_MODEL_SCALE
+    photo_visual.position = (Vector3(0.0, 1.05, 0.53) + offset) * BASE1_MANTIS_MODEL_SCALE
+    photo_visual_dorsal.position = (Vector3(0.0, 1.30, 0.47) + offset) * BASE1_MANTIS_MODEL_SCALE
     photo_visual.scale = Vector3.ONE * size_factor
     photo_visual_dorsal.scale = Vector3.ONE * size_factor
 
@@ -543,15 +543,15 @@ func _apply_visual_mode() -> void:
     # Lock the displayed animal to the recovered canonical GLB.
     use_photo_visual = false
     var show_photo := false
-    var show_latest := use_latest_mantis_visual and latest_mantis_visual != null and not latest_mantis_clips.is_empty()
-    var show_rigged := not show_latest and use_rigged_visual and rigged_available
+    var show_base1 := use_base1_mantis_visual and base1_mantis_visual != null and not base1_mantis_clips.is_empty()
+    var show_rigged := not show_base1 and use_rigged_visual and rigged_available
     for part in procedural_meshes:
         if is_instance_valid(part):
             part.visible = false
     if rigged_visual != null:
         rigged_visual.visible = show_rigged
-    if latest_mantis_visual != null:
-        latest_mantis_visual.visible = show_latest
+    if base1_mantis_visual != null:
+        base1_mantis_visual.visible = show_base1
     if photo_visual != null:
         photo_visual.visible = show_photo and (camera == null or (camera.global_position - animal.global_position).normalized().y <= 0.70)
     if photo_visual_dorsal != null:
@@ -561,13 +561,13 @@ func _apply_visual_mode() -> void:
             rigged_player.speed_scale = 1.0
         else:
             rigged_player.stop()
-    if latest_mantis_player != null:
-        if show_latest:
-            latest_mantis_player.speed_scale = 1.0
+    if base1_mantis_player != null:
+        if show_base1:
+            base1_mantis_player.speed_scale = 1.0
         else:
-            latest_mantis_player.stop()
+            base1_mantis_player.stop()
     rigged_clip = ""
-    latest_mantis_clip = ""
+    base1_mantis_clip = ""
     if rigged_pose_driver != null:
         rigged_pose_driver.enabled = show_rigged and rigged_ik_enabled
         if not show_rigged:
@@ -575,29 +575,29 @@ func _apply_visual_mode() -> void:
 
 func _toggle_visual_model() -> void:
     use_photo_visual = false
-    use_latest_mantis_visual = true
+    use_base1_mantis_visual = true
     use_rigged_visual = false
     _apply_visual_mode()
     if notice != null:
-        notice.text = "최신 사마귀 3D 모델을 사용합니다."
+        notice.text = "Base 1 사마귀 모델을 사용합니다."
 
-func _play_latest_mantis_clip(clip: String) -> void:
-    if latest_mantis_player == null or latest_mantis_clips.is_empty():
+func _play_base1_mantis_clip(clip: String) -> void:
+    if base1_mantis_player == null or base1_mantis_clips.is_empty():
         return
     var resolved := clip
     var aliases := {"MOLT": "IDLE", "HUNT": "STRIKE", "CLIMB": "WALK", "DEFEND": "ALERT", "SCAN": "ALERT"}
     if aliases.has(resolved):
         resolved = aliases[resolved]
-    if not latest_mantis_clips.has(resolved):
+    if not base1_mantis_clips.has(resolved):
         resolved = "IDLE"
-    if not latest_mantis_clips.has(resolved) or latest_mantis_clip == resolved:
+    if not base1_mantis_clips.has(resolved) or base1_mantis_clip == resolved:
         return
-    var animation_name: String = latest_mantis_clips[resolved]
-    if not latest_mantis_player.has_animation(animation_name):
-        rigged_import_warnings.append("Missing latest mantis clip: " + animation_name)
+    var animation_name: String = base1_mantis_clips[resolved]
+    if not base1_mantis_player.has_animation(animation_name):
+        rigged_import_warnings.append("Missing Base 1 clip: " + animation_name)
         return
-    latest_mantis_player.play(animation_name, 0.18)
-    latest_mantis_clip = resolved
+    base1_mantis_player.play(animation_name, 0.18)
+    base1_mantis_clip = resolved
 
 func _play_rigged_clip(clip: String) -> void:
     if rigged_player == null or not rigged_available:
@@ -618,10 +618,10 @@ func _play_rigged_clip(clip: String) -> void:
     rigged_clip = resolved
 
 func _update_rigged_visual(_dt: float) -> void:
-    if use_latest_mantis_visual:
-        if latest_mantis_visual == null or latest_mantis_clips.is_empty():
+    if use_base1_mantis_visual:
+        if base1_mantis_visual == null or base1_mantis_clips.is_empty():
             return
-        _play_latest_mantis_clip(animation_state)
+        _play_base1_mantis_clip(animation_state)
         return
     if not use_rigged_visual or not rigged_available or rigged_visual == null:
         return
@@ -1281,7 +1281,7 @@ func _create_ui() -> void:
         var selected_clip: String = clip
         _button(mantis_controls, "동작 시연: " + selected_clip, func(): _set_animation_preview(selected_clip))
     frontleg_animation_label = Label.new()
-    frontleg_animation_label.text = "앞다리 동작: 최신 모델 기본 포획 자세"
+    frontleg_animation_label.text = "앞다리 동작: Base 1 기본 포획 자세"
     mantis_controls.add_child(frontleg_animation_label)
     _button(mantis_controls, "앞다리 동작 재생 / 다시 시작", func(): _restart_frontleg_animation())
     _button(mantis_controls, "앞다리 동작 이전", func(): _step_frontleg_animation(-1))
@@ -1346,7 +1346,7 @@ func _apply_life_stage() -> void:
     var size_factor := NYMPH_SIZE_FACTORS[stage_index] if stage_index < 6 else 1.0
     if animal != null:
         animal.scale = Vector3.ONE * _growth_visual_scale() * size_factor
-    _apply_model_life_stage(latest_mantis_visual, juvenile_wing_buds, stage_index)
+    _apply_model_life_stage(base1_mantis_visual, juvenile_wing_buds, stage_index)
     _apply_model_life_stage(rigged_visual, rigged_wing_buds, stage_index)
     if stage_picker != null and stage_picker.selected != stage_index:
         stage_picker.select(stage_index)
@@ -1368,7 +1368,7 @@ func _apply_model_life_stage(model: Node3D, buds: Node3D, stage_index: int) -> v
                     bud.scale = Vector3(0.12 + 0.14 * pad_factor, 0.045 + 0.035 * pad_factor, 0.19 + 0.18 * pad_factor)
 
 func _create_juvenile_wing_buds() -> void:
-    juvenile_wing_buds = _create_wing_buds(latest_mantis_visual, "JuvenileWingBudModel")
+    juvenile_wing_buds = _create_wing_buds(base1_mantis_visual, "JuvenileWingBudModel")
     rigged_wing_buds = _create_wing_buds(rigged_visual, "RiggedJuvenileWingBudModel")
     _apply_life_stage()
 
@@ -1442,11 +1442,11 @@ func _command_mantis(command: String) -> void:
 
 func _spawn_social_partner(command: String) -> bool:
     _clear_social_partner()
-    var instance := LATEST_MANTIS_SCENE.instantiate()
+    var instance := BASE1_MANTIS_SCENE.instantiate()
     if not instance is Node3D:
         return false
     social_partner = instance as Node3D
-    social_partner.name = "LatestMantisSocialPartner"
+    social_partner.name = "Base1MantisSocialPartner"
     add_child(social_partner)
     social_partner.position = animal.position + Vector3(0.92, 0.0, -0.40)
     social_partner.scale = animal.scale * (0.80 if command == "MATE" else 0.94)
@@ -1464,8 +1464,8 @@ func _spawn_social_partner(command: String) -> bool:
 func _play_social_partner_clip(clip: String) -> void:
     if social_partner_player == null:
         return
-    var resolved := clip if latest_mantis_clips.has(clip) else "IDLE"
-    var animation_name := String(latest_mantis_clips.get(resolved, ""))
+    var resolved := clip if base1_mantis_clips.has(clip) else "IDLE"
+    var animation_name := String(base1_mantis_clips.get(resolved, ""))
     if animation_name.is_empty() or not social_partner_player.has_animation(animation_name):
         return
     if social_partner_clip != resolved:
@@ -1839,7 +1839,7 @@ func _create_reference_overlay() -> void:
     content.add_child(title)
 
     reference_photo_view = TextureRect.new()
-    reference_photo_view.name = "LatestUserMantisPhoto"
+    reference_photo_view.name = "UserMantisPhoto"
     reference_photo_view.texture = load("res://assets/reference/1000157363(3).jpg")
     reference_photo_view.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
     reference_photo_view.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -2122,8 +2122,8 @@ func _process(delta: float) -> void:
     _process_camera_navigation(delta)
     if rigged_player != null and use_rigged_visual and rigged_available:
         rigged_player.speed_scale = 0.0 if simulation_paused else 1.0
-    if latest_mantis_player != null and use_latest_mantis_visual:
-        latest_mantis_player.speed_scale = 0.0 if simulation_paused else 1.0
+    if base1_mantis_player != null and use_base1_mantis_visual:
+        base1_mantis_player.speed_scale = 0.0 if simulation_paused else 1.0
     if social_partner_player != null:
         social_partner_player.speed_scale = 0.0 if simulation_paused else 1.0
     if use_photo_visual:
@@ -2643,8 +2643,8 @@ func _set_animation_preview(clip: String) -> void:
         preview_strike_clock = 0.65
         if rigged_player != null and rigged_clip == "STRIKE" and use_rigged_visual:
             rigged_player.seek(0.0, true)
-        if latest_mantis_player != null and latest_mantis_clip == "STRIKE" and use_latest_mantis_visual:
-            latest_mantis_player.seek(0.0, true)
+        if base1_mantis_player != null and base1_mantis_clip == "STRIKE" and use_base1_mantis_visual:
+            base1_mantis_player.seek(0.0, true)
     if animation_label != null:
         animation_label.text = "애니메이션: " + clip
 
@@ -2653,21 +2653,21 @@ func _set_frontleg_animation(index: int) -> void:
         selected_frontleg_animation = -1
         if rigged_pose_driver != null:
             rigged_pose_driver.stop_front_leg_animation()
-        use_latest_mantis_visual = true
+        use_base1_mantis_visual = true
         use_rigged_visual = false
         _apply_visual_mode()
         if frontleg_animation_label != null:
-            frontleg_animation_label.text = "앞다리 동작: 최신 모델 기본 포획 자세"
+            frontleg_animation_label.text = "앞다리 동작: Base 1 기본 포획 자세"
         return
     if not rigged_available or rigged_pose_driver == null:
-        notice.text = "최신 모델의 앞다리 리그를 불러오지 못했습니다."
+        notice.text = "Base 1 앞다리 리그를 불러오지 못했습니다."
         return
     selected_frontleg_animation = posmod(index, FRONT_LEG_VARIANT_COUNT)
-    if use_latest_mantis_visual:
-        use_latest_mantis_visual = false
+    if use_base1_mantis_visual:
+        use_base1_mantis_visual = false
         use_rigged_visual = true
         _apply_visual_mode()
-        notice.text = "최신 GLB에서 세부 앞다리 관절 시연을 재생합니다."
+        notice.text = "Base 1 GLB에서 세부 앞다리 관절 시연을 재생합니다."
     if rigged_pose_driver != null:
         rigged_pose_driver.play_front_leg_animation(selected_frontleg_animation)
         if frontleg_animation_label != null:

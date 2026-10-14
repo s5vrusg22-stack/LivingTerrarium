@@ -13,12 +13,15 @@ func _verify_mantis_simulation() -> void:
     await process_frame
     await process_frame
 
-    if app.get("use_latest_mantis_visual") != true:
+    if app.get("use_base1_mantis_visual") != true:
         _fail("Base 1 is not selected by default")
         return
-    var model := app.get("latest_mantis_visual") as Node3D
+    var model := app.get("base1_mantis_visual") as Node3D
     if model == null or not model.visible:
-        _fail("Base 1 (V7) is missing or hidden")
+        _fail("Base 1 is missing or hidden")
+        return
+    if model.name != "Base1":
+        _fail("Imported mantis root is not named Base1")
         return
     if app.get("follow_animal") != true or app.get("habitat_framing") != false:
         _fail("Startup camera does not focus on the approved mantis")
@@ -26,11 +29,11 @@ func _verify_mantis_simulation() -> void:
     if not is_equal_approx(float(app.get("orbit_distance")), 2.80):
         _fail("Startup camera is too far away to inspect the mantis model")
         return
-    var clips: Dictionary = app.get("latest_mantis_clips")
+    var clips: Dictionary = app.get("base1_mantis_clips")
     if clips.is_empty():
-        _fail("Base 1 (V7) imported without any animation clips")
+        _fail("Base 1 imported without any animation clips")
         return
-    print("Base 1 animation clips (V7): ", clips.keys())
+    print("Base 1 animation clips: ", clips.keys())
     if app.get("use_photo_visual") != false:
         _fail("A photo cutout was selected instead of the Base 1 GLB")
         return
@@ -118,7 +121,7 @@ func _verify_mantis_simulation() -> void:
             _fail("Obsolete procedural model switch is still exposed")
             return
 
-    print("Mantis simulation check passed: Base 1 (V7) GLB, six instars, flight and social behavior, and free camera")
+    print("Mantis simulation check passed: Base 1 GLB, six instars, flight and social behavior, and free camera")
     quit()
 
 func _fail(message: String) -> void:

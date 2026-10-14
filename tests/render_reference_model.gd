@@ -30,8 +30,8 @@ func _capture_reference_views() -> void:
         push_error("The scene did not initialize its mantis, camera, or UI.")
         quit(1)
         return
-    if app.latest_mantis_visual == null or not app.latest_mantis_visual.visible:
-        push_error("Base 1 (V7) GLB is not the visible model.")
+    if app.base1_mantis_visual == null or not app.base1_mantis_visual.visible:
+        push_error("Base 1 GLB is not the visible model.")
         quit(1)
         return
     var mesh_instances: Array = []

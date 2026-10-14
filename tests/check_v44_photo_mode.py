@@ -15,12 +15,12 @@ assert sha256(photo.read_bytes()).hexdigest() == (
 assert "var use_photo_visual := false" in main
 assert "_initialize_photo_visual()" in main
 assert "_set_species_mode(0, false)" in main
-assert 'photo_visual.name = "LatestMantisSidePhotoCutout"' in main
+assert 'photo_visual.name = "Base1MantisSidePhotoCutout"' in main
 assert 'preload("res://assets/photo_cutouts/mantis_side_photo.png")' in main
 assert 'preload("res://assets/photo_cutouts/mantis_dorsal_photo.png")' in main
 assert "photo_visual.billboard = BaseMaterial3D.BILLBOARD_ENABLED" in main
 assert "photo_visual_dorsal.rotation_degrees.x = -90.0" in main
-assert "use_latest_mantis_visual := false" in main
+assert "use_base1_mantis_visual := true" in main
 assert "_update_photo_visual(0.0 if simulation_paused else minf(delta, 0.1))" in main
 assert '_button(mantis_controls, "첨부 사진 보기 / 3D 복귀"' in main
 assert '_button(mantis_controls, "실물 사진과 구조 비교"' in main

@@ -1,4 +1,4 @@
-"""Regression checks for the recovered V8.3 landscape build and habitat set."""
+"""Regression checks for the Base 1 release landscape build and habitat set."""
 from pathlib import Path
 import re
 
@@ -49,7 +49,7 @@ assert "var leaf_count := rng.randi_range(10, 15) if canopy_plant else rng.randi
 assert "leaf_tool.append_from(leaf_mesh, 0, leaf_transform)" in main
 assert "leaf_cluster.name = \"DenseLeafCanopy\"" in main
 assert "mat.albedo_color = Color(0.43, 0.54, 0.26)" in main
-assert "var use_latest_mantis_visual := false" in main
+assert "var use_base1_mantis_visual := true" in main
 
 # The larger land-crab tank has higher-detail shells; the salamander valley is
 # enclosed as a glass aquarium. Both habitats scale from exact linear factors.
@@ -70,12 +70,12 @@ for name in (
     "stream_valley_system.gd",
 ):
     assert (root / "scripts" / name).is_file()
-assert (root / "assets/models/mantis_v7_animated.glb").is_file()
-assert (root / "assets/models/mantis_rigged.glb").is_file()
+assert (root / "assets/models/base1.glb").is_file()
+assert not (root / "assets/models/mantis_rigged.glb").exists()
 assert (root / "assets/photo_cutouts/mantis_side_photo.png").is_file()
 assert (root / "assets/photo_cutouts/mantis_dorsal_photo.png").is_file()
 
-assert 'config/version="8.3.0"' in project
-assert 'export_path="build/LivingTerrarium3D-v8.3-ARM64.apk"' in presets
-assert "version/code=83" in presets and 'version/name="8.3.0"' in presets
-print("V8.3 baseline passed: landscape, free camera, expanded habitats, detailed mantis and six species")
+assert 'config/version="1.0.0"' in project
+assert 'export_path="build/LivingTerrarium3D-Base1-v1.0.0-ARM64.apk"' in presets
+assert "version/code=84" in presets and 'version/name="1.0.0"' in presets
+print("Base 1 version 1.0.0 project checks passed: landscape, free camera, expanded habitats, detailed mantis and six species")
