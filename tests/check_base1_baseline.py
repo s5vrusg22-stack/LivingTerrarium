@@ -28,6 +28,7 @@ for required in (
     "`bash tools/start_mantis_model_edit.sh`",
     "`python3 tools/finalize_model_change.py --summary",
     "A changed model without a matching lineage record fails CI.",
+    "“Base 1” and “V7” refer to the same approved model",
 ):
     assert required in agent_rules, f"AGENTS.md is missing required source rule: {required}"
 assert approved_git_blob_sha in readme

@@ -17,7 +17,7 @@ These instructions apply to every code, model, simulation, and APK task in this 
 - Runtime/imported root name: `Base1`. The app loads it through `scripts/main.gd` in the main scene.
 - The app release name is Base 1 / version 1.0.0. Do not change the model name, app version, or runtime asset path unless the user explicitly requests that change.
 
-The historical note that the recovered source was once tracked as “V7” describes provenance only. It does not authorize loading a separate V7 asset. The path and approved blob SHA above identify the source of truth.
+**Base 1 is the current GitHub V7 mantis model.** “Base 1” and “V7” refer to the same approved model, not separate versions or alternatives. It is stored at `assets/models/base1.glb`; its exact approved Git blob SHA above is the source identity. The old path `mantis_v7_animated.glb` is not a second allowed model and must not be used as a substitute.
 
 ## Mandatory gate before any mantis modeling
 
