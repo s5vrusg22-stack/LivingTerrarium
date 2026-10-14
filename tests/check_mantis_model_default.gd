@@ -57,20 +57,75 @@ func _verify_mantis_simulation() -> void:
     if stage_picker == null or stage_picker.item_count != 7:
         _fail("Expected selectable instars 1 through 6 and adult")
         return
-    app.call("_on_stage_selected", 0)
     var animal := app.get("animal") as Node3D
-    var expected_scale := float(app.call("_growth_visual_scale")) * 0.23
-    if str(app.get("life_stage")) != "1령 약충" or not is_equal_approx(animal.scale.x, expected_scale):
-        _fail("First instar stage or size was not applied")
-        return
     var buds := app.get("juvenile_wing_buds") as Node3D
-    if buds == null or not buds.visible:
-        _fail("Juvenile wing buds were not shown")
+    var stage_factors := [0.23, 0.30, 0.40, 0.52, 0.67, 0.84]
+    var wing_parts: Array[MeshInstance3D] = []
+    for candidate in model.find_children("*", "MeshInstance3D", true, false):
+        var part := candidate as MeshInstance3D
+        if part != null and part.name.begins_with("Wing_"):
+            wing_parts.append(part)
+    if wing_parts.size() < 2:
+        _fail("Base 1 is missing the paired adult wing meshes")
         return
+    for stage_index in range(6):
+        app.call("_on_stage_selected", stage_index)
+        var expected_scale := float(app.call("_growth_visual_scale")) * float(stage_factors[stage_index])
+        if str(app.get("life_stage")) != ["1령 약충", "2령 약충", "3령 약충", "4령 약충", "5령 약충", "6령 약충"][stage_index] or not is_equal_approx(animal.scale.x, expected_scale):
+            _fail("Instar %d did not apply its stage and body size" % (stage_index + 1))
+            return
+        if buds == null or not buds.visible:
+            _fail("Instar %d did not show its wing buds" % (stage_index + 1))
+            return
+        for wing in wing_parts:
+            if wing.visible:
+                _fail("Adult wings were visible at instar %d" % (stage_index + 1))
+                return
     app.call("_on_stage_selected", 6)
     if str(app.get("life_stage")) != "성체" or buds.visible:
         _fail("Adult stage did not hide the juvenile wing buds")
         return
+    for wing in wing_parts:
+        if not wing.visible:
+            _fail("Adult stage did not restore both adult wings")
+            return
+
+    var save_name := app.get("mantis_name_input") as LineEdit
+    var save_picker := app.get("mantis_save_picker") as OptionButton
+    if save_name == null or save_picker == null:
+        _fail("The multiple-mantis save controls are missing")
+        return
+    save_name.text = "검사용 1령"
+    app.call("_on_stage_selected", 0)
+    app.call("_save_current_mantis_profile")
+    save_name.text = "검사용 6령"
+    app.call("_on_stage_selected", 5)
+    app.call("_save_current_mantis_profile")
+    var profiles: Array = app.get("saved_mantises")
+    if profiles.size() != 2 or save_picker.item_count != 2:
+        _fail("Two separate mantis profiles were not saved")
+        return
+    save_picker.select(0)
+    app.call("_load_selected_mantis_profile")
+    if str(app.get("life_stage")) != "1령 약충":
+        _fail("Loading a saved individual did not restore its instar")
+        return
+    var collection_file := FileAccess.open("user://mantis_collection_v1.json", FileAccess.READ)
+    if collection_file == null:
+        _fail("The saved mantis collection file was not created")
+        return
+    var collection_data: Variant = JSON.parse_string(collection_file.get_as_text())
+    collection_file.close()
+    if not (collection_data is Dictionary):
+        _fail("The saved mantis collection could not be read")
+        return
+    var saved_individuals: Variant = collection_data.get("mantises", [])
+    if not (saved_individuals is Array) or saved_individuals.size() != 2:
+        _fail("The save file does not retain both individual mantises")
+        return
+    for path in ["user://mantis_collection_v1.json", "user://mantis_collection_v1_backup.json", "user://terrarium_save_v8.json", "user://terrarium_save_v8_backup.json"]:
+        if FileAccess.file_exists(path):
+            DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
     app.call("_command_mantis", "FLAP")
     if str(app.get("animation_preview")) != "FLY":

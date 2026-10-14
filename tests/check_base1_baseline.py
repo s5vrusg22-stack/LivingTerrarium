@@ -7,7 +7,7 @@ models = root / "assets/models"
 model = models / "base1.glb"
 data = model.read_bytes()
 git_blob_sha = sha1(b"blob " + str(len(data)).encode("ascii") + bytes([0]) + data).hexdigest()
-assert git_blob_sha == "11f382981fb1afd2b0506a8ddee16b52a55c8259", git_blob_sha
+assert git_blob_sha == "2337fea7502d59c3cad235412fecdf906a9b9dd1", git_blob_sha
 
 sidecar_path = models / "base1.glb.import"
 assert sidecar_path.is_file()

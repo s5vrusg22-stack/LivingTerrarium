@@ -1,14 +1,19 @@
 extends Node3D
 
-const SAVE_PATH := "user://terrarium_save_v6.json"
-const BACKUP_PATH := "user://terrarium_save_v6_backup.json"
+const SAVE_PATH := "user://terrarium_save_v8.json"
+const BACKUP_PATH := "user://terrarium_save_v8_backup.json"
+const V6_SAVE_PATH := "user://terrarium_save_v6.json"
+const V6_BACKUP_PATH := "user://terrarium_save_v6_backup.json"
 const V5_SAVE_PATH := "user://terrarium_save_v5.json"
 const V4_SAVE_PATH := "user://terrarium_save_v4.json"
+const MANTIS_COLLECTION_PATH := "user://mantis_collection_v1.json"
+const MANTIS_COLLECTION_BACKUP_PATH := "user://mantis_collection_v1_backup.json"
+const MAX_SAVED_MANTISES := 24
 const MAX_DECORATIONS := 32
 const PREVIOUS_SAVE_PATH := "user://terrarium_save_v3.json"
 const LEGACY_SAVE_PATH := "user://terrarium_save_v2.json"
 const MAX_FOOD := 12
-const HABITAT_LINEAR_SCALE := 1.71 # cbrt(5): five times the original enclosure volume.
+const HABITAT_LINEAR_SCALE := 5.31 # About 30x the current enclosure volume; height rises with footprint.
 const HERMIT_TANK_LINEAR_SCALE := 2.714 # cbrt(20).
 const SALAMANDER_TANK_LINEAR_SCALE := 3.107 # cbrt(30).
 const HABITAT_WIDTH := 9.6 * HABITAT_LINEAR_SCALE
@@ -21,7 +26,7 @@ const HABITAT_WALL_CENTER_Y := (HABITAT_CEILING_Y - 0.55) * 0.5
 const ROAM_HALF_X := HABITAT_HALF_X - 1.10
 const ROAM_HALF_Z := HABITAT_HALF_Z - 0.85
 const CAMERA_MIN_DISTANCE := 1.35
-const CAMERA_MAX_DISTANCE := 60.0
+const CAMERA_MAX_DISTANCE := 110.0
 const CAMERA_MOVE_SPEED := 4.5
 const CAMERA_BOOST_MULTIPLIER := 3.0
 const LIFE_STAGES: Array[String] = ["1령 약충", "2령 약충", "3령 약충", "4령 약충", "5령 약충", "6령 약충", "성체"]
@@ -66,6 +71,9 @@ var life_age := 0.0
 var molt_count := 0
 var life_stage := "성체"
 var stage_picker: OptionButton
+var mantis_save_picker: OptionButton
+var mantis_name_input: LineEdit
+var saved_mantises: Array[Dictionary] = []
 var juvenile_wing_buds: Node3D
 var rigged_wing_buds: Node3D
 var growth := 0.35
@@ -197,9 +205,9 @@ var climb_active := false
 var climb_progress := 0.0
 var climb_cooldown := 18.0
 var climb_branch_start := Vector3(-0.18, -0.43, 0.60)
-var climb_branch_end := Vector3(-0.02, 0.38, 0.52)
+var climb_branch_end := Vector3(-0.02, HABITAT_CEILING_Y * 0.82, 0.52)
 const CLIMB_SPEED := 0.18
-const CLIMB_BODY_CLEARANCE := 0.12
+const CLIMB_BODY_CLEARANCE := 0.48
 
 
 
@@ -464,61 +472,33 @@ func _collect_procedural_meshes(root: Node) -> void:
         _collect_procedural_meshes(child)
 
 func _style_rigged_materials(root: Node) -> void:
-    # Vertex colors retain each body part's olive palette. Triplanar cuticle
-    # maps add pores and micro-relief; wing UV maps carry a separate vein net.
+    # Preserve Base 1's per-surface palette. A shared material_override erased
+    # those cuticle, face, eye, and wing differences and crushed color in shade.
     for child in root.get_children():
-        var keep_photo_eye_material := false
         if child is MeshInstance3D:
-            keep_photo_eye_material = (child as MeshInstance3D).name.begins_with("PhotoEyeFacet_")
-        if child is MeshInstance3D and not keep_photo_eye_material:
             var part := child as MeshInstance3D
-            var mat := StandardMaterial3D.new()
-            mat.vertex_color_use_as_albedo = true
-            mat.albedo_color = Color(0.43, 0.54, 0.26)
-            mat.metallic = 0.0
-            mat.roughness = 0.84
-            var is_wing_part := part.name.begins_with("Wing_") or part.name.begins_with("WingVeinDetail_") or part.name.begins_with("Hindwing_")
-            if is_wing_part:
-                mat.albedo_texture = wing_detail_texture
-                mat.uv1_triplanar = false
-                mat.roughness = 0.82
-                mat.normal_enabled = true
-                mat.normal_texture = load("res://assets/textures/mantis_wing_normal.png")
-                mat.normal_scale = 0.24
-                mat.roughness_texture = load("res://assets/textures/mantis_wing_roughness.png")
-                mat.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
-                if part.name.begins_with("Hindwing_"):
-                    mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-                    mat.albedo_color.a = 0.82
-                    mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-            elif part.name.begins_with("EyePupil_"):
-                mat.vertex_color_use_as_albedo = false
-                mat.albedo_color = Color(0.10, 0.16, 0.045)
-                mat.roughness = 0.34
-                mat.uv1_triplanar = false
-            elif part.name.begins_with("EyeGlint_"):
-                mat.vertex_color_use_as_albedo = false
-                mat.albedo_color = Color(0.76, 0.84, 0.58)
-                mat.roughness = 0.22
-                mat.uv1_triplanar = false
-            elif part.name.begins_with("Eye_"):
-                mat.vertex_color_use_as_albedo = false
-                mat.albedo_texture = eye_texture
-                mat.albedo_color = Color(0.82, 0.87, 0.60)
-                mat.uv1_triplanar = false
-                _apply_pbr(mat, "mantis_eye")
-            else:
-                mat.albedo_texture = cuticle_detail_texture
-                mat.uv1_triplanar = true
-                mat.uv1_triplanar_sharpness = 8.0
-                mat.uv1_scale = Vector3(18.0, 18.0, 18.0)
-                mat.roughness = 0.72
-                mat.normal_enabled = true
-                mat.normal_texture = load("res://assets/textures/mantis_cuticle_detail_normal.png")
-                mat.normal_scale = 0.22
-                mat.roughness_texture = load("res://assets/textures/mantis_cuticle_detail_roughness.png")
-                mat.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
-            part.material_override = mat
+            part.material_override = null
+            if part.mesh != null:
+                for surface_index in range(part.mesh.get_surface_count()):
+                    var source := part.get_active_material(surface_index) as StandardMaterial3D
+                    if source == null:
+                        continue
+                    var mat := source.duplicate() as StandardMaterial3D
+                    if mat == null:
+                        continue
+                    var material_name := String(source.resource_name).to_lower()
+                    mat.roughness = maxf(mat.roughness, 0.58 if not material_name.contains("eye") else 0.30)
+                    if not material_name.contains("eye") and cuticle_detail_texture != null:
+                        mat.detail_enabled = true
+                        mat.detail_albedo = cuticle_detail_texture
+                        mat.detail_blend_mode = BaseMaterial3D.BLEND_MODE_MUL
+                        mat.detail_uv_layer = BaseMaterial3D.DETAIL_UV_1
+                        mat.uv1_triplanar = true
+                        mat.uv1_triplanar_sharpness = 2.5
+                        mat.uv1_scale = Vector3(6.0, 6.0, 6.0)
+                        if cuticle_detail_normal_texture != null:
+                            mat.detail_normal = cuticle_detail_normal_texture
+                    part.set_surface_override_material(surface_index, mat)
         _style_rigged_materials(child)
 
 func _find_rigged_player(root: Node) -> AnimationPlayer:
@@ -662,17 +642,18 @@ func _create_world() -> void:
     env.background_mode = Environment.BG_COLOR
     env.background_color = Color(0.065, 0.085, 0.08)
     env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-    env.ambient_light_color = Color(0.48, 0.52, 0.42)
-    env.ambient_light_energy = 0.28
+    env.ambient_light_color = Color(0.66, 0.70, 0.63)
+    env.ambient_light_energy = 0.58
     world.environment = env
     add_child(world)
     var sun := DirectionalLight3D.new()
     sun.rotation_degrees = Vector3(-48, -31, 0)
-    sun.light_color = Color(0.96, 0.94, 0.82)
-    sun.light_energy = 0.68
+    sun.light_color = Color(0.98, 0.97, 0.91)
+    sun.light_energy = 0.82
+    sun.shadow_opacity = 0.56
     sun.shadow_enabled = true
     add_child(sun)
-    _box(Vector3(HABITAT_WIDTH, 0.2, HABITAT_DEPTH), Vector3(0, -0.65, 0), Color(0.23, 0.15, 0.09))
+    _box(Vector3(HABITAT_WIDTH, 0.2, HABITAT_DEPTH), Vector3(0, -0.65, 0), Color(0.39, 0.31, 0.21))
     _box(Vector3(HABITAT_WIDTH, HABITAT_WALL_HEIGHT, 0.06), Vector3(0, HABITAT_WALL_CENTER_Y, -HABITAT_HALF_Z), Color(0.14, 0.21, 0.17, 0.48), true)
     _box(Vector3(0.05, HABITAT_WALL_HEIGHT, HABITAT_DEPTH), Vector3(-HABITAT_HALF_X, HABITAT_WALL_CENTER_Y, 0), Color(0.36, 0.51, 0.45, 0.14), true)
     _box(Vector3(0.05, HABITAT_WALL_HEIGHT, HABITAT_DEPTH), Vector3(HABITAT_HALF_X, HABITAT_WALL_CENTER_Y, 0), Color(0.36, 0.51, 0.45, 0.14), true)
@@ -686,15 +667,45 @@ func _create_world() -> void:
     var detail_rng := RandomNumberGenerator.new()
     detail_rng.seed = 8032026
     for i in range(26):
-        var p := Vector3(detail_rng.randf_range(-4.48, 4.48), -0.49, detail_rng.randf_range(-3.08, 3.08))
+        var p := Vector3(detail_rng.randf_range(-4.48, 4.48) * HABITAT_LINEAR_SCALE, -0.49, detail_rng.randf_range(-3.08, 3.08) * HABITAT_LINEAR_SCALE)
         var size := detail_rng.randf_range(0.85, 1.35)
         _ellipsoid(p, Vector3(0.11, 0.04, 0.16) * size, Color(0.15 + 0.02 * (i % 3), 0.28, 0.105))
 
 func _create_climbable_branch() -> void:
-    # A deliberately wide, reachable branch with matching visual and collision.
-    # The original decorative twigs are too narrow for reliable foot placement.
-    _segment(self, climb_branch_start, climb_branch_end, 0.095, Color(0.29, 0.19, 0.11))
-    _walkable_wood(self, climb_branch_start, climb_branch_end, 0.095)
+    # A tall living support plant. Its visible stem and foot-contact path share
+    # the same geometry so the mantis can climb from the soil into the canopy.
+    var stem_radius := 0.16
+    var stem_color := Color(0.23, 0.34, 0.14)
+    _segment(self, climb_branch_start, climb_branch_end, stem_radius, stem_color)
+    _walkable_wood(self, climb_branch_start, climb_branch_end, stem_radius)
+    var rng := RandomNumberGenerator.new()
+    rng.seed = 10142026
+    var leaf_mesh := _leaf_mesh()
+    var leaf_material := _material(Color(0.83, 0.92, 0.68))
+    leaf_material.vertex_color_use_as_albedo = true
+    leaf_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    leaf_material.albedo_texture = foliage_texture
+    leaf_material.normal_enabled = foliage_normal_texture != null
+    leaf_material.normal_texture = foliage_normal_texture
+    leaf_material.normal_scale = 0.32
+    leaf_material.roughness = 0.88
+    for level in range(1, 8):
+        var t := float(level) / 8.0
+        var center := climb_branch_start.lerp(climb_branch_end, t)
+        var branch_length := rng.randf_range(0.72, 1.25)
+        for side in [-1.0, 1.0]:
+            var tip := center + Vector3(side * branch_length, 0.25 + rng.randf_range(-0.12, 0.18), rng.randf_range(-0.28, 0.28))
+            _segment(self, center, tip, 0.048, stem_color)
+            _walkable_wood(self, center, tip, 0.048)
+            var leaf := MeshInstance3D.new()
+            leaf.name = "ClimbPlantLeaf_%02d_%s" % [level, "L" if side < 0.0 else "R"]
+            leaf.mesh = leaf_mesh
+            leaf.material_override = leaf_material
+            leaf.position = tip
+            leaf.rotation.y = side * 0.9 + rng.randf_range(-0.25, 0.25)
+            leaf.rotation.x = rng.randf_range(-0.28, 0.10)
+            leaf.scale = Vector3.ONE * rng.randf_range(2.0, 2.8)
+            add_child(leaf)
 
 func _advance_climb(dt: float) -> void:
     if not climb_active:
@@ -716,7 +727,7 @@ func _advance_climb(dt: float) -> void:
     climb_progress = minf(1.0, climb_progress + dt * CLIMB_SPEED / climb_branch_start.distance_to(climb_branch_end))
     var center := climb_branch_start.lerp(climb_branch_end, climb_progress)
     var tangent := (climb_branch_end - climb_branch_start).normalized()
-    var target := center + Vector3.UP * CLIMB_BODY_CLEARANCE
+    var target := center + Vector3.RIGHT * CLIMB_BODY_CLEARANCE
     animal.position = animal.position.lerp(target, clampf(dt * 3.5, 0.0, 1.0))
     animal.rotation.y = lerp_angle(animal.rotation.y, atan2(-tangent.x, -tangent.z), clampf(dt * 3.0, 0.0, 1.0))
     behavior = "나뭇가지 등반"
@@ -1119,6 +1130,11 @@ func _box(size: Vector3, pos: Vector3, color: Color, transparent := false) -> vo
     var mat := _material(color)
     if not transparent and pos.y < -0.6 and substrate_texture != null:
         mat.albedo_texture = substrate_texture
+        mat.albedo_color = Color(0.82, 0.67, 0.48)
+        mat.uv1_triplanar = true
+        mat.uv1_triplanar_sharpness = 4.0
+        mat.uv1_scale = Vector3(1.0, 1.0, 1.0)
+        mat.roughness = 0.94
         _apply_pbr(mat, "substrate")
     if transparent:
         mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -1303,6 +1319,24 @@ func _create_ui() -> void:
     _button(mantis_controls, "UI 숨김/표시", func(): stats_visible = not stats_visible; ui_panel.visible = stats_visible)
     _button(mantis_controls, "저장", func(): _save_state())
     _button(mantis_controls, "불러오기", func(): _load_state(true))
+    var collection_heading := Label.new()
+    collection_heading.text = "사마귀 개체 보관함 · 최대 24마리"
+    mantis_controls.add_child(collection_heading)
+    mantis_name_input = LineEdit.new()
+    mantis_name_input.name = "MantisSaveName"
+    mantis_name_input.placeholder_text = "저장할 사마귀 이름"
+    mantis_name_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    mantis_controls.add_child(mantis_name_input)
+    mantis_save_picker = OptionButton.new()
+    mantis_save_picker.name = "MantisSavedIndividuals"
+    mantis_save_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    mantis_save_picker.item_selected.connect(_on_mantis_profile_selected)
+    mantis_controls.add_child(mantis_save_picker)
+    _load_mantis_collection()
+    _button(mantis_controls, "현재 개체를 새 슬롯에 저장", _save_current_mantis_profile)
+    _button(mantis_controls, "선택 개체 불러오기", _load_selected_mantis_profile)
+    _button(mantis_controls, "선택 개체 정보 갱신", _update_selected_mantis_profile)
+    _button(mantis_controls, "선택 개체 삭제", _delete_selected_mantis_profile)
     edit_hint = Label.new()
     edit_hint.text = "관찰 모드"
     mantis_controls.add_child(edit_hint)
@@ -1956,11 +1990,11 @@ func _create_animated_ecosystem() -> void:
         plant.position = Vector3(plant_x * HABITAT_LINEAR_SCALE, -0.53, plant_z * HABITAT_LINEAR_SCALE)
         habitat_motion_root.add_child(plant)
         var canopy_plant := i % 3 == 0
-        var height := rng.randf_range(1.65, 3.15) if canopy_plant else rng.randf_range(0.72, 1.80)
+        var height := rng.randf_range(HABITAT_CEILING_Y * 0.58, HABITAT_CEILING_Y * 0.88) if canopy_plant else rng.randf_range(0.72, 1.80)
         var stem := MeshInstance3D.new()
         var stem_mesh := CylinderMesh.new()
-        stem_mesh.top_radius = 0.009 if canopy_plant else 0.006
-        stem_mesh.bottom_radius = 0.020 if canopy_plant else 0.013
+        stem_mesh.top_radius = clampf(height * 0.003, 0.009, 0.045) if canopy_plant else 0.006
+        stem_mesh.bottom_radius = clampf(height * 0.006, 0.020, 0.075) if canopy_plant else 0.013
         stem_mesh.height = height
         stem_mesh.radial_segments = 5
         stem.mesh = stem_mesh
@@ -1973,10 +2007,10 @@ func _create_animated_ecosystem() -> void:
         for j in range(leaf_count):
             var leaf_height := height * (0.28 + 0.68 * (float(j) + 1.0) / float(leaf_count + 1))
             var angle := float(j) * TAU / float(leaf_count) + rng.randf_range(-0.32, 0.32)
-            var reach := rng.randf_range(0.06, 0.22) * (1.25 if canopy_plant else 1.0)
+            var reach := rng.randf_range(0.06, 0.22) * (1.25 + height * 0.025 if canopy_plant else 1.0)
             var leaf_position := Vector3(cos(angle) * reach, leaf_height, sin(angle) * reach)
             var leaf_rotation := Vector3(rng.randf_range(-0.46, -0.12), angle, rng.randf_range(-0.18, 0.18))
-            var leaf_size := rng.randf_range(1.10, 1.55) * (1.18 if canopy_plant else 1.0)
+            var leaf_size := rng.randf_range(1.10, 1.55) * (1.18 + height * 0.018 if canopy_plant else 1.0)
             var leaf_transform := Transform3D(Basis.from_euler(leaf_rotation).scaled(Vector3.ONE * leaf_size), leaf_position)
             leaf_tool.append_from(leaf_mesh, 0, leaf_transform)
         var leaf_cluster := MeshInstance3D.new()
@@ -2000,7 +2034,7 @@ func _create_animated_ecosystem() -> void:
         visual.scale = Vector3.ONE * rng.randf_range(0.003, 0.008)
         visual.material_override = mote_mat
         mote.add_child(visual)
-        mote.position = Vector3(rng.randf_range(-4.35, 4.35) * HABITAT_LINEAR_SCALE, rng.randf_range(-0.3, 3.10), rng.randf_range(-3.05, 3.05) * HABITAT_LINEAR_SCALE)
+        mote.position = Vector3(rng.randf_range(-4.35, 4.35) * HABITAT_LINEAR_SCALE, rng.randf_range(-0.3, HABITAT_CEILING_Y * 0.72), rng.randf_range(-3.05, 3.05) * HABITAT_LINEAR_SCALE)
         habitat_motion_root.add_child(mote)
         drifting_particles.append(mote)
         particle_origins.append(mote.position)
@@ -2453,9 +2487,12 @@ func _refresh() -> void:
         return
     status.text = "%s\n온도: %.1f°C | 습도: %.1f%%\n배고픔: %.0f | 체력: %.0f\n스트레스: %.0f | 먹이: %d\n탈피: %d회 | 성장: %.0f%%\n행동: %s%s" % [life_stage, temperature, humidity, hunger, energy, stress, food_count, molt_count, growth * 100.0, behavior, " (정지)" if simulation_paused else ""]
 
+func _capture_mantis_state() -> Dictionary:
+    return {"version": 8, "life_stage": life_stage, "decorations": decoration_data.duplicate(true), "life_age": life_age, "molt_count": molt_count, "growth": growth, "hunger": hunger, "energy": energy, "stress": stress, "humidity": humidity, "temperature": temperature, "food_count": food_count, "prey_positions": _prey_positions(), "animal_position": [animal.position.x, animal.position.y, animal.position.z]}
+
 func _save_state(show_message: bool = true) -> void:
-    var data := {"version": 7, "life_stage": life_stage, "decorations": decoration_data, "life_age": life_age, "molt_count": molt_count, "growth": growth, "hunger": hunger, "energy": energy, "stress": stress, "humidity": humidity, "temperature": temperature, "food_count": food_count, "prey_positions": _prey_positions(), "animal_position": [animal.position.x, animal.position.y, animal.position.z]}
-    # Keep a last-known-good copy before replacing the main save.
+    var data := _capture_mantis_state()
+    # Keep a last-known-good copy before replacing the quick-save slot.
     if FileAccess.file_exists(SAVE_PATH):
         var previous := FileAccess.get_file_as_string(SAVE_PATH)
         var backup := FileAccess.open(BACKUP_PATH, FileAccess.WRITE)
@@ -2473,36 +2510,26 @@ func _save_state(show_message: bool = true) -> void:
         notice.text = "저장 완료"
 
 func _load_state(show_message: bool) -> void:
-    var candidates := [SAVE_PATH, BACKUP_PATH, V5_SAVE_PATH, V4_SAVE_PATH, PREVIOUS_SAVE_PATH, LEGACY_SAVE_PATH]
-    var path := ""
-    for candidate in candidates:
-        if FileAccess.file_exists(candidate):
-            var candidate_data: Variant = JSON.parse_string(FileAccess.get_file_as_string(candidate))
-            if candidate_data is Dictionary and int(candidate_data.get("version", 0)) in [2, 3, 4, 5, 6, 7]:
-                path = candidate
-                break
-    if path.is_empty():
-        if show_message:
-            notice.text = "저장된 데이터가 없습니다."
-        return
-    var file := FileAccess.open(path, FileAccess.READ)
-    if file == null:
-        if show_message:
-            notice.text = "불러오기 실패"
-        return
-    var parsed: Variant = JSON.parse_string(file.get_as_text())
-    if not (parsed is Dictionary) or int(parsed.get("version", 0)) not in [2, 3, 4, 5, 6, 7]:
-        if show_message:
-            notice.text = "저장 파일 형식이 맞지 않습니다."
-        return
+    var candidates := [SAVE_PATH, BACKUP_PATH, V6_SAVE_PATH, V6_BACKUP_PATH, V5_SAVE_PATH, V4_SAVE_PATH, PREVIOUS_SAVE_PATH, LEGACY_SAVE_PATH]
+    for path in candidates:
+        if not FileAccess.file_exists(path):
+            continue
+        var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+        if parsed is Dictionary and int(parsed.get("version", 0)) in [2, 3, 4, 5, 6, 7, 8]:
+            _restore_mantis_state(parsed, show_message, path in [BACKUP_PATH, V6_BACKUP_PATH])
+            return
+    if show_message:
+        notice.text = "저장된 데이터가 없습니다."
+
+func _restore_mantis_state(parsed: Dictionary, show_message: bool, recovered_backup: bool = false) -> void:
     _clear_decorations()
     var saved_decor: Variant = parsed.get("decorations", [])
     if saved_decor is Array:
         for entry in saved_decor:
             if entry is Dictionary and decorations.size() < MAX_DECORATIONS:
                 var kind: String = str(entry.get("kind", "rock"))
-                var x: float = clampf(float(entry.get("x", 0.0)), -4.35, 4.35)
-                var z: float = clampf(float(entry.get("z", 0.0)), -3.05, 3.05)
+                var x: float = clampf(float(entry.get("x", 0.0)), -ROAM_HALF_X, ROAM_HALF_X)
+                var z: float = clampf(float(entry.get("z", 0.0)), -ROAM_HALF_Z, ROAM_HALF_Z)
                 if kind in ["rock", "wood"]:
                     _add_decoration(kind, Vector3(x, -0.50, z))
     life_age = maxf(0.0, float(parsed.get("life_age", 0.0)))
@@ -2535,8 +2562,126 @@ func _load_state(show_message: bool) -> void:
     if stage_picker != null:
         stage_picker.select(_life_stage_index())
     if show_message:
-        notice.text = "불러오기 완료" + (" (백업 복구)" if path == BACKUP_PATH else "")
+        notice.text = "불러오기 완료" + (" (백업 복구)" if recovered_backup else "")
     _refresh()
+
+func _load_mantis_collection() -> void:
+    saved_mantises.clear()
+    for path in [MANTIS_COLLECTION_PATH, MANTIS_COLLECTION_BACKUP_PATH]:
+        if not FileAccess.file_exists(path):
+            continue
+        var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+        if not (parsed is Dictionary) or int(parsed.get("version", 0)) != 1:
+            continue
+        var records: Variant = parsed.get("mantises", [])
+        if records is Array:
+            for entry in records:
+                if entry is Dictionary and entry.get("state", null) is Dictionary and saved_mantises.size() < MAX_SAVED_MANTISES:
+                    saved_mantises.append(entry.duplicate(true))
+        break
+    _refresh_mantis_collection_picker()
+
+func _write_mantis_collection() -> bool:
+    if FileAccess.file_exists(MANTIS_COLLECTION_PATH):
+        var previous := FileAccess.get_file_as_string(MANTIS_COLLECTION_PATH)
+        var backup := FileAccess.open(MANTIS_COLLECTION_BACKUP_PATH, FileAccess.WRITE)
+        if backup != null:
+            backup.store_string(previous)
+            backup.close()
+    var file := FileAccess.open(MANTIS_COLLECTION_PATH, FileAccess.WRITE)
+    if file == null:
+        return false
+    file.store_string(JSON.stringify({"version": 1, "mantises": saved_mantises}))
+    file.close()
+    return true
+
+func _refresh_mantis_collection_picker(selected_index: int = -1) -> void:
+    if mantis_save_picker == null:
+        return
+    mantis_save_picker.clear()
+    for index in range(saved_mantises.size()):
+        var record := saved_mantises[index]
+        var state: Dictionary = record.get("state", {})
+        mantis_save_picker.add_item("%02d · %s · %s" % [index + 1, String(record.get("name", "사마귀")), String(state.get("life_stage", "성체"))])
+    if saved_mantises.is_empty():
+        return
+    var chosen := selected_index if selected_index >= 0 else mini(mantis_save_picker.selected, saved_mantises.size() - 1)
+    chosen = clampi(chosen, 0, saved_mantises.size() - 1)
+    mantis_save_picker.select(chosen)
+    _on_mantis_profile_selected(chosen)
+
+func _on_mantis_profile_selected(index: int) -> void:
+    if index < 0 or index >= saved_mantises.size() or mantis_name_input == null:
+        return
+    mantis_name_input.text = String(saved_mantises[index].get("name", ""))
+
+func _save_current_mantis_profile() -> void:
+    if current_species != "mantis":
+        notice.text = "사마귀 서식지에서 개체를 저장해 주세요."
+        return
+    if saved_mantises.size() >= MAX_SAVED_MANTISES:
+        notice.text = "저장 슬롯은 최대 24개입니다. 기존 슬롯을 갱신하거나 삭제해 주세요."
+        return
+    var profile_name := mantis_name_input.text.strip_edges() if mantis_name_input != null else ""
+    if profile_name.is_empty():
+        profile_name = "사마귀 %02d" % (saved_mantises.size() + 1)
+    saved_mantises.append({"id": str(Time.get_unix_time_from_system()), "name": profile_name, "state": _capture_mantis_state()})
+    if not _write_mantis_collection():
+        saved_mantises.pop_back()
+        notice.text = "개체 저장 실패: 보관함 파일을 열 수 없습니다."
+        return
+    _refresh_mantis_collection_picker(saved_mantises.size() - 1)
+    notice.text = "‘%s’ 개체를 보관함에 저장했습니다." % profile_name
+
+func _load_selected_mantis_profile() -> void:
+    if current_species != "mantis":
+        notice.text = "사마귀 서식지에서 개체를 불러와 주세요."
+        return
+    if mantis_save_picker == null or mantis_save_picker.selected < 0 or mantis_save_picker.selected >= saved_mantises.size():
+        notice.text = "먼저 불러올 개체를 선택해 주세요."
+        return
+    var profile: Dictionary = saved_mantises[mantis_save_picker.selected]
+    var state: Variant = profile.get("state", {})
+    if not (state is Dictionary):
+        notice.text = "개체 저장 데이터가 손상되었습니다."
+        return
+    _save_state(false)
+    var profile_state: Dictionary = state
+    _restore_mantis_state(profile_state, false)
+    notice.text = "‘%s’ 개체를 불러왔습니다." % String(profile.get("name", "사마귀"))
+
+func _update_selected_mantis_profile() -> void:
+    if mantis_save_picker == null or mantis_save_picker.selected < 0 or mantis_save_picker.selected >= saved_mantises.size():
+        notice.text = "먼저 갱신할 개체를 선택해 주세요."
+        return
+    var index := mantis_save_picker.selected
+    var previous: Dictionary = saved_mantises[index].duplicate(true)
+    var profile_name := mantis_name_input.text.strip_edges() if mantis_name_input != null else ""
+    if not profile_name.is_empty():
+        saved_mantises[index]["name"] = profile_name
+    saved_mantises[index]["state"] = _capture_mantis_state()
+    if not _write_mantis_collection():
+        saved_mantises[index] = previous
+        notice.text = "개체 갱신 실패: 보관함 파일을 열 수 없습니다."
+        return
+    _refresh_mantis_collection_picker(index)
+    notice.text = "선택한 개체의 정보를 갱신했습니다."
+
+func _delete_selected_mantis_profile() -> void:
+    if mantis_save_picker == null or mantis_save_picker.selected < 0 or mantis_save_picker.selected >= saved_mantises.size():
+        notice.text = "먼저 삭제할 개체를 선택해 주세요."
+        return
+    var index := mantis_save_picker.selected
+    var removed: Dictionary = saved_mantises[index]
+    saved_mantises.remove_at(index)
+    if not _write_mantis_collection():
+        saved_mantises.insert(index, removed)
+        notice.text = "개체 삭제 실패: 보관함 파일을 열 수 없습니다."
+        return
+    _refresh_mantis_collection_picker(mini(index, saved_mantises.size() - 1))
+    if saved_mantises.is_empty() and mantis_name_input != null:
+        mantis_name_input.clear()
+    notice.text = "선택한 개체를 보관함에서 삭제했습니다."
 
 func _notification(what: int) -> void:
     if what == NOTIFICATION_WM_CLOSE_REQUEST and animal != null:
@@ -2761,8 +2906,8 @@ func _animate_mantis(dt: float) -> void:
             var on_axis := climb_branch_start + axis * t_axis
             var outward := desired_world - on_axis
             if outward.length_squared() < 0.0001:
-                outward = Vector3.UP
-            desired_world = on_axis + outward.normalized() * 0.095
+                outward = Vector3.RIGHT
+            desired_world = on_axis + outward.normalized() * 0.20
         # The branch is the supporting surface; do not project climb targets
         # back onto the floor before calculating contact.
         var drift := foot_anchors[i].distance_to(desired_world)
