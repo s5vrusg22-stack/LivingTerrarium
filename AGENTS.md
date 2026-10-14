@@ -19,6 +19,19 @@ These instructions apply to every code, model, simulation, and APK task in this 
 
 The historical note that the recovered source was once tracked as “V7” describes provenance only. It does not authorize loading a separate V7 asset. The path and approved blob SHA above identify the source of truth.
 
+## Mandatory gate before any mantis modeling
+
+If a task asks to edit, remodel, recolor, rig, animate, resize, or otherwise change the mantis model:
+
+1. Start from a clean clone or clean worktree of this repository.
+2. Run `bash tools/start_mantis_model_edit.sh` before opening or editing any model. It fetches GitHub `origin/main`, verifies the approved Base1 Git blob and rejects legacy mantis assets, then creates a fresh branch directly from that exact main commit.
+3. Record the commit and blob SHA printed by the script. Work only on `assets/models/base1.glb` in that new branch. Never open an older branch, APK-extracted alternate, generated replacement, or similarly named GLB as the starting model.
+4. If the model is changed, run `python3 tools/finalize_model_change.py --summary 'specific description of the actual edits'`. Commit the generated `MODEL_CHANGE.json` with the model change.
+5. If the script reports any mismatch, stop. Do not search for a “closest” model or continue from another asset.
+
+For a task that does not explicitly request a model change, preserve the locked GLB bytes. A changed model without a matching lineage record fails CI.
+
+
 ## Never substitute another mantis
 
 Do not replace, rebuild from scratch, or silently switch the canonical model to:
