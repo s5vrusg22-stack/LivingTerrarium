@@ -20,6 +20,12 @@ func _verify_mantis_simulation() -> void:
     if model == null or not model.visible:
         _fail("The latest mantis GLB is missing or hidden")
         return
+    if app.get("follow_animal") != true or app.get("habitat_framing") != false:
+        _fail("Startup camera does not focus on the approved mantis")
+        return
+    if not is_equal_approx(float(app.get("orbit_distance")), 2.80):
+        _fail("Startup camera is too far away to inspect the mantis model")
+        return
     var left_wing := model.find_child("WingVeinDetail_Fine_L", true, false) as MeshInstance3D
     var right_wing := model.find_child("WingVeinDetail_Fine_R", true, false) as MeshInstance3D
     var left_eye := model.find_child("PhotoEyeFacet_L", true, false) as MeshInstance3D
