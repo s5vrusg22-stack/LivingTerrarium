@@ -12,12 +12,12 @@ These instructions apply to every code, model, simulation, and APK task in this 
 
 - Repository branch: `main`.
 - Approved baseline: `assets/models/base1.glb`.
-- Approved baseline Git blob SHA: `11f382981fb1afd2b0506a8ddee16b52a55c8259` (2,779,044 bytes).
-- This exact file is the approved model recovered byte-for-byte from the known-good v8.3 APK.
+- Current approved Base 1 Git blob SHA: `2337fea7502d59c3cad235412fecdf906a9b9dd1` (2,779,608 bytes).
+- This model is a documented geometry and walk-animation refinement of the V7 Base 1 source recovered from the known-good v8.3 APK. The runtime restores the V7 cuticle and wing palette. `MODEL_CHANGE.json` records the exact source commit and source/output blob hashes.
 - Runtime/imported root name: `Base1`. The app loads it through `scripts/main.gd` in the main scene.
 - The app release name is Base 1 / version 1.0.0. Do not change the model name, app version, or runtime asset path unless the user explicitly requests that change.
 
-The historical note that the recovered source was once tracked as “V7” describes provenance only. It does not authorize loading a separate V7 asset. The path and approved blob SHA above identify the source of truth.
+“V7” identifies the source model to develop. Continue editing the current GitHub `main` model at the canonical path above; do not load a separate, older, or replacement GLB.
 
 ## Mandatory gate before any mantis modeling
 

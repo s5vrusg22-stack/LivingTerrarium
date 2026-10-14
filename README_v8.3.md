@@ -3,17 +3,18 @@
 ## Canonical mantis model
 
 - The only mantis model shipped by the app is **Base 1** at `assets/models/base1.glb`.
-- Its binary is byte-for-byte identical to the approved model recovered from the known-good v8.3 APK: 2,779,044 bytes, Git blob SHA `11f382981fb1afd2b0506a8ddee16b52a55c8259`. The repository filename and Godot imported/runtime root are now named Base 1.
+- It is the refined continuation of the V7 model recovered from the known-good v8.3 APK: 2,779,608 bytes, Git blob SHA `2337fea7502d59c3cad235412fecdf906a9b9dd1`. `MODEL_CHANGE.json` records the exact input commit and blob, and the output blob. The repository filename and Godot imported/runtime root remain Base 1.
 - Godot import metadata sets `nodes/root_name="Base1"`; the running scene names the visible model node `Base1`.
 - Alternate mantis GLBs and the old V7 filename are absent from the current model directory. CI rejects any model set other than Base 1 and the separate blue crayfish asset.
 - The runtime check requires Base 1 to load, stay visible, and provide its imported animations.
 
 ## Recovery provenance
 
-The Base 1 geometry and animation source is the exact model that was tracked as
-V7 and recovered from the known-good v8.3 APK. The app's habitat scripts and
-simulation are the merged project on `main`; the model's byte identity is
-pinned so later edits cannot silently substitute a different mantis.
+The Base 1 geometry and animation source is the V7 model recovered from the
+known-good v8.3 APK. This revision extends that model with adjusted neck and
+foreleg proportions and no head rotation during walking. The runtime restores
+the V7 cuticle and wing colors under the brighter habitat lighting. Its lineage is recorded in `MODEL_CHANGE.json`; later edits
+must follow `AGENTS.md` and update the source and output checks together.
 
 ## Release and build checks
 
