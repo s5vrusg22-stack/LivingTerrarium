@@ -53,6 +53,23 @@ jobs:
           python-version: '3.12'
       - name: Check recovered v8.3 baseline
         run: python3 tests/check_v83_baseline.py
+      - name: Reject reintroduced obsolete mantis GLBs
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+            git fetch --no-tags --depth=2 origin "$HEAD_SHA"
+            BASE_SHA="$(git rev-parse "${HEAD_SHA}^" 2>/dev/null || true)"
+          fi
+          if [[ -z "$BASE_SHA" ]]; then
+            echo "No prior commit available; skipping legacy-model rollback check."
+            exit 0
+          fi
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          python3 tests/reject_legacy_mantis_rollback.py "$BASE_SHA" "$HEAD_SHA"
       - name: Import project
         shell: bash
         run: |
