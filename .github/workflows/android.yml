@@ -51,8 +51,8 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - name: Check recovered v8.3 baseline
-        run: python3 tests/check_v83_baseline.py
+      - name: Check v8.4 photo-refined model and project
+        run: python3 tests/check_v84_photo_model.py
       - name: Import project
         shell: bash
         run: |
@@ -69,15 +69,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build
-          godot --headless --path . --export-debug Android build/LivingTerrarium3D-v8.3-ARM64.apk
-          test -s build/LivingTerrarium3D-v8.3-ARM64.apk
-          sha256sum build/LivingTerrarium3D-v8.3-ARM64.apk > build/SHA256SUMS.txt
+          godot --headless --path . --export-debug Android build/LivingTerrarium3D-v8.4-ARM64.apk
+          test -s build/LivingTerrarium3D-v8.4-ARM64.apk
+          sha256sum build/LivingTerrarium3D-v8.4-ARM64.apk > build/SHA256SUMS.txt
       - name: Upload APK and checksum
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: LivingTerrarium3D-v8.3-ARM64-apk
+          name: LivingTerrarium3D-v8.4-ARM64-apk
           path: |
-            build/LivingTerrarium3D-v8.3-ARM64.apk
+            build/LivingTerrarium3D-v8.4-ARM64.apk
             build/SHA256SUMS.txt
           if-no-files-found: warn
