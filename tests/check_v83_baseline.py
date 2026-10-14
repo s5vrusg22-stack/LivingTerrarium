@@ -21,7 +21,7 @@ assert "mantis_latest.glb" not in main
 assert "mantis_latest.glb" not in workflow
 assert "refine_v83_mantis_glb.py" not in workflow
 mantis_models = sorted(path.name for path in (root / "assets/models").glob("mantis*.glb"))
-assert "mantis_v7_animated.glb" in mantis_models, mantis_models
+assert mantis_models == ["mantis_v7_animated.glb"], mantis_models
 
 for species_script in (
     "aquarium_system.gd",
