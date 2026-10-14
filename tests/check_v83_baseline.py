@@ -1,4 +1,4 @@
-"""Pin the exact mantis model from the known-good v8.3 APK."""
+"""Pin Base 1 (V7), the exact mantis model from the known-good v8.3 APK."""
 from hashlib import sha1
 from pathlib import Path
 
@@ -32,4 +32,4 @@ for species_script in (
 ):
     assert (root / "scripts" / species_script).is_file(), species_script
 
-print("v8.3 baseline passed: exact known-good V7 GLB, runtime references, Android version, and habitat scripts")
+print("Base 1 baseline passed: exact V7 GLB is the only mantis model, with runtime references, Android version, and habitat scripts")

@@ -31,7 +31,7 @@ func _capture_reference_views() -> void:
         quit(1)
         return
     if app.latest_mantis_visual == null or not app.latest_mantis_visual.visible:
-        push_error("The known-good v8.3 V7 GLB is not the visible model.")
+        push_error("Base 1 (V7) GLB is not the visible model.")
         quit(1)
         return
     var mesh_instances: Array = []
