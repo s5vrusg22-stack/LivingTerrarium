@@ -18,4 +18,4 @@
 
 Build `build/LivingTerrarium3D-v8.3-ARM64.apk` with Godot 4.3, Android export templates, and the Android SDK using `tools/build_android_apk.sh`.
 
-The Android workflow checks the pinned GLB identity and its startup visibility, checks the plant corridor and modeled blue crayfish, then exports an ARM64 APK. It uploads the APK and checksum as workflow artifacts.
+The Android workflow pins Base 1's exact GLB identity, verifies startup visibility and animation, checks the plant corridor and modeled blue crayfish, then exports an ARM64 APK. It inspects the exported APK to require Base 1 as the only packaged mantis scene. The APK and checksum are uploaded only after all checks pass.
