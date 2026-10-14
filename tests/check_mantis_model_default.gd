@@ -20,6 +20,11 @@ func _verify_mantis_simulation() -> void:
     if model == null or not model.visible:
         _fail("The latest mantis GLB is missing or hidden")
         return
+    var left_wing := model.find_child("DetailPack_Rig_Wing_L", true, false) as MeshInstance3D
+    var right_wing := model.find_child("DetailPack_Rig_Wing_R", true, false) as MeshInstance3D
+    if left_wing == null or right_wing == null:
+        _fail("The photo-refined model wing packs are missing")
+        return
     var clips: Dictionary = app.get("latest_mantis_clips")
     if clips.size() != 11 or not clips.has("FLY"):
         _fail("Expected the recovered canonical GLB animation set, including FLY")
@@ -57,8 +62,11 @@ func _verify_mantis_simulation() -> void:
     if buds == null or not buds.visible:
         _fail("Juvenile wing buds were not shown")
         return
+    if left_wing.visible or right_wing.visible:
+        _fail("Adult wing packs were not hidden for the first instar")
+        return
     app.call("_on_stage_selected", 6)
-    if str(app.get("life_stage")) != "성체" or buds.visible:
+    if str(app.get("life_stage")) != "성체" or buds.visible or not left_wing.visible or not right_wing.visible:
         _fail("Adult stage did not restore the adult wing state")
         return
 

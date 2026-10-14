@@ -2,7 +2,7 @@
 set -eu
 
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-output_path="$project_dir/build/LivingTerrarium3D-v8.3-ARM64.apk"
+output_path="$project_dir/build/LivingTerrarium3D-v8.4-ARM64.apk"
 install_after_build=0
 
 if [ "${1:-}" = "--install" ]; then
