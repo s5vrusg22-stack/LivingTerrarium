@@ -294,7 +294,9 @@ func _ready() -> void:
     _sync_prey()
     _cache_mantis_environment_roots()
     _set_species_mode(0, false)
-    _set_camera_preset(false)
+    # Start on the approved v8.3 mantis so its model details are visible.
+    # The habitat overview remains available from the management menu.
+    _set_camera_preset(true)
     _refresh()
 
 func _initialize_rigged_visual() -> void:
