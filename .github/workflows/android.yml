@@ -7,7 +7,27 @@ on:
     branches: [main]
 
 jobs:
+  model-baseline-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set model-check inputs
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
+          CHECKOUT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python3 tests/check_base1_baseline.py
+          python3 tests/check_model_lineage.py "$PR_BASE_SHA" "$CHECKOUT_SHA"
+
   build:
+    needs: model-baseline-guard
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
