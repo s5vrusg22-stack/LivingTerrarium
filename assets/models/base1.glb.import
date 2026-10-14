@@ -4,17 +4,17 @@ importer="scene"
 importer_version=1
 type="PackedScene"
 uid="uid://das6nxor8afpq"
-path="res://.godot/imported/mantis_v7_animated.glb-c7cbb0c2c1db63d7a5c2a164566434c0.scn"
+path="res://.godot/imported/base1.glb-c7cbb0c2c1db63d7a5c2a164566434c0.scn"
 
 [deps]
 
-source_file="res://assets/models/mantis_v7_animated.glb"
-dest_files=["res://.godot/imported/mantis_v7_animated.glb-c7cbb0c2c1db63d7a5c2a164566434c0.scn"]
+source_file="res://assets/models/base1.glb"
+dest_files=["res://.godot/imported/base1.glb-c7cbb0c2c1db63d7a5c2a164566434c0.scn"]
 
 [params]
 
 nodes/root_type=""
-nodes/root_name=""
+nodes/root_name="Base1"
 nodes/apply_root_scale=true
 nodes/root_scale=1.0
 nodes/import_as_skeleton_bones=false
