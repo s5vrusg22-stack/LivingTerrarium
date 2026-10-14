@@ -147,7 +147,7 @@ const FOOT_SWING_DURATION := 0.23
 
 # v2.4: imported skinned GLB is the visible model; the existing procedural
 # hierarchy remains an invisible motion/IK fallback and physics reference.
-const RIGGED_MANTIS_SCENE: PackedScene = preload("res://assets/models/base1.glb")
+const BASE1_RIGGED_SCENE: PackedScene = preload("res://assets/models/base1.glb")
 const BASE1_MANTIS_SCENE: PackedScene = preload("res://assets/models/base1.glb")
 const PHOTO_SIDE_CUTOUT: Texture2D = preload("res://assets/photo_cutouts/mantis_side_photo.png")
 const PHOTO_DORSAL_CUTOUT: Texture2D = preload("res://assets/photo_cutouts/mantis_dorsal_photo.png")
@@ -303,7 +303,7 @@ func _initialize_rigged_visual() -> void:
     # Keep procedural geometry available if GLB import or clip discovery fails.
     procedural_meshes.clear()
     _collect_procedural_meshes(animal)
-    var imported := RIGGED_MANTIS_SCENE.instantiate()
+    var imported := BASE1_RIGGED_SCENE.instantiate()
     if not imported is Node3D:
         rigged_import_warnings.append("GLB root is not Node3D")
         return
@@ -353,7 +353,7 @@ func _initialize_rigged_visual() -> void:
 func _initialize_base1_mantis_visual() -> void:
     var imported := BASE1_MANTIS_SCENE.instantiate()
     if not imported is Node3D:
-        rigged_import_warnings.append("Latest mantis GLB root is not Node3D")
+        rigged_import_warnings.append("Base 1 GLB root is not Node3D")
         return
     base1_mantis_visual = imported as Node3D
     base1_mantis_visual.name = "Base1"
@@ -364,7 +364,7 @@ func _initialize_base1_mantis_visual() -> void:
     _style_rigged_materials(base1_mantis_visual)
     base1_mantis_player = _find_rigged_player(base1_mantis_visual)
     if base1_mantis_player == null:
-        rigged_import_warnings.append("Latest mantis GLB has no AnimationPlayer")
+        rigged_import_warnings.append("Base 1 GLB has no AnimationPlayer")
         base1_mantis_visual.visible = false
         return
     for library_name in base1_mantis_player.get_animation_library_list():
@@ -381,7 +381,7 @@ func _initialize_base1_mantis_visual() -> void:
             if animation != null:
                 animation.loop_mode = Animation.LOOP_LINEAR if normalized in ["IDLE", "WALK", "ALERT", "GROOM", "FEED", "FLY"] else Animation.LOOP_NONE
     if base1_mantis_clips.is_empty():
-        rigged_import_warnings.append("Latest mantis GLB has no animation clips")
+        rigged_import_warnings.append("Base 1 GLB has no animation clips")
         base1_mantis_visual.visible = false
         return
     _apply_visual_mode()
@@ -579,7 +579,7 @@ func _toggle_visual_model() -> void:
     use_rigged_visual = false
     _apply_visual_mode()
     if notice != null:
-        notice.text = "최신 사마귀 3D 모델을 사용합니다."
+        notice.text = "Base 1 사마귀 모델을 사용합니다."
 
 func _play_base1_mantis_clip(clip: String) -> void:
     if base1_mantis_player == null or base1_mantis_clips.is_empty():
@@ -594,7 +594,7 @@ func _play_base1_mantis_clip(clip: String) -> void:
         return
     var animation_name: String = base1_mantis_clips[resolved]
     if not base1_mantis_player.has_animation(animation_name):
-        rigged_import_warnings.append("Missing latest mantis clip: " + animation_name)
+        rigged_import_warnings.append("Missing Base 1 clip: " + animation_name)
         return
     base1_mantis_player.play(animation_name, 0.18)
     base1_mantis_clip = resolved
@@ -1281,7 +1281,7 @@ func _create_ui() -> void:
         var selected_clip: String = clip
         _button(mantis_controls, "동작 시연: " + selected_clip, func(): _set_animation_preview(selected_clip))
     frontleg_animation_label = Label.new()
-    frontleg_animation_label.text = "앞다리 동작: 최신 모델 기본 포획 자세"
+    frontleg_animation_label.text = "앞다리 동작: Base 1 기본 포획 자세"
     mantis_controls.add_child(frontleg_animation_label)
     _button(mantis_controls, "앞다리 동작 재생 / 다시 시작", func(): _restart_frontleg_animation())
     _button(mantis_controls, "앞다리 동작 이전", func(): _step_frontleg_animation(-1))
@@ -1839,7 +1839,7 @@ func _create_reference_overlay() -> void:
     content.add_child(title)
 
     reference_photo_view = TextureRect.new()
-    reference_photo_view.name = "LatestUserMantisPhoto"
+    reference_photo_view.name = "UserMantisPhoto"
     reference_photo_view.texture = load("res://assets/reference/1000157363(3).jpg")
     reference_photo_view.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
     reference_photo_view.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -2657,17 +2657,17 @@ func _set_frontleg_animation(index: int) -> void:
         use_rigged_visual = false
         _apply_visual_mode()
         if frontleg_animation_label != null:
-            frontleg_animation_label.text = "앞다리 동작: 최신 모델 기본 포획 자세"
+            frontleg_animation_label.text = "앞다리 동작: Base 1 기본 포획 자세"
         return
     if not rigged_available or rigged_pose_driver == null:
-        notice.text = "최신 모델의 앞다리 리그를 불러오지 못했습니다."
+        notice.text = "Base 1 앞다리 리그를 불러오지 못했습니다."
         return
     selected_frontleg_animation = posmod(index, FRONT_LEG_VARIANT_COUNT)
     if use_base1_mantis_visual:
         use_base1_mantis_visual = false
         use_rigged_visual = true
         _apply_visual_mode()
-        notice.text = "최신 GLB에서 세부 앞다리 관절 시연을 재생합니다."
+        notice.text = "Base 1 GLB에서 세부 앞다리 관절 시연을 재생합니다."
     if rigged_pose_driver != null:
         rigged_pose_driver.play_front_leg_animation(selected_frontleg_animation)
         if frontleg_animation_label != null:

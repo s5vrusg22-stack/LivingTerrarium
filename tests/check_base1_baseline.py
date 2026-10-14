@@ -26,7 +26,7 @@ assert main.count('preload("res://assets/models/base1.glb")') == 2
 assert 'base1_mantis_visual.name = "Base1"' in main
 assert "mantis_v7_animated.glb" not in main
 assert "mantis_latest.glb" not in main
-assert "LatestMantis" not in main and "latest_mantis" not in main
+assert "Latest" not in main and "latest" not in main and "최신" not in main
 assert "mantis_v7_animated.glb" not in workflow
 assert "LivingTerrarium3D-Base1-v1.0.0-ARM64.apk" in workflow
 
