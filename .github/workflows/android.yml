@@ -76,6 +76,8 @@ jobs:
           python-version: '3.12'
       - name: Check Base 1 and project
         run: python3 tests/check_base1_baseline.py
+      - name: Check Base 1 refinement, instars, habitat, and saved individuals
+        run: python3 tests/check_base1_mantis_refinement.py
       - name: Import project
         shell: bash
         run: |

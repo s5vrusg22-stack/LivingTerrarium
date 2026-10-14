@@ -6,9 +6,9 @@ root = Path(__file__).resolve().parents[1]
 models = root / "assets/models"
 model = models / "base1.glb"
 data = model.read_bytes()
-approved_git_blob_sha = "11f382981fb1afd2b0506a8ddee16b52a55c8259"
+approved_git_blob_sha = "2337fea7502d59c3cad235412fecdf906a9b9dd1"
 git_blob_sha = sha1(b"blob " + str(len(data)).encode("ascii") + bytes([0]) + data).hexdigest()
-assert len(data) == 2_779_044, len(data)
+assert len(data) == 2_779_608, len(data)
 assert git_blob_sha == approved_git_blob_sha, git_blob_sha
 
 # Keep the agent instructions, human-facing provenance, executable model,
@@ -88,7 +88,7 @@ for runtime_guard in (
     )
 
 print(
-    "Base 1 source contract passed: exact v8.3-approved GLB bytes, matching agent and "
-    "human documentation, canonical runtime path, no legacy model substitution, "
-    "and CI/runtime guards."
+    "Base 1 source contract passed: exact approved V7-derived GLB bytes, recorded "
+    "model lineage, matching agent and human documentation, canonical runtime path, "
+    "no legacy model substitution, and CI/runtime guards."
 )

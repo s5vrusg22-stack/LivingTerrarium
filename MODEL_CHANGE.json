@@ -1,0 +1,7 @@
+{
+  "source_commit": "6761a629ed2645fc2f72f5beb09d68614e635bfc",
+  "source_path": "assets/models/base1.glb",
+  "source_git_blob_sha": "11f382981fb1afd2b0506a8ddee16b52a55c8259",
+  "output_git_blob_sha": "2337fea7502d59c3cad235412fecdf906a9b9dd1",
+  "change_summary": "Lengthen V7 neck and forelegs and remove walk head rotation; restore palette at runtime"
+}
