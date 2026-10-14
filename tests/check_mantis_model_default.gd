@@ -20,10 +20,12 @@ func _verify_mantis_simulation() -> void:
     if model == null or not model.visible:
         _fail("The latest mantis GLB is missing or hidden")
         return
-    var left_wing := model.find_child("DetailPack_Rig_Wing_L", true, false) as MeshInstance3D
-    var right_wing := model.find_child("DetailPack_Rig_Wing_R", true, false) as MeshInstance3D
-    if left_wing == null or right_wing == null:
-        _fail("The photo-refined model wing packs are missing")
+    var left_wing := model.find_child("WingVeinDetail_Fine_L", true, false) as MeshInstance3D
+    var right_wing := model.find_child("WingVeinDetail_Fine_R", true, false) as MeshInstance3D
+    var left_eye := model.find_child("PhotoEyeFacet_L", true, false) as MeshInstance3D
+    var right_eye := model.find_child("PhotoEyeFacet_R", true, false) as MeshInstance3D
+    if left_wing == null or right_wing == null or left_eye == null or right_eye == null:
+        _fail("The v8.3 photo-refinement details are missing")
         return
     var clips: Dictionary = app.get("latest_mantis_clips")
     if clips.size() != 11 or not clips.has("FLY"):

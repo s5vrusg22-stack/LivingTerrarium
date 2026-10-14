@@ -359,10 +359,7 @@ func _initialize_latest_mantis_visual() -> void:
     latest_mantis_visual.rotation = Vector3.ZERO
     latest_mantis_visual.scale = Vector3.ONE * LATEST_MANTIS_MODEL_SCALE
     animal.add_child(latest_mantis_visual)
-    # The photo-refined GLB has authored, per-part PBR materials. Keep those
-    # intact so its compound eyes, underside, wing membranes and cuticle retain
-    # their separate colors and finishes.
-    _style_rigged_materials(latest_mantis_visual, true)
+    _style_rigged_materials(latest_mantis_visual)
     latest_mantis_player = _find_rigged_player(latest_mantis_visual)
     if latest_mantis_player == null:
         rigged_import_warnings.append("Latest mantis GLB has no AnimationPlayer")
@@ -464,11 +461,14 @@ func _collect_procedural_meshes(root: Node) -> void:
             procedural_meshes.append(child as MeshInstance3D)
         _collect_procedural_meshes(child)
 
-func _style_rigged_materials(root: Node, preserve_imported_materials: bool = false) -> void:
+func _style_rigged_materials(root: Node) -> void:
     # Vertex colors retain each body part's olive palette. Triplanar cuticle
     # maps add pores and micro-relief; wing UV maps carry a separate vein net.
     for child in root.get_children():
-        if child is MeshInstance3D and not preserve_imported_materials:
+        var keep_photo_eye_material := false
+        if child is MeshInstance3D:
+            keep_photo_eye_material = (child as MeshInstance3D).name.begins_with("PhotoEyeFacet_")
+        if child is MeshInstance3D and not keep_photo_eye_material:
             var part := child as MeshInstance3D
             var mat := StandardMaterial3D.new()
             mat.vertex_color_use_as_albedo = true
@@ -517,7 +517,7 @@ func _style_rigged_materials(root: Node, preserve_imported_materials: bool = fal
                 mat.roughness_texture = load("res://assets/textures/mantis_cuticle_detail_roughness.png")
                 mat.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
             part.material_override = mat
-        _style_rigged_materials(child, preserve_imported_materials)
+        _style_rigged_materials(child)
 
 func _find_rigged_player(root: Node) -> AnimationPlayer:
     if root is AnimationPlayer:
@@ -1354,7 +1354,7 @@ func _apply_model_life_stage(model: Node3D, buds: Node3D, stage_index: int) -> v
     if model != null:
         for candidate in model.find_children("*", "MeshInstance3D", true, false):
             var part := candidate as MeshInstance3D
-            if part != null and (part.name.begins_with("Wing_") or part.name.begins_with("Hindwing_") or part.name.begins_with("WingVeinDetail_") or part.name.begins_with("DetailPack_Rig_Wing_")):
+            if part != null and (part.name.begins_with("Wing_") or part.name.begins_with("Hindwing_") or part.name.begins_with("WingVeinDetail_")):
                 part.visible = not is_juvenile
     if buds != null:
         buds.visible = is_juvenile

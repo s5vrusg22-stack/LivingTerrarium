@@ -1,29 +1,31 @@
 # Living Terrarium 3D
 
-The `main` branch baseline is **v8.4.0**. It includes the mantis terrarium
-and six selectable habitats: tropical fish aquarium, crayfish habitat,
-butterfly greenhouse, land hermit crab tank, and stream valley salamander
-habitat.
+The app remains on the **v8.3.0** simulation baseline and has one canonical
+mantis model: `assets/models/mantis_latest.glb`. The photo refinement starts
+from that exact GitHub model, whose Git blob is
+`4536831ef5925acd706a9f607f30d31043e4173c` at commit `1bdf2ee`.
 
-The app's canonical mantis model is `assets/models/mantis_latest.glb`. The
-v8.4 model is a detailed, hand-authored interpretation of the supplied front,
-side, dorsal, and rear photos. Its 62-joint rig and 11 animation clips remain
-compatible with the simulation. The 4,782,804-byte GLB contains 85 mesh packs
-and preserves distinct cuticle, eye, underside, spine, and wing materials. The
-editable Blender source is `tools/blender_source/mantis_photo_refined.blend.gz`
-(Blender opens the compressed project directly), and its Blender generator is
-`tools/generate_mantis_photo_refined_blender.py`. Android imports the committed
-GLB as-is; it does not regenerate or replace the model. The baseline test pins
-the model's Git object ID (`89e011d132e9e2d5c0c0fc456336481dbbf5296a`) and
-checks the rig, clips, body structures, editable source, and app integration.
+The refinement adds fine compound-eye facets and cross-veins to the existing
+forewings. It preserves the original 62-joint rig, 11 animation clips, meshes,
+and materials. The generator reads the pinned v8.3 model directly from Git
+history and refuses a different source:
 
-Build the Android ARM64 APK with `tools/build_android_apk.sh` and Godot 4.3,
-Android export templates, and the Android SDK. Run
-`python3 tests/check_v84_photo_model.py` and the habitat integration checks
-listed in `.github/workflows/android.yml`.
+```sh
+python3 tools/refine_v83_mantis_glb.py
+python3 tests/check_v83_baseline.py
+```
 
-Historical habitat notes are retained in `README_v2.9.md`,
-`README_v3.0.md`, `README_v3.8.md`, `README_v3.9.md`, `README_v4.0.md`,
-`README_v4.1.md`, `README_v4.3.md`, `README_v4.5.md`, `README_v4.6.md`,
-`README_v4.8.md`, `README_v5.0.md`, `README_v5.2.md`, `README_v8.1.md`,
-`README_v8.3.md`, and `README_v8.4.md`.
+Only `assets/models/mantis_latest.glb` is used by the simulation. Obsolete
+mantis model variants and the separate Blender model from the mistaken 8.4
+change are removed and rejected by the baseline check. The Android build
+imports the committed canonical model and produces
+`build/LivingTerrarium3D-v8.3-ARM64.apk`.
+
+The GitHub Actions workflow regenerates the model from the pinned v8.3 source,
+checks that the committed file matches, imports the Godot project, verifies the
+habitats and canonical mantis, and exports the Android ARM64 APK.
+
+Historical habitat notes are retained in `README_v2.9.md`, `README_v3.0.md`,
+`README_v3.8.md`, `README_v3.9.md`, `README_v4.0.md`, `README_v4.1.md`,
+`README_v4.3.md`, `README_v4.5.md`, `README_v4.6.md`, `README_v4.8.md`,
+`README_v5.0.md`, `README_v5.2.md`, `README_v8.1.md`, and `README_v8.3.md`.
