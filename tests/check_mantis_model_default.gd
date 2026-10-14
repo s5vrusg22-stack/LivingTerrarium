@@ -22,15 +22,22 @@ func _verify_mantis_simulation() -> void:
         return
     var left_wing := model.find_child("WingVeinDetail_Fine_L", true, false) as MeshInstance3D
     var right_wing := model.find_child("WingVeinDetail_Fine_R", true, false) as MeshInstance3D
-    var left_eye := model.find_child("PhotoEyeFacet_L", true, false) as MeshInstance3D
-    var right_eye := model.find_child("PhotoEyeFacet_R", true, false) as MeshInstance3D
-    if left_wing == null or right_wing == null or left_eye == null or right_eye == null:
-        _fail("The v8.3 photo-refinement details are missing")
+    var head := model.find_child("Head", true, false) as MeshInstance3D
+    if left_wing == null or right_wing == null or head == null or head.mesh == null:
+        _fail("The v8.3 APK mantis or its added wing-vein details are missing")
+        return
+    if head.mesh.get_surface_count() < 8:
+        _fail("The model's authored face and compound-eye material surfaces were lost")
         return
     var clips: Dictionary = app.get("latest_mantis_clips")
-    if clips.size() != 11 or not clips.has("FLY"):
-        _fail("Expected the recovered canonical GLB animation set, including FLY")
+    var expected_clips := ["IDLE", "WALK", "ALERT", "STRIKE", "GROOM", "FEED"]
+    if clips.size() != expected_clips.size():
+        _fail("The model must retain the six animation clips from the successful v8.3 APK")
         return
+    for clip in expected_clips:
+        if not clips.has(clip):
+            _fail("Missing v8.3 APK animation clip: " + clip)
+            return
     if app.get("use_photo_visual") != false:
         _fail("A photo cutout was selected instead of the canonical GLB")
         return
@@ -74,7 +81,7 @@ func _verify_mantis_simulation() -> void:
 
     app.call("_command_mantis", "FLAP")
     if str(app.get("animation_preview")) != "FLY":
-        _fail("Wing flapping did not select the imported FLY animation")
+        _fail("The flight pose preview did not start")
         return
     app.call("_end_mantis_action")
     app.call("_command_mantis", "FLY")
@@ -121,7 +128,7 @@ func _verify_mantis_simulation() -> void:
             _fail("Obsolete procedural model switch is still exposed")
             return
 
-    print("Mantis simulation check passed: latest GLB, six instars, flight and social behavior, and free camera")
+    print("Mantis simulation check passed: v8.3 APK model, six original clips, wing details, six instars, and behavior")
     quit()
 
 func _fail(message: String) -> void:

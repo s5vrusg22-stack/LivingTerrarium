@@ -2,11 +2,18 @@
 
 ## Canonical mantis model
 
-- The app uses only `assets/models/mantis_latest.glb` as its canonical mantis model.
-- This is the recovered, previously approved 4,280,964-byte GLB with 62 joints, 225 meshes, and 11 animation clips. Its Git object ID is `4536831ef5925acd706a9f607f30d31043e4173c`.
-- The Android workflow imports this exact binary. It no longer runs a Blender model generator or commits regenerated model files.
-- The obsolete `mantis_detailed.glb` and `mantis_v7_animated.glb` assets, their import sidecars, and their preview scenes have been removed.
-- Procedural meshes and photo cutouts are disabled as visible mantis alternatives. The runtime check requires the canonical GLB to load and remain visible.
+- The runtime uses only `assets/models/mantis_latest.glb`.
+- It starts from the mantis model selected by the successful v8.3 APK: the
+  `mantis_v7_animated.glb` source at Git commit `bb32cf5`, blob
+  `11f382981fb1afd2b0506a8ddee16b52a55c8259`.
+- The refinement adds 14 raised cross-veins on each forewing. It preserves the
+  source body meshes, head and compound-eye facets, authored materials, and all
+  six source animation clips byte-for-byte.
+- Other model variants and the mistaken from-scratch v8.4 model are removed
+  from the exported project. The generator rejects any source blob other than
+  the one pinned above.
+- Procedural meshes and photo cutouts stay hidden as mantis alternatives. The
+  runtime check verifies that the canonical GLB is selected and visible.
 
 ## Recovery record
 
