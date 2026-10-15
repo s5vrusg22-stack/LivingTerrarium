@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-EXPECTED_MODEL_BLOB_SHA="98981e073f8a4fffb00efb71e669f6232c45b08d"
+EXPECTED_MODEL_BLOB_SHA="17b3b5f96e5413595d9cc5a41fa33de78d525fbc"
 MODEL_PATH="assets/models/base1.glb"
 REPOSITORY_SUFFIX="s5vrusg22-stack/LivingTerrarium"
 

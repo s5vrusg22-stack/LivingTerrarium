@@ -1,4 +1,4 @@
-"""Guard Base 1's approved scene, improved proportions, and new save/life-stage behavior."""
+"""Guard Base 1's anatomy, wing surfaces/materials, scene, and life-stage behavior."""
 import json
 import struct
 from pathlib import Path
@@ -24,6 +24,21 @@ bin_header = 20 + json_length
 bin_length, bin_kind = struct.unpack_from("<II", model, bin_header)
 assert bin_kind == 0x004E4942
 binary = model[bin_header + 8 : bin_header + 8 + bin_length]
+assert doc["buffers"][0]["byteLength"] <= len(binary)
+assert len(binary) - doc["buffers"][0]["byteLength"] <= 3
+component_sizes = {5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4}
+component_widths = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MAT2": 4, "MAT3": 9, "MAT4": 16}
+for view in doc["bufferViews"]:
+    start = view.get("byteOffset", 0)
+    assert view["buffer"] == 0 and start + view["byteLength"] <= len(binary)
+for accessor in doc["accessors"]:
+    if "bufferView" not in accessor:
+        continue
+    view = doc["bufferViews"][accessor["bufferView"]]
+    item = component_sizes[accessor["componentType"]] * component_widths[accessor["type"]]
+    stride = view.get("byteStride", item)
+    end = view.get("byteOffset", 0) + accessor.get("byteOffset", 0) + (accessor["count"] - 1) * stride + item
+    assert end <= view.get("byteOffset", 0) + view["byteLength"]
 def accessor_values(accessor_index):
     accessor = doc["accessors"][accessor_index]
     view = doc["bufferViews"][accessor["bufferView"]]
@@ -50,6 +65,35 @@ abdomen_z = [point[2] for point in abdomen_points]
 assert max(abdomen_x) - min(abdomen_x) < 0.70
 assert max(abdomen_y) - min(abdomen_y) < 0.50
 assert max(abdomen_z) - min(abdomen_z) > 2.45
+abdomen = doc["meshes"][node_by_name["Abdomen"]["mesh"]]["primitives"][0]
+abdomen_vertices = accessor_values(abdomen["attributes"]["POSITION"])
+abdomen_colors = accessor_values(abdomen["attributes"]["COLOR_0"])
+assert len(abdomen_vertices) > 3000  # subdivided from the existing Base 1 shell for soft segment grooves
+abdomen_sections = {}
+for point, color in zip(abdomen_vertices, abdomen_colors):
+    z = round(point[2], 4)
+    row = abdomen_sections.setdefault(z, [[], []])
+    center_y = 0.84 - 0.012 * min(max(point[2], 0.0), 2.0)
+    row[0].append((point[0] ** 2 + (point[1] - center_y) ** 2) ** 0.5)
+    row[1].append(sum(color[:3]) / 3.0)
+abdomen_rows = sorted(abdomen_sections)
+segment_grooves = 0
+for z in (0.3920, 0.6272, 0.8624, 1.0976, 1.3328, 1.5680, 1.8032):
+    key = min(abdomen_rows, key=lambda value: abs(value - z))
+    i = abdomen_rows.index(key)
+    radius = sum(abdomen_sections[key][0]) / len(abdomen_sections[key][0])
+    color = sum(abdomen_sections[key][1]) / len(abdomen_sections[key][1])
+    adjacent_radius = (
+        sum(abdomen_sections[abdomen_rows[i - 1]][0]) / len(abdomen_sections[abdomen_rows[i - 1]][0])
+        + sum(abdomen_sections[abdomen_rows[i + 1]][0]) / len(abdomen_sections[abdomen_rows[i + 1]][0])
+    ) / 2.0
+    adjacent_color = (
+        sum(abdomen_sections[abdomen_rows[i - 1]][1]) / len(abdomen_sections[abdomen_rows[i - 1]][1])
+        + sum(abdomen_sections[abdomen_rows[i + 1]][1]) / len(abdomen_sections[abdomen_rows[i + 1]][1])
+    ) / 2.0
+    if radius < adjacent_radius * 0.98 and color < adjacent_color * 0.95:
+        segment_grooves += 1
+assert segment_grooves >= 6, segment_grooves
 for side in ("L", "R"):
     coxa_y = [point[1] for point in primitive_positions(f"Raptor_{side}_Coxa")]
     assert max(coxa_y) > 0.78
@@ -76,29 +120,64 @@ for clip in ("IDLE", "WALK", "ALERT", "STRIKE", "GROOM", "FEED"):
 
 images = doc.get("images", [])
 textures = doc.get("textures", [])
-assert len(images) == 2 and len(textures) == 2
+assert len(images) == 4 and len(textures) == 4
 for image in images:
     assert image["mimeType"] == "image/png"
     view = doc["bufferViews"][image["bufferView"]]
     start = view.get("byteOffset", 0)
     assert binary[start:start + 8] == b"\x89PNG\r\n\x1a\n"
+    assert struct.unpack_from(">II", binary, start + 16) == (1024, 2048)
+assert [image["name"] for image in images] == [
+    "Base1_Forewing_Albedo", "Base1_Hindwing_Albedo",
+    "Base1_Forewing_Normal", "Base1_Hindwing_Normal",
+]
 for side in ("L", "R"):
     wing_mesh = doc["meshes"][node_by_name[f"Wing_{side}"]["mesh"]]
-    assert "TEXCOORD_0" in wing_mesh["primitives"][0]["attributes"]
-    assert "TEXCOORD_0" in wing_mesh["primitives"][2]["attributes"]
+    assert len(wing_mesh["primitives"]) == 2  # discard the overlapping dark triangle-strip veins
+    fore_positions = accessor_values(wing_mesh["primitives"][0]["attributes"]["POSITION"])
+    hind_positions = accessor_values(wing_mesh["primitives"][1]["attributes"]["POSITION"])
+    for primitive in wing_mesh["primitives"]:
+        attributes = primitive["attributes"]
+        assert {"POSITION", "NORMAL", "TEXCOORD_0", "COLOR_0"} <= set(attributes)
+        positions = accessor_values(attributes["POSITION"])
+        normals = accessor_values(attributes["NORMAL"])
+        assert len(positions) == len(normals) == 31 * 91
+        assert all(abs(sum(component*component for component in normal) - 1.0) < 0.015 for normal in normals)
+        indices = accessor_values(primitive["indices"])
+        assert doc["accessors"][primitive["indices"]]["componentType"] in (5121, 5123, 5125)
+        assert len(indices) % 3 == 0 and max(index[0] for index in indices) < len(positions)
+    assert len(fore_positions) == len(hind_positions)
+    assert all(fore_positions[i][1] > hind_positions[i][1] + 0.02 for i in range(len(fore_positions)))
+    if side == "L":
+        assert max(point[0] for point in fore_positions) < 0.0
+    else:
+        assert min(point[0] for point in fore_positions) > 0.0
+    assert max(abs(point[0]) for point in hind_positions) > max(abs(point[0]) for point in fore_positions) + 0.03
 
-materials = {material["name"]: material["pbrMetallicRoughness"] for material in doc["materials"]}
-assert materials["cuticle"]["baseColorFactor"] == [0.31, 0.49, 0.22, 1.0]
-assert materials["cuticle"]["roughnessFactor"] >= 0.58
-assert materials["wing"]["baseColorFactor"] == [0.56, 0.75, 0.37, 1.0]
-assert materials["wing"]["baseColorTexture"]["index"] != materials["hindwing"]["baseColorTexture"]["index"]
-assert materials["hindwing"]["baseColorFactor"] == [0.72, 0.78, 0.48, 1.0]
+materials = {material["name"]: material for material in doc["materials"]}
+assert materials["cuticle"]["pbrMetallicRoughness"]["baseColorFactor"] == [0.31, 0.49, 0.22, 1.0]
+assert materials["cuticle"]["pbrMetallicRoughness"]["roughnessFactor"] == 0.43
+fore = materials["wing"]
+hind = materials["hindwing"]
+assert fore["alphaMode"] == hind["alphaMode"] == "BLEND"
+assert fore["doubleSided"] and hind["doubleSided"]
+assert fore["pbrMetallicRoughness"]["baseColorFactor"] == [1.0, 1.0, 1.0, 0.94]
+assert hind["pbrMetallicRoughness"]["baseColorFactor"] == [1.0, 1.0, 1.0, 0.66]
+assert fore["pbrMetallicRoughness"]["roughnessFactor"] == 0.36
+assert hind["pbrMetallicRoughness"]["roughnessFactor"] == 0.43
+assert fore["pbrMetallicRoughness"]["metallicFactor"] == 0.025
+assert fore["pbrMetallicRoughness"]["baseColorTexture"]["index"] != hind["pbrMetallicRoughness"]["baseColorTexture"]["index"]
+assert fore["normalTexture"]["index"] != hind["normalTexture"]["index"]
+assert fore["normalTexture"]["scale"] > 0.0 and hind["normalTexture"]["scale"] > 0.0
+assert all(sampler.get("minFilter") == 9987 for sampler in doc["samplers"])
 
 # Preserve the authored material palette and avoid high-frequency overlays on the imported model.
 style = main.split("func _style_rigged_materials", 1)[1].split("func _find_rigged_player", 1)[0]
 assert "part.material_override = null" in style
 assert "part.set_surface_override_material(surface_index, mat)" in style
 assert "mat.detail_enabled = true" not in style
+assert "mat.roughness = minf(mat.roughness, 0.46)" in style
+assert "mat.roughness = minf(mat.roughness, 0.48)" in style
 assert 'mat.albedo_color = Color(0.39, 0.66, 0.22)' not in style
 assert 'mat.albedo_color = Color(0.52, 0.73, 0.31)' not in style
 assert "Color(0.43, 0.54, 0.26)" not in style
@@ -119,7 +198,8 @@ assert 'mat.albedo_color = Color(0.82, 0.67, 0.48)' in main
 assert 'env.ambient_light_energy = 0.38' in main
 assert 'sun.light_energy = 0.68' in main
 assert 'leaf_material.normal_scale = 0.10' in main
-assert 'sun.shadow_opacity = 0.56' in main
+assert 'sun.shadow_opacity = 0.48' in main
+assert 'sun.shadow_blur = 1.2' in main
 assert 'mipmaps/generate=true' in (root / "assets/textures/foliage_albedo.png.import").read_text()
 assert 'mipmaps/generate=true' in (root / "assets/textures/foliage_normal.png.import").read_text()
 
