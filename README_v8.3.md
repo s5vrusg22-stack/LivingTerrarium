@@ -3,7 +3,7 @@
 ## Canonical mantis model
 
 - The only mantis model shipped by the app is **Base 1** at `assets/models/base1.glb`.
-- It is the refined continuation of the V7 model recovered from the known-good v8.3 APK: 6,853,796 bytes, Git blob SHA `17b3b5f96e5413595d9cc5a41fa33de78d525fbc`. `MODEL_CHANGE.json` records the exact input commit/blob and output blob. This revision keeps the original 38-node Base 1 hierarchy and six clips, shapes distinct curved forewing and hindwing surfaces, replaces dark triangle-strip veins with fine low-contrast color and relief detail, adds slight membrane translucency and chitin highlights, and gives the abdomen shallow segmented plates.
+- It is the refined continuation of the V7 model recovered from the known-good v8.3 APK: 6,853,672 bytes, Git blob SHA `e343a9c42eecdfc927881bdded31fd692c17d90e`. `MODEL_CHANGE.json` records the exact input commit/blob and output blob. This revision keeps the original 38-node Base 1 hierarchy and six clips, shapes distinct curved forewing and hindwing surfaces, replaces dark triangle-strip veins with fine low-contrast color and relief detail, adds slight membrane translucency and chitin highlights, gives the abdomen shallow segmented plates, points both raptorial spine rows inward, and removes collapsed triangles that produced invalid LOD normals.
 - Godot import metadata sets `nodes/root_name="Base1"`; the running scene names the visible model node `Base1`.
 - Alternate mantis GLBs and the old V7 filename are absent from the current model directory. CI rejects any model set other than Base 1 and the separate blue crayfish asset.
 - The runtime check requires Base 1 to load, stay visible, and provide its imported animations.

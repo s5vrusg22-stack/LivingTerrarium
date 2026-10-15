@@ -1,7 +1,7 @@
 {
-  "source_commit": "91230ff28b494721bc83541040058373a1045662",
+  "source_commit": "3cf9856f8e48954c312cce7c8ce86ecdf5c15aa8",
   "source_path": "assets/models/base1.glb",
-  "source_git_blob_sha": "8b8857974afe912204b649f0a6ebe5293fca2660",
-  "output_git_blob_sha": "17b3b5f96e5413595d9cc5a41fa33de78d525fbc",
-  "change_summary": "Separate Base1 wing shells with fine venation and relief; add translucent hindwings, softer chitin gloss, and shallow abdominal segmentation."
+  "source_git_blob_sha": "17b3b5f96e5413595d9cc5a41fa33de78d525fbc",
+  "output_git_blob_sha": "e343a9c42eecdfc927881bdded31fd692c17d90e",
+  "change_summary": "Turn left femoral grasping spines inward in model space and remove collapsed Base1 triangles to clean LOD import."
 }

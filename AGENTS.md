@@ -12,7 +12,7 @@ These instructions apply to every code, model, simulation, and APK task in this 
 
 - Repository branch: `main`.
 - Approved baseline: `assets/models/base1.glb`.
-- Current approved Base 1 Git blob SHA: `17b3b5f96e5413595d9cc5a41fa33de78d525fbc` (6,853,796 bytes).
+- Current approved Base 1 Git blob SHA: `e343a9c42eecdfc927881bdded31fd692c17d90e` (6,853,672 bytes).
 - This model continues the V7 Base 1 source recovered from the known-good v8.3 APK. It keeps the same 38-node model, root, and six animation clips; the current revision builds separated, curved forewing/hindwing shells, fine low-contrast wing venation and relief maps, and shallow segmented abdomen plates while refining the original Base 1 mesh. `MODEL_CHANGE.json` records the exact input commit/blob and output blob hashes.
 - Runtime/imported root name: `Base1`. The app loads it through `scripts/main.gd` in the main scene.
 - The app release name is Base 1 / version 1.0.0. Do not change the model name, app version, or runtime asset path unless the user explicitly requests that change.

@@ -109,15 +109,22 @@ func _verify_mantis_simulation() -> void:
         if femur == null or femur.mesh == null or femur.mesh.get_surface_count() < 4:
             _fail("A raptorial femur with inward spines is missing")
             return
+        var femur_center := _surface_center_in_model(model, femur, 0)
+        var inward_sign := 1.0 if side == "L" else -1.0
         for surface_index in [2, 3]:
-            var femur_vertices: PackedVector3Array = femur.mesh.surface_get_arrays(surface_index)[Mesh.ARRAY_VERTEX]
-            var mean_x := 0.0
-            for vertex in femur_vertices:
-                mean_x += vertex.x
-            mean_x /= maxf(float(femur_vertices.size()), 1.0)
-            if (side == "L" and mean_x <= 0.0) or (side == "R" and mean_x >= 0.0):
-                _fail("%s femur spines point outward instead of toward the center" % side)
+            var spine_center := _surface_center_in_model(model, femur, surface_index)
+            if inward_sign * (spine_center.x - femur_center.x) <= 0.01:
+                _fail("%s femur spines point outward instead of toward the body" % side)
                 return
+        var tibia := model.find_child("Raptor_%s_Tibia" % side, true, false) as MeshInstance3D
+        if tibia == null or tibia.mesh == null or tibia.mesh.get_surface_count() < 3:
+            _fail("A toothed raptorial tibia is missing")
+            return
+        var tibia_center := _surface_center_in_model(model, tibia, 0)
+        var teeth_center := _surface_center_in_model(model, tibia, 2)
+        if inward_sign * (teeth_center.x - tibia_center.x) <= 0.01:
+            _fail("%s tibial teeth point outward instead of toward the femur" % side)
+            return
 
     var stage_picker := app.get("stage_picker") as OptionButton
     if stage_picker == null or stage_picker.item_count != 7:
@@ -245,6 +252,15 @@ func _verify_mantis_simulation() -> void:
 
     print("Mantis simulation check passed: Base 1 GLB, six instars, flight and social behavior, and free camera")
     quit()
+
+func _surface_center_in_model(model: Node3D, part: MeshInstance3D, surface_index: int) -> Vector3:
+    var arrays: Array = part.mesh.surface_get_arrays(surface_index)
+    var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+    var local_center := Vector3.ZERO
+    for vertex in vertices:
+        local_center += vertex
+    local_center /= maxf(float(vertices.size()), 1.0)
+    return model.to_local(part.to_global(local_center))
 
 func _fail(message: String) -> void:
     push_error(message)

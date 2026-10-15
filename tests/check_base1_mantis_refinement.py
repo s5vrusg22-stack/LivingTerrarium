@@ -1,5 +1,6 @@
 """Guard Base 1's anatomy, wing surfaces/materials, scene, and life-stage behavior."""
 import json
+import math
 import struct
 from pathlib import Path
 
@@ -53,6 +54,59 @@ def accessor_values(accessor_index):
 def primitive_positions(node_name, primitive_index=0):
     mesh = doc["meshes"][node_by_name[node_name]["mesh"]]
     return accessor_values(mesh["primitives"][primitive_index]["attributes"]["POSITION"])
+parent_by_node = {child: index for index, node in enumerate(doc["nodes"]) for child in node.get("children", [])}
+world_cache = {}
+def multiply_matrices(a, b):
+    return [[sum(a[row][k] * b[k][column] for k in range(4)) for column in range(4)] for row in range(4)]
+def local_matrix(index):
+    node = doc["nodes"][index]
+    if "matrix" in node:
+        values = node["matrix"]
+        return [[values[column * 4 + row] for column in range(4)] for row in range(4)]
+    x, y, z, w = node.get("rotation", (0.0, 0.0, 0.0, 1.0))
+    rotation = (
+        (1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)),
+        (2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)),
+        (2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)),
+    )
+    scale = node.get("scale", (1.0, 1.0, 1.0))
+    translation = node.get("translation", (0.0, 0.0, 0.0))
+    return [[rotation[row][column] * scale[column] for column in range(3)] + [translation[row]] for row in range(3)] + [[0.0, 0.0, 0.0, 1.0]]
+def world_matrix(index):
+    if index not in world_cache:
+        local = local_matrix(index)
+        parent = parent_by_node.get(index)
+        world_cache[index] = multiply_matrices(world_matrix(parent), local) if parent is not None else local
+    return world_cache[index]
+def transformed_point(matrix, point):
+    values = (*point, 1.0)
+    return tuple(sum(matrix[row][column] * values[column] for column in range(4)) for row in range(3))
+def mean_point(points):
+    return tuple(sum(point[axis] for point in points) / len(points) for axis in range(3))
+
+# Keep zero-area faces out of the canonical model. These collapsed triangles
+# can produce invalid normals during Godot LOD generation and flickering seams.
+for mesh_index, mesh in enumerate(doc["meshes"]):
+    mesh_nodes = [node.get("name", "") for node in doc["nodes"] if node.get("mesh") == mesh_index]
+    for primitive_index, primitive in enumerate(mesh.get("primitives", [])):
+        if primitive.get("mode", 4) != 4 or "indices" not in primitive:
+            continue
+        positions = accessor_values(primitive["attributes"]["POSITION"])
+        indices = [row[0] for row in accessor_values(primitive["indices"])]
+        assert len(indices) % 3 == 0
+        for start in range(0, len(indices), 3):
+            a, b, c = (positions[indices[start + offset]] for offset in range(3))
+            ab = tuple(b[axis] - a[axis] for axis in range(3))
+            ac = tuple(c[axis] - a[axis] for axis in range(3))
+            cross = (
+                ab[1] * ac[2] - ab[2] * ac[1],
+                ab[2] * ac[0] - ab[0] * ac[2],
+                ab[0] * ac[1] - ab[1] * ac[0],
+            )
+            assert all(math.isfinite(value) for value in cross)
+            area_squared = sum(value * value for value in cross)
+            assert area_squared > 1e-20, (mesh_nodes, primitive_index, start // 3)
+
 pronotum_points = primitive_positions("Pronotum")
 pronotum_z = [point[2] for point in pronotum_points]
 assert min(pronotum_z) < -1.56, min(pronotum_z)
@@ -99,11 +153,21 @@ for side in ("L", "R"):
     assert max(coxa_y) > 0.78
     femur_y = node_by_name[f"Raptor_{side}_Femur"]["translation"][1]
     assert femur_y > 0.78
-    femur_mesh = doc["meshes"][node_by_name[f"Raptor_{side}_Femur"]["mesh"]]
-    expected_sign = 1 if side == "L" else -1
-    for primitive in femur_mesh["primitives"][2:4]:
-        xs = [point[0] for point in accessor_values(primitive["attributes"]["POSITION"])]
-        assert expected_sign * sum(xs) / len(xs) > 0.07, (side, min(xs), max(xs))
+    femur_name = f"Raptor_{side}_Femur"
+    femur_index = next(index for index, node in enumerate(doc["nodes"]) if node.get("name") == femur_name)
+    femur_world = world_matrix(femur_index)
+    femur_center = transformed_point(femur_world, mean_point(primitive_positions(femur_name, 0)))
+    inward_sign = 1 if side == "L" else -1
+    for primitive_index in (2, 3):
+        spine_center = transformed_point(femur_world, mean_point(primitive_positions(femur_name, primitive_index)))
+        inward_delta = spine_center[0] - femur_center[0]
+        assert inward_sign * inward_delta > 0.01, (side, primitive_index, inward_delta)
+    tibia_name = f"Raptor_{side}_Tibia"
+    tibia_index = next(index for index, node in enumerate(doc["nodes"]) if node.get("name") == tibia_name)
+    tibia_world = world_matrix(tibia_index)
+    tibia_center = transformed_point(tibia_world, mean_point(primitive_positions(tibia_name, 0)))
+    teeth_center = transformed_point(tibia_world, mean_point(primitive_positions(tibia_name, 2)))
+    assert inward_sign * (teeth_center[0] - tibia_center[0]) > 0.01, (side, "tibial teeth")
     assert node_by_name[f"Raptor_{side}_Coxa"]["translation"][2] <= -0.48
 
 animation_by_name = {animation["name"].upper(): animation for animation in doc["animations"]}
@@ -214,4 +278,4 @@ for function_name in (
     assert f"func {function_name}" in main
 assert '"mantises": saved_mantises' in main
 
-print("Base 1 refinement check passed: existing rig/clips retained, abdomen and neck proportions refined, forelegs moved/extended, head yaw enabled, wing gradients/textures embedded, six instars and multi-mantis saves verified.")
+print("Base 1 refinement check passed: inward raptorial teeth, clean triangles, existing rig/clips, photo proportions, detailed wings and abdomen, and six instars verified.")
