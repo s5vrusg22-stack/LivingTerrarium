@@ -1,7 +1,7 @@
 {
-  "source_commit": "38504d68d50b6934e05191dfe9759e96076357aa",
+  "source_commit": "91230ff28b494721bc83541040058373a1045662",
   "source_path": "assets/models/base1.glb",
-  "source_git_blob_sha": "98981e073f8a4fffb00efb71e669f6232c45b08d",
-  "output_git_blob_sha": "8b8857974afe912204b649f0a6ebe5293fca2660",
-  "change_summary": "Slim and lengthen the abdomen, taper the neck, pivot the head at the neck joint with bilateral yaw, move and extend forelegs, and add layered wing gradients and veins."
+  "source_git_blob_sha": "8b8857974afe912204b649f0a6ebe5293fca2660",
+  "output_git_blob_sha": "17b3b5f96e5413595d9cc5a41fa33de78d525fbc",
+  "change_summary": "Separate Base1 wing shells with fine venation and relief; add translucent hindwings, softer chitin gloss, and shallow abdominal segmentation."
 }

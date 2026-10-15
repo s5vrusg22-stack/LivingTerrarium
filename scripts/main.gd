@@ -487,9 +487,14 @@ func _style_rigged_materials(root: Node) -> void:
                     if mat == null:
                         continue
                     var material_name := String(source.resource_name).to_lower()
-                    # Preserve the GLB's named light, dark, wing and shadow
-                    # colors instead of flattening every cuticle to neon green.
-                    mat.roughness = maxf(mat.roughness, 0.58 if not material_name.contains("eye") else 0.30)
+                    # Keep the imported hue and let the GLB's chitin and wing
+                    # roughness produce distinct, restrained specular highlights.
+                    if material_name.contains("eye"):
+                        mat.roughness = minf(mat.roughness, 0.30)
+                    elif material_name.contains("wing"):
+                        mat.roughness = minf(mat.roughness, 0.46)
+                    elif material_name.contains("cuticle"):
+                        mat.roughness = minf(mat.roughness, 0.48)
                     part.set_surface_override_material(surface_index, mat)
         _style_rigged_materials(child)
 
@@ -642,7 +647,8 @@ func _create_world() -> void:
     sun.rotation_degrees = Vector3(-48, -31, 0)
     sun.light_color = Color(0.98, 0.97, 0.91)
     sun.light_energy = 0.68
-    sun.shadow_opacity = 0.56
+    sun.shadow_opacity = 0.48
+    sun.shadow_blur = 1.2
     sun.shadow_enabled = true
     add_child(sun)
     _box(Vector3(HABITAT_WIDTH, 0.2, HABITAT_DEPTH), Vector3(0, -0.65, 0), Color(0.39, 0.31, 0.21))
