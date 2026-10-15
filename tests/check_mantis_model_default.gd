@@ -26,8 +26,8 @@ func _verify_mantis_simulation() -> void:
     if app.get("follow_animal") != true or app.get("habitat_framing") != false:
         _fail("Startup camera does not focus on the approved mantis")
         return
-    if not is_equal_approx(float(app.get("orbit_distance")), 2.80):
-        _fail("Startup camera is too far away to inspect the mantis model")
+    if not is_equal_approx(float(app.get("orbit_distance")), 3.80):
+        _fail("Startup camera does not frame the full mantis model")
         return
     var clips: Dictionary = app.get("base1_mantis_clips")
     if clips.is_empty():
@@ -53,8 +53,8 @@ func _verify_mantis_simulation() -> void:
             _fail("A procedural fallback mesh is visible instead of the Base 1 GLB")
             return
 
-    var restored_cuticle := false
-    var restored_wing := false
+    var retained_cuticle_palette := false
+    var retained_light_cuticle := false
     for candidate in model.find_children("*", "MeshInstance3D", true, false):
         var part := candidate as MeshInstance3D
         if part == null or part.mesh == null:
@@ -64,21 +64,52 @@ func _verify_mantis_simulation() -> void:
             if material == null:
                 continue
             var material_name := String(material.resource_name).to_lower()
-            if material_name.contains("cuticle"):
+            if material_name == "cuticle":
                 var cuticle_color := material.albedo_color
-                if absf(cuticle_color.r - 0.39) > 0.01 or absf(cuticle_color.g - 0.66) > 0.01 or absf(cuticle_color.b - 0.22) > 0.01:
-                    _fail("V7 cuticle color was not restored on the imported Base 1 material")
+                if absf(cuticle_color.r - 0.31) > 0.01 or absf(cuticle_color.g - 0.49) > 0.01 or absf(cuticle_color.b - 0.22) > 0.01:
+                    _fail("The Base 1 natural cuticle color was overwritten")
                     return
-                restored_cuticle = true
-            elif material_name.contains("wing"):
-                var wing_color := material.albedo_color
-                if absf(wing_color.r - 0.52) > 0.01 or absf(wing_color.g - 0.73) > 0.01 or absf(wing_color.b - 0.31) > 0.01:
-                    _fail("V7 wing color was not restored on the imported Base 1 material")
+                if material.detail_enabled:
+                    _fail("The cuticle material still has a noisy detail overlay")
                     return
-                restored_wing = true
-    if not restored_cuticle or not restored_wing:
-        _fail("Could not find the named cuticle and wing materials on Base 1")
+                retained_cuticle_palette = true
+            elif material_name == "cuticle_light":
+                var light_color := material.albedo_color
+                if absf(light_color.r - 0.50) > 0.01 or absf(light_color.g - 0.65) > 0.01 or absf(light_color.b - 0.34) > 0.01:
+                    _fail("The light cuticle shade was flattened into the base color")
+                    return
+                retained_light_cuticle = true
+    if not retained_cuticle_palette or not retained_light_cuticle:
+        _fail("The Base 1 cuticle color range is missing")
         return
+
+    var pronotum := model.find_child("Pronotum", true, false) as MeshInstance3D
+    var head := model.find_child("Head", true, false) as MeshInstance3D
+    if pronotum == null or head == null or pronotum.mesh == null:
+        _fail("The elongated neck or head mesh is missing")
+        return
+    var pronotum_vertices: PackedVector3Array = pronotum.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+    var neck_min_z := 0.0
+    for vertex in pronotum_vertices:
+        neck_min_z = minf(neck_min_z, vertex.z)
+    if neck_min_z > -1.50 or head.position.z > -0.30:
+        _fail("The pronotum and head do not show the requested longer neck profile")
+        return
+
+    for side in ["L", "R"]:
+        var femur := model.find_child("Raptor_%s_Femur" % side, true, false) as MeshInstance3D
+        if femur == null or femur.mesh == null or femur.mesh.get_surface_count() < 4:
+            _fail("A raptorial femur with inward spines is missing")
+            return
+        for surface_index in [2, 3]:
+            var femur_vertices: PackedVector3Array = femur.mesh.surface_get_arrays(surface_index)[Mesh.ARRAY_VERTEX]
+            var mean_x := 0.0
+            for vertex in femur_vertices:
+                mean_x += vertex.x
+            mean_x /= maxf(float(femur_vertices.size()), 1.0)
+            if (side == "L" and mean_x <= 0.0) or (side == "R" and mean_x >= 0.0):
+                _fail("%s femur spines point outward instead of toward the center" % side)
+                return
 
     var stage_picker := app.get("stage_picker") as OptionButton
     if stage_picker == null or stage_picker.item_count != 7:

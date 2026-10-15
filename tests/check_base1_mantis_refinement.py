@@ -22,7 +22,7 @@ assert not any(
     nodes[channel["target"]["node"]] == "Head" and channel["target"]["path"] == "rotation"
     for channel in walk["channels"]
 )
-assert abs(node_by_name["Head"]["translation"][2] + 0.14) < 1e-6
+assert abs(node_by_name["Head"]["translation"][2] + 0.34) < 1e-6
 
 # Read selected accessor bounds directly from the original GLB binary chunk.
 bin_header = 20 + json_length
@@ -44,25 +44,30 @@ def primitive_positions(node_name, primitive_index=0):
     mesh = doc["meshes"][node_by_name[node_name]["mesh"]]
     return accessor_values(mesh["primitives"][primitive_index]["attributes"]["POSITION"])
 pronotum_z = [point[2] for point in primitive_positions("Pronotum")]
-assert min(pronotum_z) < -1.14, min(pronotum_z)
+assert min(pronotum_z) < -1.56, min(pronotum_z)
 for side in ("L", "R"):
     coxa_y = [point[1] for point in primitive_positions(f"Raptor_{side}_Coxa")]
     assert max(coxa_y) > 0.65
     femur_y = node_by_name[f"Raptor_{side}_Femur"]["translation"][1]
     assert femur_y > 0.65
+    femur_mesh = doc["meshes"][node_by_name[f"Raptor_{side}_Femur"]["mesh"]]
+    expected_sign = 1 if side == "L" else -1
+    for primitive in femur_mesh["primitives"][2:4]:
+        xs = [point[0] for point in accessor_values(primitive["attributes"]["POSITION"])]
+        assert expected_sign * sum(xs) / len(xs) > 0.07, (side, min(xs), max(xs))
 
 materials = {material["name"]: material["pbrMetallicRoughness"] for material in doc["materials"]}
 assert materials["cuticle"]["baseColorFactor"] == [0.31, 0.49, 0.22, 1.0]
 assert materials["cuticle"]["roughnessFactor"] >= 0.58
 assert materials["wing"]["baseColorFactor"] == [0.46, 0.62, 0.33, 1.0]
 
-# Restore the V7 green palette per surface and add cuticle detail without flattening differences.
+# Preserve the authored material palette and avoid high-frequency overlays on the imported model.
 style = main.split("func _style_rigged_materials", 1)[1].split("func _find_rigged_player", 1)[0]
 assert "part.material_override = null" in style
 assert "part.set_surface_override_material(surface_index, mat)" in style
-assert "mat.detail_enabled = true" in style
-assert 'mat.albedo_color = Color(0.39, 0.66, 0.22)' in style
-assert 'mat.albedo_color = Color(0.52, 0.73, 0.31)' in style
+assert "mat.detail_enabled = true" not in style
+assert 'mat.albedo_color = Color(0.39, 0.66, 0.22)' not in style
+assert 'mat.albedo_color = Color(0.52, 0.73, 0.31)' not in style
 assert "Color(0.43, 0.54, 0.26)" not in style
 
 # The six nymph stages remain selectable, visibly scaled, and distinct from adults.
@@ -78,8 +83,12 @@ assert "HABITAT_CEILING_Y * 0.58" in main and "HABITAT_CEILING_Y * 0.88" in main
 assert 'leaf.name = "ClimbPlantLeaf_' in main
 assert 'leaf_material.albedo_texture = foliage_texture' in main
 assert 'mat.albedo_color = Color(0.82, 0.67, 0.48)' in main
-assert 'env.ambient_light_energy = 0.58' in main
+assert 'env.ambient_light_energy = 0.38' in main
+assert 'sun.light_energy = 0.68' in main
+assert 'leaf_material.normal_scale = 0.10' in main
 assert 'sun.shadow_opacity = 0.56' in main
+assert 'mipmaps/generate=true' in (root / "assets/textures/foliage_albedo.png.import").read_text()
+assert 'mipmaps/generate=true' in (root / "assets/textures/foliage_normal.png.import").read_text()
 
 # More than one named mantis is stored in a separate, bounded collection file.
 assert 'MANTIS_COLLECTION_PATH := "user://mantis_collection_v1.json"' in main
