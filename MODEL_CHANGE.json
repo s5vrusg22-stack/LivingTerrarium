@@ -2,6 +2,6 @@
   "source_commit": "3cf9856f8e48954c312cce7c8ce86ecdf5c15aa8",
   "source_path": "assets/models/base1.glb",
   "source_git_blob_sha": "17b3b5f96e5413595d9cc5a41fa33de78d525fbc",
-  "output_git_blob_sha": "e343a9c42eecdfc927881bdded31fd692c17d90e",
-  "change_summary": "Turn left femoral grasping spines inward in model space and remove collapsed Base1 triangles to clean LOD import."
+  "output_git_blob_sha": "f2a4dc60e72cfd6dc48861f75e1a0eff735b690c",
+  "change_summary": "Taper the pronotum and triangular head, lengthen the thoracic bridge, slim the abdomen, move and thicken the paired foreleg coxae, tuck thoracic supports, and recolor the existing Base 1 surfaces from the supplied mantis photo while preserving the rig and animation clips."
 }

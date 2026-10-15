@@ -104,6 +104,17 @@ func _verify_mantis_simulation() -> void:
         _fail("The pronotum and head do not show the requested longer neck profile")
         return
 
+    var left_coxa := model.find_child("Raptor_L_Coxa", true, false) as Node3D
+    var right_coxa := model.find_child("Raptor_R_Coxa", true, false) as Node3D
+    if (
+        left_coxa == null or right_coxa == null
+        or left_coxa.position.z > -0.63
+        or absf(left_coxa.position.z - right_coxa.position.z) > 0.001
+        or absf(left_coxa.position.x + right_coxa.position.x) > 0.001
+    ):
+        _fail("The paired raptorial legs are not symmetrically attached near the head")
+        return
+
     for side in ["L", "R"]:
         var femur := model.find_child("Raptor_%s_Femur" % side, true, false) as MeshInstance3D
         if femur == null or femur.mesh == null or femur.mesh.get_surface_count() < 4:

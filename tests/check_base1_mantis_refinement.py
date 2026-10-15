@@ -112,12 +112,33 @@ pronotum_z = [point[2] for point in pronotum_points]
 assert min(pronotum_z) < -1.56, min(pronotum_z)
 neck_tip = [point for point in pronotum_points if point[2] < -1.55]
 assert max(point[0] for point in neck_tip) - min(point[0] for point in neck_tip) < 0.16
+neck_base = [point for point in pronotum_points if point[2] > 0.005]
+neck_tip_width = max(point[0] for point in neck_tip) - min(point[0] for point in neck_tip)
+neck_base_width = max(point[0] for point in neck_base) - min(point[0] for point in neck_base)
+assert 0.25 < neck_base_width < 0.34, neck_base_width
+assert neck_base_width < neck_tip_width * 2.2, (neck_tip_width, neck_base_width)
+head_shell = primitive_positions("Head", 0)
+head_mid_y = (min(point[1] for point in head_shell) + max(point[1] for point in head_shell)) / 2
+head_low = [point for point in head_shell if point[1] < head_mid_y]
+head_high = [point for point in head_shell if point[1] >= head_mid_y]
+head_low_width = max(point[0] for point in head_low) - min(point[0] for point in head_low)
+head_high_width = max(point[0] for point in head_high) - min(point[0] for point in head_high)
+assert max(point[0] for point in head_shell) - min(point[0] for point in head_shell) < 0.42
+assert head_low_width < head_high_width * 0.94, (head_low_width, head_high_width)
+thorax_points = primitive_positions("Thorax", 0) + primitive_positions("Thorax", 1)
+thorax_z = [point[2] for point in thorax_points]
+assert max(thorax_z) - min(thorax_z) > 0.65
+thorax_x = [point[0] for point in thorax_points]
+assert max(thorax_x) - min(thorax_x) > 0.58
+static_joint_points = primitive_positions("Static_joint")
+static_joint_x = [point[0] for point in static_joint_points]
+assert max(static_joint_x) - min(static_joint_x) < 0.40
 abdomen_points = primitive_positions("Abdomen", 0) + primitive_positions("Abdomen", 1)
 abdomen_x = [point[0] for point in abdomen_points]
 abdomen_y = [point[1] for point in abdomen_points]
 abdomen_z = [point[2] for point in abdomen_points]
-assert max(abdomen_x) - min(abdomen_x) < 0.70
-assert max(abdomen_y) - min(abdomen_y) < 0.50
+assert max(abdomen_x) - min(abdomen_x) < 0.62
+assert max(abdomen_y) - min(abdomen_y) < 0.41
 assert max(abdomen_z) - min(abdomen_z) > 2.45
 abdomen = doc["meshes"][node_by_name["Abdomen"]["mesh"]]["primitives"][0]
 abdomen_vertices = accessor_values(abdomen["attributes"]["POSITION"])
@@ -150,7 +171,11 @@ for z in (0.3920, 0.6272, 0.8624, 1.0976, 1.3328, 1.5680, 1.8032):
 assert segment_grooves >= 6, segment_grooves
 for side in ("L", "R"):
     coxa_y = [point[1] for point in primitive_positions(f"Raptor_{side}_Coxa")]
-    assert max(coxa_y) > 0.78
+    assert max(coxa_y) > 0.86
+    coxa_x = [point[0] for point in primitive_positions(f"Raptor_{side}_Coxa")]
+    coxa_z = [point[2] for point in primitive_positions(f"Raptor_{side}_Coxa")]
+    assert max(coxa_x) - min(coxa_x) > 0.095
+    assert max(coxa_z) - min(coxa_z) > 0.095
     femur_y = node_by_name[f"Raptor_{side}_Femur"]["translation"][1]
     assert femur_y > 0.78
     femur_name = f"Raptor_{side}_Femur"
@@ -168,7 +193,28 @@ for side in ("L", "R"):
     tibia_center = transformed_point(tibia_world, mean_point(primitive_positions(tibia_name, 0)))
     teeth_center = transformed_point(tibia_world, mean_point(primitive_positions(tibia_name, 2)))
     assert inward_sign * (teeth_center[0] - tibia_center[0]) > 0.01, (side, "tibial teeth")
-    assert node_by_name[f"Raptor_{side}_Coxa"]["translation"][2] <= -0.48
+    assert node_by_name[f"Raptor_{side}_Coxa"]["translation"][2] < -0.63
+left_foreleg = node_by_name["Raptor_L_Coxa"]["translation"]
+right_foreleg = node_by_name["Raptor_R_Coxa"]["translation"]
+assert left_foreleg[0] == -right_foreleg[0] and left_foreleg[2] == right_foreleg[2]
+
+def effective_srgb(node_name, primitive_index=0):
+    node = node_by_name[node_name]
+    primitive = doc["meshes"][node["mesh"]]["primitives"][primitive_index]
+    colors = accessor_values(primitive["attributes"]["COLOR_0"])
+    factor = doc["materials"][primitive.get("material", 0)]["pbrMetallicRoughness"].get(
+        "baseColorFactor", [1.0, 1.0, 1.0, 1.0]
+    )
+    linear = [sum(color[channel] * factor[channel] for color in colors) / len(colors) for channel in range(3)]
+    return [round(255 * (12.92 * value if value <= 0.0031308 else 1.055 * value**(1/2.4) - 0.055)) for value in linear]
+
+head_color = effective_srgb("Head")
+neck_color = effective_srgb("Pronotum")
+thorax_color = effective_srgb("Thorax")
+abdomen_color = effective_srgb("Abdomen")
+assert 115 <= head_color[0] <= 150 and head_color[1] > head_color[0] and head_color[2] < head_color[1]
+assert 70 <= neck_color[0] <= 110 and neck_color[1] > neck_color[0] and neck_color[2] < neck_color[0]
+assert thorax_color != neck_color and abdomen_color != thorax_color
 
 animation_by_name = {animation["name"].upper(): animation for animation in doc["animations"]}
 for clip in ("IDLE", "WALK", "ALERT", "STRIKE", "GROOM", "FEED"):
