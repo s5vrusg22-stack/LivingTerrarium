@@ -1,7 +1,7 @@
 {
-  "source_commit": "9fe307045223c40ef500a73d8dc8ea9a3df15217",
+  "source_commit": "38504d68d50b6934e05191dfe9759e96076357aa",
   "source_path": "assets/models/base1.glb",
-  "source_git_blob_sha": "2337fea7502d59c3cad235412fecdf906a9b9dd1",
-  "output_git_blob_sha": "98981e073f8a4fffb00efb71e669f6232c45b08d",
-  "change_summary": "Lengthen the pronotum 36 percent, advance the head, turn both foreleg spine rows inward, and restore layered olive materials."
+  "source_git_blob_sha": "98981e073f8a4fffb00efb71e669f6232c45b08d",
+  "output_git_blob_sha": "8b8857974afe912204b649f0a6ebe5293fca2660",
+  "change_summary": "Slim and lengthen the abdomen, taper the neck, pivot the head at the neck joint with bilateral yaw, move and extend forelegs, and add layered wing gradients and veins."
 }

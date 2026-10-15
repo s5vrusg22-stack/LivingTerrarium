@@ -3,7 +3,7 @@
 ## Canonical mantis model
 
 - The only mantis model shipped by the app is **Base 1** at `assets/models/base1.glb`.
-- It is the refined continuation of the V7 model recovered from the known-good v8.3 APK: 2,779,864 bytes, Git blob SHA `98981e073f8a4fffb00efb71e669f6232c45b08d`. `MODEL_CHANGE.json` records the exact input commit and blob, and the output blob. This revision lengthens the pronotum, advances the head, and turns both front-leg spine rows inward. The repository filename and Godot imported/runtime root remain Base 1.
+- It is the refined continuation of the V7 model recovered from the known-good v8.3 APK: 2,987,892 bytes, Git blob SHA `8b8857974afe912204b649f0a6ebe5293fca2660`. `MODEL_CHANGE.json` records the exact input commit/blob and output blob. This revision slims and lengthens the abdomen, tapers the pronotum where it joins the head, moves the head to that joint and adds left/right yaw to the existing six clips, shifts and extends the raptorial foreleg bases, and embeds distinct gradient/vein albedo maps for the forewings and hindwings. It retains the 38-node Base 1 hierarchy and the canonical repository/runtime path.
 - Godot import metadata sets `nodes/root_name="Base1"`; the running scene names the visible model node `Base1`.
 - Alternate mantis GLBs and the old V7 filename are absent from the current model directory. CI rejects any model set other than Base 1 and the separate blue crayfish asset.
 - The runtime check requires Base 1 to load, stay visible, and provide its imported animations.
@@ -11,10 +11,12 @@
 ## Recovery provenance
 
 The Base 1 geometry and animation source is the V7 model recovered from the
-known-good v8.3 APK. This revision extends that model with a longer neck,
-forward-set head, and inward-facing foreleg spines. The runtime preserves the
-model's layered cuticle and wing colors under more neutral lighting. Its lineage is recorded in `MODEL_CHANGE.json`; later edits
-must follow `AGENTS.md` and update the source and output checks together.
+known-good v8.3 APK. This revision refines that model's abdomen and pronotum
+silhouette, puts the movable head pivot at the neck connection, moves and
+lengthens the foreleg bases, and gives both existing wing layers embedded
+gradient/vein textures. The original Base 1 identity, node hierarchy, and six
+clip names remain intact. Its lineage is recorded in `MODEL_CHANGE.json`; later
+edits must follow `AGENTS.md` and update the source and output checks together.
 
 ## Release and build checks
 
