@@ -6,9 +6,9 @@ root = Path(__file__).resolve().parents[1]
 models = root / "assets/models"
 model = models / "base1.glb"
 data = model.read_bytes()
-approved_git_blob_sha = "98981e073f8a4fffb00efb71e669f6232c45b08d"
+approved_git_blob_sha = "8b8857974afe912204b649f0a6ebe5293fca2660"
 git_blob_sha = sha1(b"blob " + str(len(data)).encode("ascii") + bytes([0]) + data).hexdigest()
-assert len(data) == 2_779_864, len(data)
+assert len(data) == 2_987_892, len(data)
 assert git_blob_sha == approved_git_blob_sha, git_blob_sha
 
 # Keep the agent instructions, human-facing provenance, executable model,

@@ -12,8 +12,8 @@ These instructions apply to every code, model, simulation, and APK task in this 
 
 - Repository branch: `main`.
 - Approved baseline: `assets/models/base1.glb`.
-- Current approved Base 1 Git blob SHA: `98981e073f8a4fffb00efb71e669f6232c45b08d` (2,779,864 bytes).
-- This model is a documented geometry refinement of the V7 Base 1 source recovered from the known-good v8.3 APK. It lengthens the pronotum, advances the head, and turns the left foreleg spine rows inward. The runtime preserves the model's separate cuticle and wing shades. `MODEL_CHANGE.json` records the exact source commit and source/output blob hashes.
+- Current approved Base 1 Git blob SHA: `8b8857974afe912204b649f0a6ebe5293fca2660` (2,987,892 bytes).
+- This model continues the V7 Base 1 source recovered from the known-good v8.3 APK. It keeps the same 38-node model and six animation clips while slimming and lengthening the abdomen, tapering the pronotum at the head joint, moving the head to that joint and adding left/right yaw, shifting and extending the raptorial foreleg bases, and embedding separate forewing/hindwing gradient and vein textures. `MODEL_CHANGE.json` records the exact input commit/blob and output blob hashes.
 - Runtime/imported root name: `Base1`. The app loads it through `scripts/main.gd` in the main scene.
 - The app release name is Base 1 / version 1.0.0. Do not change the model name, app version, or runtime asset path unless the user explicitly requests that change.
 
@@ -48,7 +48,7 @@ Do not add a fallback that displays one of these if Base 1 fails to import or lo
 
 If the user asks to change Base 1's geometry, materials, or rig:
 
-- Start from the verified canonical Base 1 asset and preserve its identity, skeleton, and animation clips unless the request explicitly changes them.
+- Start from the verified canonical Base 1 asset and preserve its identity, node structure, and animation clips unless the request explicitly changes them. A requested movement change may refine keyframes while retaining the existing clip names and model hierarchy.
 - Use reference photos to guide the requested edits; do not use them to reconstruct a different mantis from scratch.
 - Keep the runtime asset path `assets/models/base1.glb` and root name `Base1`.
 - Preserve the previous approved file in Git history. Update the pinned SHA in `README_v8.3.md` and `tests/check_base1_baseline.py` only after the edited model has been visually reviewed and its lineage from the previous approved SHA is documented.

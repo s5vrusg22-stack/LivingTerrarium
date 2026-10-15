@@ -17,12 +17,7 @@ assert {"MantisRoot", "Pronotum", "Head", "Raptor_L_Coxa", "Raptor_R_Coxa"} <= s
 assert len(doc["nodes"]) == 38
 clips = {animation.get("name", "").upper() for animation in doc.get("animations", [])}
 assert clips == {"IDLE", "WALK", "ALERT", "STRIKE", "GROOM", "FEED"}
-walk = next(animation for animation in doc["animations"] if animation.get("name", "").upper() == "WALK")
-assert not any(
-    nodes[channel["target"]["node"]] == "Head" and channel["target"]["path"] == "rotation"
-    for channel in walk["channels"]
-)
-assert abs(node_by_name["Head"]["translation"][2] + 0.34) < 1e-6
+assert node_by_name["Head"]["translation"] == [0.0, 1.27, -1.38]
 
 # Read selected accessor bounds directly from the original GLB binary chunk.
 bin_header = 20 + json_length
@@ -43,23 +38,61 @@ def accessor_values(accessor_index):
 def primitive_positions(node_name, primitive_index=0):
     mesh = doc["meshes"][node_by_name[node_name]["mesh"]]
     return accessor_values(mesh["primitives"][primitive_index]["attributes"]["POSITION"])
-pronotum_z = [point[2] for point in primitive_positions("Pronotum")]
+pronotum_points = primitive_positions("Pronotum")
+pronotum_z = [point[2] for point in pronotum_points]
 assert min(pronotum_z) < -1.56, min(pronotum_z)
+neck_tip = [point for point in pronotum_points if point[2] < -1.55]
+assert max(point[0] for point in neck_tip) - min(point[0] for point in neck_tip) < 0.16
+abdomen_points = primitive_positions("Abdomen", 0) + primitive_positions("Abdomen", 1)
+abdomen_x = [point[0] for point in abdomen_points]
+abdomen_y = [point[1] for point in abdomen_points]
+abdomen_z = [point[2] for point in abdomen_points]
+assert max(abdomen_x) - min(abdomen_x) < 0.70
+assert max(abdomen_y) - min(abdomen_y) < 0.50
+assert max(abdomen_z) - min(abdomen_z) > 2.45
 for side in ("L", "R"):
     coxa_y = [point[1] for point in primitive_positions(f"Raptor_{side}_Coxa")]
-    assert max(coxa_y) > 0.65
+    assert max(coxa_y) > 0.78
     femur_y = node_by_name[f"Raptor_{side}_Femur"]["translation"][1]
-    assert femur_y > 0.65
+    assert femur_y > 0.78
     femur_mesh = doc["meshes"][node_by_name[f"Raptor_{side}_Femur"]["mesh"]]
     expected_sign = 1 if side == "L" else -1
     for primitive in femur_mesh["primitives"][2:4]:
         xs = [point[0] for point in accessor_values(primitive["attributes"]["POSITION"])]
         assert expected_sign * sum(xs) / len(xs) > 0.07, (side, min(xs), max(xs))
+    assert node_by_name[f"Raptor_{side}_Coxa"]["translation"][2] <= -0.48
+
+animation_by_name = {animation["name"].upper(): animation for animation in doc["animations"]}
+for clip in ("IDLE", "WALK", "ALERT", "STRIKE", "GROOM", "FEED"):
+    animation = animation_by_name[clip]
+    head_rotation = next(
+        channel for channel in animation["channels"]
+        if nodes[channel["target"]["node"]] == "Head"
+        and channel["target"]["path"] == "rotation"
+    )
+    head_quats = accessor_values(animation["samplers"][head_rotation["sampler"]]["output"])
+    assert min(value[1] for value in head_quats) < -0.08
+    assert max(value[1] for value in head_quats) > 0.08
+
+images = doc.get("images", [])
+textures = doc.get("textures", [])
+assert len(images) == 2 and len(textures) == 2
+for image in images:
+    assert image["mimeType"] == "image/png"
+    view = doc["bufferViews"][image["bufferView"]]
+    start = view.get("byteOffset", 0)
+    assert binary[start:start + 8] == b"\x89PNG\r\n\x1a\n"
+for side in ("L", "R"):
+    wing_mesh = doc["meshes"][node_by_name[f"Wing_{side}"]["mesh"]]
+    assert "TEXCOORD_0" in wing_mesh["primitives"][0]["attributes"]
+    assert "TEXCOORD_0" in wing_mesh["primitives"][2]["attributes"]
 
 materials = {material["name"]: material["pbrMetallicRoughness"] for material in doc["materials"]}
 assert materials["cuticle"]["baseColorFactor"] == [0.31, 0.49, 0.22, 1.0]
 assert materials["cuticle"]["roughnessFactor"] >= 0.58
-assert materials["wing"]["baseColorFactor"] == [0.46, 0.62, 0.33, 1.0]
+assert materials["wing"]["baseColorFactor"] == [0.56, 0.75, 0.37, 1.0]
+assert materials["wing"]["baseColorTexture"]["index"] != materials["hindwing"]["baseColorTexture"]["index"]
+assert materials["hindwing"]["baseColorFactor"] == [0.72, 0.78, 0.48, 1.0]
 
 # Preserve the authored material palette and avoid high-frequency overlays on the imported model.
 style = main.split("func _style_rigged_materials", 1)[1].split("func _find_rigged_player", 1)[0]
@@ -101,4 +134,4 @@ for function_name in (
     assert f"func {function_name}" in main
 assert '"mantises": saved_mantises' in main
 
-print("Base 1 refinement check passed: original rig/clips retained, neck and foreleg proportions adjusted, six instars and multi-mantis saves verified.")
+print("Base 1 refinement check passed: existing rig/clips retained, abdomen and neck proportions refined, forelegs moved/extended, head yaw enabled, wing gradients/textures embedded, six instars and multi-mantis saves verified.")
