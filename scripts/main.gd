@@ -487,21 +487,9 @@ func _style_rigged_materials(root: Node) -> void:
                     if mat == null:
                         continue
                     var material_name := String(source.resource_name).to_lower()
-                    if material_name.contains("cuticle"):
-                        mat.albedo_color = Color(0.39, 0.66, 0.22)
-                    elif material_name.contains("wing"):
-                        mat.albedo_color = Color(0.52, 0.73, 0.31)
+                    # Preserve the GLB's named light, dark, wing and shadow
+                    # colors instead of flattening every cuticle to neon green.
                     mat.roughness = maxf(mat.roughness, 0.58 if not material_name.contains("eye") else 0.30)
-                    if not material_name.contains("eye") and cuticle_detail_texture != null:
-                        mat.detail_enabled = true
-                        mat.detail_albedo = cuticle_detail_texture
-                        mat.detail_blend_mode = BaseMaterial3D.BLEND_MODE_MUL
-                        mat.detail_uv_layer = BaseMaterial3D.DETAIL_UV_1
-                        mat.uv1_triplanar = true
-                        mat.uv1_triplanar_sharpness = 2.5
-                        mat.uv1_scale = Vector3(6.0, 6.0, 6.0)
-                        if cuticle_detail_normal_texture != null:
-                            mat.detail_normal = cuticle_detail_normal_texture
                     part.set_surface_override_material(surface_index, mat)
         _style_rigged_materials(child)
 
@@ -646,14 +634,14 @@ func _create_world() -> void:
     env.background_mode = Environment.BG_COLOR
     env.background_color = Color(0.065, 0.085, 0.08)
     env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-    env.ambient_light_color = Color(0.66, 0.70, 0.63)
-    env.ambient_light_energy = 0.58
+    env.ambient_light_color = Color(0.50, 0.52, 0.46)
+    env.ambient_light_energy = 0.38
     world.environment = env
     add_child(world)
     var sun := DirectionalLight3D.new()
     sun.rotation_degrees = Vector3(-48, -31, 0)
     sun.light_color = Color(0.98, 0.97, 0.91)
-    sun.light_energy = 0.82
+    sun.light_energy = 0.68
     sun.shadow_opacity = 0.56
     sun.shadow_enabled = true
     add_child(sun)
@@ -691,8 +679,8 @@ func _create_climbable_branch() -> void:
     leaf_material.albedo_texture = foliage_texture
     leaf_material.normal_enabled = foliage_normal_texture != null
     leaf_material.normal_texture = foliage_normal_texture
-    leaf_material.normal_scale = 0.32
-    leaf_material.roughness = 0.88
+    leaf_material.normal_scale = 0.10
+    leaf_material.roughness = 0.94
     for level in range(1, 8):
         var t := float(level) / 8.0
         var center := climb_branch_start.lerp(climb_branch_end, t)
@@ -875,7 +863,7 @@ func _create_mantis() -> void:
         for spine_i in range(9):
             var spine_t := 0.12 + float(spine_i) * 0.095
             var spine_base := elbow.position * spine_t
-            var spine_tip := spine_base + Vector3(side * 0.030, -0.036, -0.023)
+            var spine_tip := spine_base + Vector3(-side * 0.030, -0.036, -0.023)
             _segment(foreleg, spine_base, spine_tip, 0.0068, Color(0.58, 0.61, 0.24))
         var claw := Node3D.new()
         claw.name = "ForelegTibia_%d" % int(side)
@@ -1030,7 +1018,7 @@ func _enhance_mantis_model() -> void:
         for j in range(7):
             var t := float(j) / 7.0
             var origin := Vector3(0, -0.025 - t * 0.16, -0.026 - t * 0.12)
-            _segment(foreleg_elbows[i], origin, origin + Vector3(side * 0.028, -0.013, -0.012), 0.0035, pale)
+            _segment(foreleg_elbows[i], origin, origin + Vector3(-side * 0.028, -0.013, -0.012), 0.0035, pale)
 
 func _apply_pbr(mat: StandardMaterial3D, kind: String) -> void:
     if pbr_normal.has(kind):
@@ -1066,9 +1054,9 @@ func _part(parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> void:
         _apply_pbr(mat, "mantis_cuticle")
         mat.uv1_triplanar = true
         mat.uv1_triplanar_sharpness = 8.0
-        mat.uv1_scale = Vector3(18.0, 18.0, 18.0)
+        mat.uv1_scale = Vector3(5.0, 5.0, 5.0)
         mat.normal_texture = cuticle_detail_normal_texture
-        mat.normal_scale = 0.40
+        mat.normal_scale = 0.10
         mat.roughness_texture = cuticle_detail_roughness_texture
         mat.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
         mat.roughness = 0.80
@@ -1112,10 +1100,10 @@ func _segment(parent: Node3D, a: Vector3, b: Vector3, radius: float, color: Colo
         mat.albedo_color = Color(0.85, 1.0, 0.83)
         mat.uv1_triplanar = true
         mat.uv1_triplanar_sharpness = 8.0
-        mat.uv1_scale = Vector3(18.0, 18.0, 18.0)
+        mat.uv1_scale = Vector3(5.0, 5.0, 5.0)
         mat.normal_enabled = cuticle_detail_normal_texture != null
         mat.normal_texture = cuticle_detail_normal_texture
-        mat.normal_scale = 0.40
+        mat.normal_scale = 0.10
         mat.roughness_texture = cuticle_detail_roughness_texture
         mat.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
         mat.roughness = 0.80
@@ -2406,7 +2394,7 @@ func _set_camera_preset(close_view: bool) -> void:
     orbit_yaw = 1.43 if close_view else 0.0
     orbit_pitch = 0.26 if close_view else 0.30
     if close_view:
-        orbit_distance = 2.80
+        orbit_distance = 3.80
     else:
         var viewport_size := get_viewport().get_visible_rect().size
         var aspect := viewport_size.x / maxf(viewport_size.y, 1.0)

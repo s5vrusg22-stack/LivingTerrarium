@@ -12,8 +12,8 @@ These instructions apply to every code, model, simulation, and APK task in this 
 
 - Repository branch: `main`.
 - Approved baseline: `assets/models/base1.glb`.
-- Current approved Base 1 Git blob SHA: `2337fea7502d59c3cad235412fecdf906a9b9dd1` (2,779,608 bytes).
-- This model is a documented geometry and walk-animation refinement of the V7 Base 1 source recovered from the known-good v8.3 APK. The runtime restores the V7 cuticle and wing palette. `MODEL_CHANGE.json` records the exact source commit and source/output blob hashes.
+- Current approved Base 1 Git blob SHA: `98981e073f8a4fffb00efb71e669f6232c45b08d` (2,779,864 bytes).
+- This model is a documented geometry refinement of the V7 Base 1 source recovered from the known-good v8.3 APK. It lengthens the pronotum, advances the head, and turns the left foreleg spine rows inward. The runtime preserves the model's separate cuticle and wing shades. `MODEL_CHANGE.json` records the exact source commit and source/output blob hashes.
 - Runtime/imported root name: `Base1`. The app loads it through `scripts/main.gd` in the main scene.
 - The app release name is Base 1 / version 1.0.0. Do not change the model name, app version, or runtime asset path unless the user explicitly requests that change.
 
