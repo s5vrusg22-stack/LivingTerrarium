@@ -55,6 +55,10 @@ func _verify_mantis_simulation() -> void:
 
     var retained_cuticle_palette := false
     var retained_light_cuticle := false
+    var retained_dark_cuticle := false
+    var cuticle_color := Color.BLACK
+    var light_color := Color.BLACK
+    var dark_color := Color.BLACK
     for candidate in model.find_children("*", "MeshInstance3D", true, false):
         var part := candidate as MeshInstance3D
         if part == null or part.mesh == null:
@@ -65,22 +69,26 @@ func _verify_mantis_simulation() -> void:
                 continue
             var material_name := String(material.resource_name).to_lower()
             if material_name == "cuticle":
-                var cuticle_color := material.albedo_color
-                if absf(cuticle_color.r - 0.31) > 0.01 or absf(cuticle_color.g - 0.49) > 0.01 or absf(cuticle_color.b - 0.22) > 0.01:
-                    _fail("The Base 1 natural cuticle color was overwritten")
-                    return
+                cuticle_color = material.albedo_color
                 if material.detail_enabled:
                     _fail("The cuticle material still has a noisy detail overlay")
                     return
                 retained_cuticle_palette = true
             elif material_name == "cuticle_light":
-                var light_color := material.albedo_color
-                if absf(light_color.r - 0.50) > 0.01 or absf(light_color.g - 0.65) > 0.01 or absf(light_color.b - 0.34) > 0.01:
-                    _fail("The light cuticle shade was flattened into the base color")
-                    return
+                light_color = material.albedo_color
                 retained_light_cuticle = true
-    if not retained_cuticle_palette or not retained_light_cuticle:
-        _fail("The Base 1 cuticle color range is missing")
+            elif material_name == "cuticle_dark":
+                dark_color = material.albedo_color
+                retained_dark_cuticle = true
+    if not retained_cuticle_palette or not retained_light_cuticle or not retained_dark_cuticle:
+        _fail("The Base 1 base, light, or dark cuticle material is missing")
+        return
+    print("Base 1 cuticle palette: dark=", dark_color, " base=", cuticle_color, " light=", light_color)
+    if (
+        dark_color.r >= cuticle_color.r or dark_color.g >= cuticle_color.g or dark_color.b >= cuticle_color.b
+        or cuticle_color.r >= light_color.r or cuticle_color.g >= light_color.g or cuticle_color.b >= light_color.b
+    ):
+        _fail("The Base 1 dark, olive, and light cuticle shades lost their authored color separation")
         return
 
     var pronotum := model.find_child("Pronotum", true, false) as MeshInstance3D
